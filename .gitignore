@@ -47,5 +47,6 @@ data/generations/
 data/inject/
 data/live/
 data/reports/
-data/.ollama.lock
+# ollama lock and queue files (b): data/.ollama.lock, data/.ollama.queue/, ...
+data/.ollama.*
 data/evolve-now.json
