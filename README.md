@@ -22,6 +22,8 @@ npm install
 npm run seed                    # data folders, starting constitutions, starting world data
 npm run dev                     # the site, http://localhost:3000
 npm run evolve -- --gens 10 --concurrency 1   # one gpu: keep it at 1
+# overnight, without the mac sleeping:
+nohup caffeinate -i npx tsx scripts/evolve.ts --gens 50 --concurrency 1 > data/evolve.log 2>&1 &
 npm run run-one -- --seed 1 --constitution technocrat
 npm run live -- --runId mylive --seed 7 --constitution-file path/to/constitution.txt
 ```
@@ -46,7 +48,9 @@ If any of these is missing, that feature logs once and is skipped. Nothing crash
 ## how evolution works
 
 - Generation 1 starts with seven constitutions. Six take different philosophies to the same mission: technocratic, federal, utilitarian, market liberal, communitarian and space-first. The seventh is the long now charter, which is protected: it competes with its original text every generation and is never mutated in place, though mutations of it can enter as separate constitutions.
-- A generation runs every constitution on the same 2 seeds and scores it by its average.
+- **Two-stage evaluation, every generation:**
+  - **Screening:** every constitution runs the same 2 seeds for 50 years (to tick 600) and is scored by its average.
+  - **Finals:** the top 2 also get one full 100-year run (to tick 1200). The champion, the hall of history and the showcase come from those full runs.
 - The top 2 constitutions carry over unchanged. The rest of the population is refilled with:
   - **mutations**: the LLM rewrites a parent, given what killed it, its biggest events and the known lessons. It fixes what failed and keeps what worked.
   - **crossovers**: section by section splices of two parents (values, religion, school, migration, priorities).
@@ -67,8 +71,8 @@ If any of these is missing, that feature logs once and is skipped. Nothing crash
   - The seeds are long now (the charter), meridian, atlas, solace, halcyon, vesper and kestrel.
   - Mutations count up (`halcyon ii`, `halcyon iii`) and crossovers join names (`meridian × kestrel`).
   - Each agent tracks its worlds, deaths, scores, best frontier and best lifespan.
-  - The champion is the active agent with the best average. Agents dropped from evolution are retired.
-- **Fairness:** every active agent runs the same 2 seeds each generation, so compare mode always has like-for-like worlds.
+  - The champion is the active agent with the best full 100-year world. An agent's average is over its 50-year screening worlds, so every agent is compared on the same horizon. Agents dropped from evolution are retired.
+- **Fairness:** every active agent runs the same 2 screening seeds each generation, so compare mode always has like-for-like worlds.
 - **Hall of history:** `data/hall.json` records firsts (moon, a Mars city, an eradicated disease, 150 and 200 year lifespans), records (population, lifespan, fastest moon), catastrophes (biggest collapse, deadliest famine) and milestones. Each entry links to its world and the exact tick of the event behind it.
 - Evolution keeps going, generation after generation, until a world achieves the goal. Then it finishes that generation and stops. Use `--gens n` to stop sooner.
 - Evolution is resumable: rerunning `npm run evolve` continues the unfinished generation.
@@ -84,6 +88,10 @@ If any of these is missing, that feature logs once and is skipped. Nothing crash
 - **End of each generation:** the champion, the best score, lessons known, and the repeat-mistake rate.
 - **New hall of history entries:** one message per generation, one line each, e.g. "🏆 first mars city ever: halcyon ii, 2071".
 - **Goal achieved:** a big celebration.
+- **Every hour:** a heartbeat, e.g. "alive · gen 3 · world 9/16 · 41 min per world · 12 deaths so far · best score 0.61".
+- **No world finished for 90 minutes:** a warning with the last lines of `data/evolve.log`.
+- **After a restart:** "evolution restarted", with the first world's minutes and the estimated worlds per day.
+- The command listener runs inside the evolve process, so it stops and restarts with evolution.
 - **Commands while evolve runs** (answered only in `TELEGRAM_CHAT_ID`):
 
 | command | what it does |
@@ -121,7 +129,7 @@ PDFs styled like the site go out over gmail and are always saved to `data/report
 | `GET /api/agents` | `Agent[]` |
 | `GET /api/agents/[id]` | `{ agent, runs }` |
 | `GET /api/compare?agents=a,b,c,d` | `{ seed, runs, divergences, pending, note? }`: each agent's best world on their most shared seed, slim (`SlimRun`: summary, one stat row per year, decision rows), plus divergences for every pair. Missing worlds are started in the background (local only) |
-| `GET /api/evolve/now` | mission control: the running generation, current world and its latest frame, the queue, the last 5 worlds, new lessons, stats (worlds lost, lessons known, best score, champion, minutes per world, worlds by morning). 404 when no evolution is running |
+| `GET /api/evolve/now` | mission control: the running generation, current world and its latest frame, `lastHeartbeat` (refreshed every minute), the queue, the last 5 worlds, new lessons, stats (worlds lost, lessons known, best score, champion, minutes per world, worlds by morning). 404 when no evolution is running |
 | `GET /api/runs/[id]/frames?from=&to=` | `FramesResponse` `{ runId, from, to, frames }`: full frames in an inclusive tick range, for lazy loading |
 | `GET /api/hall` | `HallEntry[]` |
 | `POST /api/branch` `{ runId, tick, agentId }` | `{ runId }`, a new live world from that moment, governed by that agent |

@@ -52,13 +52,17 @@ export function registerPopulation(population: Candidate[], generation: number):
   return all
 }
 
-// fold one finished world into its agent's stats
-export function recordAgentRun(s: RunSummary): Agent | null {
+// fold one finished world into its agent's stats. avgScore averages the 50-year screening worlds only, so
+// every agent is compared on the same horizon; full 100-year runs count toward best score, frontier, lifespan
+export function recordAgentRun(s: RunSummary, stage: 'screen' | 'full' = 'screen'): Agent | null {
   const all = readAgents()
   const a = all.find(x => x.id === s.agentId)
   if (!a) return null
   if (!a.runIds.includes(s.runId)) {
-    a.avgScore = Math.round(((a.avgScore * a.worlds + s.score) / (a.worlds + 1)) * 1e4) / 1e4
+    if (stage === 'screen') {
+      const n = a.runIds.filter(id => !/-full-s\d+$/.test(id)).length
+      a.avgScore = Math.round(((a.avgScore * n + s.score) / (n + 1)) * 1e4) / 1e4
+    }
     a.runIds.push(s.runId)
     a.worlds++
     if (s.status === 'destroyed') a.deaths++
@@ -70,14 +74,15 @@ export function recordAgentRun(s: RunSummary): Agent | null {
   return a
 }
 
-// after breeding: agents not in the next population are retired (the protected charter never is),
-// and the champion is the active agent with the best average score
-export function settleGeneration(activeIds: string[]): Agent | null {
+// after breeding: agents not in the next population are retired (the protected charter never is).
+// the champion comes from the full 100-year runs (championId); before any exist, the best average stands in
+export function settleGeneration(activeIds: string[], championId?: string): Agent | null {
   const all = readAgents()
   const active = new Set(activeIds)
   for (const a of all) a.retired = !a.protected && !active.has(a.id)
   const contenders = all.filter(a => !a.retired && a.worlds > 0)
-  const champ = contenders.sort((x, y) => y.avgScore - x.avgScore || y.bestScore - x.bestScore)[0] ?? null
+  const champ = (championId ? all.find(a => a.id === championId) : undefined)
+    ?? contenders.sort((x, y) => y.avgScore - x.avgScore || y.bestScore - x.bestScore)[0] ?? null
   for (const a of all) a.champion = !!champ && a.id === champ.id
   writeAgents(all)
   return champ
@@ -100,4 +105,14 @@ export function familyTree(): string[] {
   }
   for (const r of all.filter(a => !a.parentIds.length)) walk(r, 0)
   return lines
+}
+
+// agent id -> the seed agent id its lineage starts from (first parent all the way up)
+export function lineageRoots(): (agentId: string) => string {
+  const parents = new Map(readAgents().map(a => [a.id, a.parentIds[0]]))
+  return (agentId: string) => {
+    let id = agentId
+    for (let i = 0; i < 100 && parents.get(id); i++) id = parents.get(id)!
+    return id
+  }
 }

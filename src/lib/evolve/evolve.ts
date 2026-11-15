@@ -1,6 +1,9 @@
-// generational search over constitutions. every generation runs every candidate on the same 2 seeds,
-// keeps the top 2 plus the protected long now charter, and refills the population with mutations and
-// crossovers. deaths feed lessons back into data/lessons.json. evolution runs until a world achieves the goal.
+// generational search over constitutions, evaluated in two stages:
+//   screening: every candidate runs the same 2 seeds for 50 years (tick 600); its score is the average.
+//   finals: the top 2 by screening also get one full 100-year run (tick 1200). the champion, the hall of
+//   history and the showcase come from those full runs.
+// breeding keeps the top 2 plus the protected long now charter and refills the population with mutations and
+// crossovers. deaths in either stage feed lessons into data/lessons.json. runs until a world achieves the goal.
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Frame, Lesson, RunRecord, RunSummary } from '../types'
@@ -16,10 +19,12 @@ import { lessonsForPrompt, matchesKnownLesson, mergeLessons, readLearning, readL
 import { notifyGeneration, notifyGoal, notifyHallBatch, notifyWorldDied, send } from '../notify/telegram'
 import { LlmDownError, llmGate, ollamaUp } from './ollama'
 import { considerShowcase, isRealLlmRun, llmShare } from './showcase'
-import { clearNow, writeNow } from './now'
+import { clearNow, heartbeatNow, writeNow } from './now'
+import { readAgents } from './agents'
+import { paceStats } from './usage'
 import { isTransient, realClock, runQueue, type Clock } from './queue'
 import { trackWorld } from './usage'
-import { recordAgentRun, registerPopulation, settleGeneration } from './agents'
+import { lineageRoots, recordAgentRun, registerPopulation, settleGeneration } from './agents'
 import { checkHall } from './hall'
 import { sendDigest, sendGoalReport } from '../notify/email'
 
@@ -35,6 +40,8 @@ export type EvolveOptions = {
   clock?: Clock
   // is the llm server reachable (default: ollama)
   llmUp?: () => Promise<boolean>
+  // tail of this file goes into the stall warning (scripts/evolve.ts passes data/evolve.log)
+  logFile?: string
 }
 
 // shared with telegram commands
@@ -46,6 +53,8 @@ export const control = {
   worldsTotal: 0,
   worldsInterrupted: 0,
   concurrency: 1,
+  // when the last world finished (or evolve started), for the stall warning
+  lastWorldAt: 0,
   // the last 5 finished worlds, newest first, for mission control
   recent: [] as RunSummary[],
   stopRequested: false,
@@ -55,7 +64,12 @@ export const control = {
 const genFile = (n: number) => path.join(dirs.generations, `gen-${n}.json`)
 // each generation gets its own pair of seeds, shared by every candidate in it
 const seedsFor = (n: number) => [1000 + n * 2, 1001 + n * 2]
-const runIdFor = (g: GenerationFile, c: Candidate, seed: number) => `g${g.generation}-${c.id}-s${seed}`
+export type Stage = 'screen' | 'full'
+export const SCREEN_TICKS = 600
+export const FULL_TICKS = 1200
+const FINALISTS = 2
+const runIdFor = (g: GenerationFile, c: Candidate, seed: number, stage: Stage = 'screen') => `g${g.generation}-${c.id}${stage === 'full' ? '-full' : ''}-s${seed}`
+export const isFullRun = (runId: string) => /-full-s\d+$/.test(runId)
 
 function mulberry32(a: number) {
   return () => {
@@ -145,7 +159,9 @@ function crashedSummary(runId: string, gen: number, agentId: string, constitutio
 }
 
 type RunWorld = typeof runWorld
-type Deps = { run: RunWorld; extract: typeof extractLessons; log: (l: string) => void; llmUp: () => Promise<boolean> }
+// screening stops at tick 600 via B's untilTick (the world's status stays 'alive'); full runs go to the 1200 horizon
+type RunWorldOpts = Parameters<RunWorld>[0]
+type Deps = { run: RunWorld; extract: typeof extractLessons; log: (l: string) => void; llmUp: () => Promise<boolean>; gate: () => Promise<void> }
 let warnedFallback = false
 
 // per-death learning: lessons from the run (B extracts them on death), merged into data/lessons.json
@@ -166,21 +182,23 @@ async function learnFromDeath(g: GenerationFile, record: RunRecord, deps: Deps):
   return { added, repeat }
 }
 
-async function runOne(g: GenerationFile, c: Candidate, seed: number, deps: Deps): Promise<{ summary: RunSummary; record: RunRecord }> {
-  const runId = runIdFor(g, c, seed)
+async function runOne(g: GenerationFile, c: Candidate, seed: number, stage: Stage, deps: Deps): Promise<{ summary: RunSummary; record: RunRecord }> {
+  const runId = runIdFor(g, c, seed, stage)
   const frames: Frame[] = []
   let summary: RunSummary
   let record: RunRecord
   try {
     let rec: RunRecord | null = null
     summary = await trackWorld(runId, g.generation, async () => {
-      const s = await deps.run({
+      const opts: RunWorldOpts = {
         runId, generation: g.generation, seed, constitution: c.constitution, frameEvery: 12, agentId: c.id,
+        ...(stage === 'screen' ? { untilTick: SCREEN_TICKS } : {}),
         onFrame: f => {
           if (f.tick % 12 === 0 || f.status !== 'alive') frames.push(f)
           publishNow(g, { runId, agentId: c.id }, f)
         },
-      })
+      }
+      const s = await deps.run(opts)
       rec = recordFor(runId, seed, g.generation, c.constitution, frames, s)
       // the governor falls back to offline decisions when the llm fails. if that happened because ollama went
       // down mid-world, the world is not a real run: interrupt it and run it again once ollama is back
@@ -205,21 +223,22 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, deps: Deps)
     writeJson(path.join(dirs.runs, `${runId}.json`), record)
   }
   indexRun(summary, seed)
-  recordAgentRun(summary)
+  recordAgentRun(summary, stage)
   const learning = readLearning()
   learning.worldsRun++
   writeLearning(learning)
   control.worldsDone++
   control.recent = [summary, ...control.recent.filter(r => r.runId !== summary.runId)].slice(0, 5)
-  deps.log(`gen ${g.generation} #${learning.worldsRun} ${runId.padEnd(30)} ${summary.status.padEnd(13)} ${summary.endDate}  score ${summary.score}  frontier ${summary.frontier}${summary.causeOfDeath ? `  (${summary.causeOfDeath})` : ''}`)
+  control.lastWorldAt = Date.now()
+  deps.log(`gen ${g.generation} #${learning.worldsRun} ${stage === 'full' ? 'full  ' : 'screen'} ${runId.padEnd(34)} ${summary.status.padEnd(13)} ${summary.endDate}  score ${summary.score}  frontier ${summary.frontier}${summary.causeOfDeath ? `  (${summary.causeOfDeath})` : ''}`)
 
   // a runner crash is a bug, not a death worth a lesson or a telegram
   if (summary.status === 'destroyed' && !summary.causeOfDeath?.startsWith('runner error')) {
     const { added, repeat } = await learnFromDeath(g, record, deps)
     await notifyWorldDied(summary, record, { generation: g.generation, worldNo: learning.worldsRun, agentName: c.name, added, repeat })
   }
-  // hall of history: firsts, records, catastrophes, milestones. sent as one telegram per generation
-  if (!summary.causeOfDeath?.startsWith('runner error')) {
+  // hall of history and showcase come from full 100-year runs only. hall is sent as one telegram per generation
+  if (stage === 'full' && !summary.causeOfDeath?.startsWith('runner error')) {
     const entries = checkHall(record, c.name)
     if (entries.length) {
       g.stats = g.stats ?? { deaths: 0, repeatDeaths: 0, newLessons: [] }
@@ -240,24 +259,30 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, deps: Deps)
 // v2 scores are fractions, so keep 4 significant decimals instead of rounding them away
 const round4 = (x: number) => Math.round(x * 1e4) / 1e4
 // mission control snapshot (data/evolve-now.json), throttled to every 2s unless forced
+function pendingWorlds(g: GenerationFile): { runId: string; agentId: string; seed: number }[] {
+  const done = new Set(g.population.flatMap(c => [...(c.runs ?? []), ...(c.full ? [c.full] : [])].map(r => r.runId)))
+  const screen = g.population.flatMap(c => g.seeds.map(s => ({ runId: runIdFor(g, c, s), agentId: c.id, seed: s })))
+  const finals = (g.finalists ?? []).map(id => ({ runId: runIdFor(g, { id } as Candidate, g.seeds[0], 'full'), agentId: id, seed: g.seeds[0] }))
+  return [...screen, ...finals].filter(q => !done.has(q.runId))
+}
 function publishNow(g: GenerationFile, current: { runId: string; agentId: string } | null, frame: Frame | null, force = false) {
-  const finished = new Set(g.population.flatMap(c => (c.runs ?? []).map(r => r.runId)))
   writeNow({
     generation: g.generation, agentId: current?.agentId ?? null, runId: current?.runId ?? null,
     worldIndex: Math.min(control.worldsDone + 1, control.worldsTotal), worldsInGen: control.worldsTotal,
     latestFrame: frame,
-    queue: g.population.flatMap(c => g.seeds.map(s => ({ runId: runIdFor(g, c, s), agentId: c.id, seed: s }))).filter(q => !finished.has(q.runId) && q.runId !== current?.runId),
+    queue: pendingWorlds(g).filter(q => q.runId !== current?.runId),
     recent: control.recent, newLessons: g.stats?.newLessons ?? [], concurrency: control.concurrency,
   }, force)
 }
 
 const hhmm = (t: number) => new Date(t).toTimeString().slice(0, 5)
+const bestRunOf = (c: Candidate) => c.full ?? [...(c.runs ?? [])].sort((a, b) => b.score - a.score)[0]
 
 function updateLeaderboard(g: GenerationFile): LeaderboardEntry[] {
   const all = [...readLeaderboard()]
   for (const c of g.population) {
-    if (c.score === undefined || !c.runs?.length) continue
-    const best = [...c.runs].sort((a, b) => b.score - a.score)[0]
+    const best = bestRunOf(c)
+    if (c.score === undefined || !best) continue
     all.push({ candidateId: c.id, name: c.name, generation: g.generation, score: c.score, constitution: c.constitution, origin: c.origin, best })
   }
   // one entry per distinct constitution text, keeping its best score
@@ -271,26 +296,30 @@ function updateLeaderboard(g: GenerationFile): LeaderboardEntry[] {
   return top
 }
 
-async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps, clock: Clock) {
+// the champion is the active agent with the best full 100-year world ever run
+function championFromFullRuns(activeIds: string[]): string | undefined {
+  const active = new Set(activeIds)
+  const full = readRunIndex().filter(r => isFullRun(r.runId)).sort((a, b) => b.score - a.score)
+  return (full.find(r => active.has(r.agentId)) ?? full[0])?.agentId
+}
+
+// one stage of a generation through the queue: llm gate, retries, progress, mission control
+async function runStage(g: GenerationFile, stage: Stage, tasks: { c: Candidate; s: number }[], concurrency: number, deps: Deps, clock: Clock, records: Map<string, RunRecord>) {
   const { log } = deps
   const file = genFile(g.generation)
-  writeJson(file, g)
-  const records = new Map<string, RunRecord>()
-  const tasks = g.population.flatMap(c => g.seeds.filter(s => !c.runs?.some(r => r.runId === runIdFor(g, c, s))).map(s => ({ c, s })))
-  control.generation = g.generation
-  control.worldsTotal = g.population.length * g.seeds.length
-  control.worldsDone = control.worldsTotal - tasks.length
-
   await runQueue(tasks, {
     concurrency,
     clock,
     shouldStop: () => control.stopRequested,
     isPaused: () => control.paused,
     run: async ({ c, s }) => {
-      const { summary, record } = await runOne(g, c, s, deps)
+      const { summary, record } = await runOne(g, c, s, stage, deps)
       records.set(summary.runId, record)
-      c.runs = [...(c.runs ?? []), summary].sort((a, b) => a.runId.localeCompare(b.runId))
-      if (c.runs.length === g.seeds.length) c.score = round4(c.runs.reduce((a, r) => a + r.score, 0) / c.runs.length)
+      if (stage === 'full') c.full = summary
+      else {
+        c.runs = [...(c.runs ?? []), summary].sort((a, b) => a.runId.localeCompare(b.runId))
+        if (c.runs.length === g.seeds.length) c.score = round4(c.runs.reduce((a, r) => a + r.score, 0) / c.runs.length)
+      }
       writeJson(file, g)
       publishNow(g, null, record.frames[record.frames.length - 1] ?? null, true)
     },
@@ -298,10 +327,34 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
       control.worldsInterrupted++
       c.interrupted = (c.interrupted ?? 0) + 1
       writeJson(file, g)
-      log(`gen ${g.generation} ${runIdFor(g, c, s).padEnd(30)} interrupted (${(err as Error).message}), attempt ${attempt}, retry at ${hhmm(retryAt)}`)
+      log(`gen ${g.generation} ${runIdFor(g, c, s, stage).padEnd(34)} interrupted (${(err as Error).message}), attempt ${attempt}, retry at ${hhmm(retryAt)}`)
     },
-    beforeEach: llmGate({ up: deps.llmUp, clock, notify: send, log }),
+    beforeEach: deps.gate,
   })
+}
+
+async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps, clock: Clock) {
+  const { log } = deps
+  const file = genFile(g.generation)
+  writeJson(file, g)
+  const records = new Map<string, RunRecord>()
+  control.generation = g.generation
+  control.worldsTotal = g.population.length * g.seeds.length + Math.min(FINALISTS, g.population.length)
+  control.worldsDone = control.worldsTotal - pendingWorlds(g).length - (g.finalists ? 0 : Math.min(FINALISTS, g.population.length))
+
+  // stage 1: screening, everyone on the same 2 seeds for 50 years
+  const screen = g.population.flatMap(c => g.seeds.filter(s => !c.runs?.some(r => r.runId === runIdFor(g, c, s))).map(s => ({ c, s })))
+  await runStage(g, 'screen', screen, concurrency, deps, clock, records)
+  if (control.stopRequested) return
+
+  // stage 2: the top 2 by screening average get a full 100-year run on the first seed
+  if (!g.finalists) {
+    g.finalists = [...g.population].sort((a, b) => (b.score ?? -1e9) - (a.score ?? -1e9)).slice(0, FINALISTS).map(c => c.id)
+    writeJson(file, g)
+    log(`gen ${g.generation} finals: ${g.finalists.map(id => g.population.find(c => c.id === id)?.name).join(' and ')} get a full 100-year run`)
+  }
+  const finals = g.finalists.map(id => g.population.find(c => c.id === id)!).filter(c => c && !c.full).map(c => ({ c, s: g.seeds[0] }))
+  await runStage(g, 'full', finals, concurrency, deps, clock, records)
   if (control.stopRequested) return
 
   g.status = 'done'
@@ -311,8 +364,9 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
 
   const ranked = [...g.population].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
   const best = ranked[0]
-  const allRuns = g.population.flatMap(c => c.runs ?? [])
-  const bestRun = [...allRuns].sort((a, b) => b.score - a.score)[0]
+  const allRuns = g.population.flatMap(c => [...(c.runs ?? []), ...(c.full ? [c.full] : [])])
+  const fullRuns = g.population.flatMap(c => (c.full ? [c.full] : []))
+  const bestRun = [...(fullRuns.length ? fullRuns : allRuns)].sort((a, b) => b.score - a.score)[0]
   const stats = g.stats ?? { deaths: 0, repeatDeaths: 0, newLessons: [] }
   const lessonsKnown = readLessons().length
   const repeatRate = stats.deaths ? stats.repeatDeaths / stats.deaths : 0
@@ -320,24 +374,83 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
 
   const bestRecord = (bestRun && (records.get(bestRun.runId) ?? readJson<RunRecord>(path.join(dirs.runs, `${bestRun.runId}.json`)))) || null
 
-  const champion = settleGeneration(g.population.map(c => c.id))
+  const champion = settleGeneration(g.population.map(c => c.id), championFromFullRuns(g.population.map(c => c.id)))
   const learning = readLearning()
+  const at = new Date().toISOString()
   learning.rows = learning.rows.filter(r => r.generation !== g.generation)
   learning.rows.push({
     generation: g.generation, bestScore: bestRun?.score ?? 0, lessonsKnown, repeatMistakeRate: Math.round(repeatRate * 1000) / 1000,
-    worlds: allRuns.length, deaths: stats.deaths, repeatDeaths: stats.repeatDeaths, goalAchieved: goals, champion: champion?.name ?? best?.name, at: new Date().toISOString(),
+    worlds: allRuns.length, deaths: stats.deaths, repeatDeaths: stats.repeatDeaths, goalAchieved: goals, champion: champion?.name ?? best?.name, at,
   })
+  // one row per lineage too (lineage = the seed agent it descends from), scored on the comparable 50-year screening
+  const roots = lineageRoots()
+  const byLineage = new Map<string, RunSummary[]>()
+  for (const c of g.population) for (const r of c.runs ?? []) byLineage.set(roots(c.id), [...(byLineage.get(roots(c.id)) ?? []), r])
+  for (const [lineage, runs] of byLineage) {
+    learning.rows.push({
+      generation: g.generation, lineage, bestScore: Math.max(...runs.map(r => r.score)), lessonsKnown, repeatMistakeRate: Math.round(repeatRate * 1000) / 1000,
+      worlds: runs.length, deaths: runs.filter(r => r.status === 'destroyed').length, repeatDeaths: 0, goalAchieved: runs.filter(isWin).length, at,
+    })
+  }
   writeLearning(learning)
 
-  const line = `gen ${g.generation} done: champion ${champion?.name ?? best.name} | best this gen ${best.name} avg ${best.score} (top world ${round4(bestRun?.score ?? 0)}) | lessons known ${lessonsKnown} | repeat-mistake rate ${Math.round(repeatRate * 100)}% (${stats.repeatDeaths}/${stats.deaths} deaths)${goals ? ` | ${goals} goal achieved` : ''}`
+  const line = `gen ${g.generation} done: champion ${champion?.name ?? best.name} | best screening ${best.name} avg ${best.score} | best 100-year world ${round4(bestRun?.score ?? 0)} | lessons known ${lessonsKnown} | repeat-mistake rate ${Math.round(repeatRate * 100)}% (${stats.repeatDeaths}/${stats.deaths} deaths)${goals ? ` | ${goals} goal achieved` : ''}`
   log(line)
   if (g.stats?.newHall?.length) await notifyHallBatch(g.generation, g.stats.newHall)
   await notifyGeneration(line)
-  await sendDigest({ generation: g, leaderboard, bestRecord, allRuns, learning: learning.rows, lessonsKnown })
+  await sendDigest({ generation: g, leaderboard, bestRecord, allRuns, learning: learning.rows.filter(r => !r.lineage), lessonsKnown })
+}
+
+// background chores while evolve runs: lastHeartbeat every minute, a telegram heartbeat every hour, a warning
+// when no world has finished for 90 minutes, and one "evolution restarted" message once the first world is done
+const MIN = 60_000
+function startWatchdogs(log: (l: string) => void, logFile?: string) {
+  const startedAt = Date.now()
+  control.lastWorldAt = startedAt
+  let stallWarned = 0
+  let lastHourly = startedAt
+  let restartSent = false
+  const tick = async () => {
+    try {
+      heartbeatNow()
+      const now = Date.now()
+      if (!restartSent && control.lastWorldAt > startedAt) {
+        restartSent = true
+        const mins = (control.lastWorldAt - startedAt) / MIN
+        const perDay = Math.floor((1440 / Math.max(mins, 0.1)) * Math.max(1, control.concurrency))
+        await send(`evolution restarted · gen ${control.generation} · first world took ${mins.toFixed(1)} min · est. ${perDay} worlds per day`)
+      }
+      if (now - lastHourly >= 60 * MIN) {
+        lastHourly = now
+        const pace = paceStats(control.concurrency)
+        const agents = readAgents()
+        await send(`alive · gen ${control.generation} · world ${Math.min(control.worldsDone + 1, control.worldsTotal)}/${control.worldsTotal} · ${pace ? `${pace.avgMinutesPerWorld} min per world` : 'no world finished yet'} · ${agents.reduce((n, a) => n + a.deaths, 0)} deaths so far · best score ${Math.max(0, ...agents.map(a => a.bestScore))}`)
+      }
+      // a stall: nothing finished for 90 min (one warning per stall; a finished world resets it)
+      if (!control.paused && now - control.lastWorldAt >= 90 * MIN && stallWarned !== control.lastWorldAt) {
+        stallWarned = control.lastWorldAt
+        let tail = ''
+        try { if (logFile) tail = fs.readFileSync(logFile, 'utf8').trimEnd().split('\n').slice(-12).join('\n') } catch {}
+        const msg = `warning: no world has finished for ${Math.round((now - control.lastWorldAt) / MIN)} min (gen ${control.generation}, world ${Math.min(control.worldsDone + 1, control.worldsTotal)}/${control.worldsTotal}).${tail ? `\nlast log lines:\n${tail}` : ''}`
+        log(msg.split('\n')[0])
+        await send(msg)
+      }
+    } catch { /* watchdogs never take evolution down */ }
+  }
+  const timer = setInterval(() => { void tick() }, MIN)
+  timer.unref()
+  return () => clearInterval(timer)
 }
 
 export async function evolve(opts: EvolveOptions) {
-  const deps: Deps = { run: opts.runWorld ?? runWorld, extract: opts.extractLessons ?? extractLessons, log: opts.log ?? console.log, llmUp: opts.llmUp ?? ollamaUp }
+  const log = opts.log ?? console.log
+  const llmUp = opts.llmUp ?? ollamaUp
+  const clock = opts.clock ?? realClock
+  const deps: Deps = {
+    run: opts.runWorld ?? runWorld, extract: opts.extractLessons ?? extractLessons, log, llmUp,
+    gate: llmGate({ up: llmUp, clock, notify: send, log }),
+  }
+  const stopWatchdogs = startWatchdogs(log, opts.logFile)
   control.concurrency = opts.concurrency
   const popSize = Math.max(3, opts.popSize ?? SEEDS.length)
   const gens = opts.gens ?? Infinity
@@ -356,7 +469,7 @@ export async function evolve(opts: EvolveOptions) {
       registerPopulation(current.population, current.generation)
       settleGeneration(current.population.map(c => c.id))
       deps.log(`gen ${current.generation} start: ${current.population.length} constitutions x seeds ${current.seeds.join(', ')}`)
-      await runGeneration(current, opts.concurrency, deps, opts.clock ?? realClock)
+      await runGeneration(current, opts.concurrency, deps, clock)
       // the mission is done: finish this generation, then stop
       if (control.goalReached) { deps.log('goal achieved, evolution stops'); break }
       if (control.stopRequested || done === gens - 1) break
@@ -365,6 +478,7 @@ export async function evolve(opts: EvolveOptions) {
     }
   } finally {
     control.running = false
+    stopWatchdogs()
     clearNow()
   }
 }

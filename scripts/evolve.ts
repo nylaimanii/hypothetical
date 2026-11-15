@@ -19,7 +19,7 @@ async function main() {
     control.stopRequested = true
   })
   try {
-    await evolve({ gens, concurrency, popSize })
+    await evolve({ gens, concurrency, popSize, logFile: 'data/evolve.log' })
   } finally {
     stopCommands()
   }

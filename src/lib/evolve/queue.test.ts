@@ -93,8 +93,10 @@ test('evolve: interrupted worlds are retried, never scored or reported as deaths
   const { readDay } = await import('./usage')
   const { placeholderSummary } = await import('./store')
   let calls = 0
-  const fake = async (o: RunOptions): Promise<RunSummary> => {
+  const horizons: number[] = []
+  const fake = async (o: RunOptions & { untilTick?: number }): Promise<RunSummary> => {
     if (++calls <= 2) throw rateLimit()
+    horizons.push(o.untilTick ?? 1200)
     return placeholderSummary({
       runId: o.runId, generation: o.generation, status: 'complete', endDate: '2126-11', ticks: 1200, score: 50,
       constitution: o.constitution, peakPopulation: 8e9, moonStage: 'orbital',
@@ -106,18 +108,24 @@ test('evolve: interrupted worlds are retried, never scored or reported as deaths
   const gen = JSON.parse(fs.readFileSync(path.join(dir, 'data/generations/gen-1.json'), 'utf8'))
   assert.equal(gen.status, 'done')
   assert.equal(gen.population.length, 7, 'six philosophies plus the long now charter')
-  assert.equal(calls, 14 + 2, '14 worlds plus 2 retries')
+  assert.equal(calls, 14 + 2 + 2, '14 screening worlds, 2 full finals, plus 2 retries')
+  // two-stage evaluation: 50-year screening for everyone, a 100-year final for the top 2
+  assert.equal(horizons.filter(h => h === 600).length, 14)
+  assert.equal(horizons.filter(h => h === 1200).length, 2)
+  assert.equal(gen.finalists.length, 2)
   for (const c of gen.population) {
     assert.equal(c.runs.length, 2)
     assert.equal(c.score, 50)
     assert.ok(c.runs.every((r: RunSummary) => r.status === 'complete'))
+    assert.equal(!!c.full, gen.finalists.includes(c.id), `${c.id} has a full run only if it is a finalist`)
+    if (c.full) assert.ok(c.full.runId.endsWith(`-full-s${gen.seeds[0]}`))
   }
   assert.equal(gen.population.reduce((a: number, c: { interrupted?: number }) => a + (c.interrupted ?? 0), 0), 2)
   assert.equal(control.worldsInterrupted, 2)
   assert.equal(lines.filter(l => l.includes('interrupted')).length, 2)
   const day = readDay()
   assert.equal(day.worldsInterrupted, 2)
-  assert.equal(day.worldsFinished, 14)
+  assert.equal(day.worldsFinished, 16)
   assert.ok(fs.existsSync(path.join(dir, 'data/leaderboard.json')))
   // mission control file exists only while evolve runs
   assert.ok(!fs.existsSync(path.join(dir, 'data/evolve-now.json')), 'evolve-now is removed when evolve exits')
@@ -141,8 +149,8 @@ test('evolve-now: written during a world with the live frame, queue and stats; 4
   assert.equal(now.runId, 'g1-long-now-s1002')
   assert.equal(now.agentId, 'long-now')
   assert.equal(now.worldIndex, 1)
-  assert.equal(now.worldsInGen, 14)
-  assert.equal(now.queue.length, 13)
+  assert.equal(now.worldsInGen, 16)
+  assert.equal(now.queue.length, 13, 'the other 13 screening worlds (finalists are not picked yet)')
   assert.equal(now.latestFrame?.tick, 13)
   assert.ok('worldsLost' in now.stats && 'estWorldsByMorning' in now.stats)
   assert.equal(readNow(), null, 'no evolution running after it exits')
@@ -172,9 +180,13 @@ test('evolve: deaths write lessons, repeats are counted, the charter survives br
   assert.equal(lessons.length, 1, 'same rule is merged, not duplicated')
   assert.ok(lessons[0].timesRelevant > 1)
   const learning = JSON.parse(fs.readFileSync(path.join(dir, 'data/learning.json'), 'utf8'))
-  assert.equal(learning.rows.length, 2)
-  assert.ok(learning.rows[0].deaths > 0)
-  assert.ok(learning.rows[0].repeatMistakeRate > 0, 'second starvation repeats the first lesson')
+  // one whole-generation row per generation, plus one row per lineage (seed agent id) per generation
+  const overall = learning.rows.filter((r: { lineage?: string }) => !r.lineage)
+  assert.equal(overall.length, 2)
+  const lineages = new Set(learning.rows.filter((r: { lineage?: string }) => r.lineage).map((r: { lineage: string }) => r.lineage))
+  assert.ok([...lineages].every(l => ['long-now', 'meridian', 'atlas', 'solace', 'halcyon', 'vesper', 'kestrel'].includes(l as string)), 'lineage is a seed agent id')
+  assert.ok(overall[0].deaths > 0)
+  assert.ok(overall[0].repeatMistakeRate > 0, 'second starvation repeats the first lesson')
   const gen2 = JSON.parse(fs.readFileSync(path.join(dir, 'data/generations/gen-2.json'), 'utf8'))
   const charter = gen2.population.find((c: { id: string }) => c.id === 'long-now')
   assert.ok(charter, 'long now competes every generation')
@@ -189,7 +201,11 @@ test('evolve: deaths write lessons, repeats are counted, the charter survives br
   assert.ok(agents.length > 7)
   assert.equal(agents.filter((a: { champion: boolean }) => a.champion).length, 1)
   const longNow = agents.find((a: { id: string }) => a.id === 'long-now')
-  assert.ok(longNow.protected && !longNow.retired && longNow.worlds === 4)
+  assert.ok(longNow.protected && !longNow.retired && longNow.worlds >= 4)
+  // the champion is the agent of the best full 100-year world
+  const index = JSON.parse(fs.readFileSync(path.join(dir, 'data/runs/index.json'), 'utf8'))
+  const bestFull = index.filter((r: RunSummary) => /-full-s\d+$/.test(r.runId)).sort((a: RunSummary, b: RunSummary) => b.score - a.score)[0]
+  assert.equal(agents.find((a: { champion: boolean }) => a.champion).id, bestFull.agentId)
   const inGen2 = new Set(gen2.population.map((c: { id: string }) => c.id))
   for (const a of agents) assert.equal(a.retired, !a.protected && !inGen2.has(a.id), `${a.id} retired flag`)
   assert.ok(agents.every((a: { emblemSeed: number }) => Number.isInteger(a.emblemSeed)))
@@ -197,6 +213,7 @@ test('evolve: deaths write lessons, repeats are counted, the charter survives br
   const hall = JSON.parse(fs.readFileSync(path.join(dir, 'data/hall.json'), 'utf8'))
   const horizon = hall.entries.find((e: { title: string }) => e.title === 'first world to reach 2126')
   assert.ok(horizon, 'milestone recorded once')
+  assert.ok(hall.entries.every((e: { runId: string }) => /-full-s\d+$/.test(e.runId)), 'hall entries come from full runs only')
   assert.equal(hall.entries.filter((e: { title: string }) => e.title === 'first world to reach 2126').length, 1)
   assert.ok(!fs.existsSync(path.join(dir, `data/showcase/${horizon.runId}.json.gz`)), 'hall worlds from offline runs stay out of the showcase')
 }))

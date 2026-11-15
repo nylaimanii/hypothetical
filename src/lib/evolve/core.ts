@@ -4,5 +4,5 @@ export { runWorld } from '../sim/run'
 export { askCore } from '../agent/ask'
 export { extractLessons } from '../agent/lessons'
 export { findDivergences } from '../sim/compare'
-export { assertLlmReady, chat, llmEnabled, provider } from '../agent/llm'
+export { acquireOllamaLock, assertLlmReady, chat, llmEnabled, provider } from '../agent/llm'
 export const CORE_REAL = true

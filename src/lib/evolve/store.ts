@@ -42,6 +42,8 @@ export type Candidate = {
   interrupted?: number
   // the long now charter: always competes with its original text, never mutated in place
   protected?: boolean
+  // its full 100-year run, when it was a finalist
+  full?: RunSummary
 }
 export type GenerationFile = {
   generation: number
@@ -50,6 +52,8 @@ export type GenerationFile = {
   startedAt: string
   finishedAt?: string
   population: Candidate[]
+  // the top 2 by screening, who get a full 100-year run
+  finalists?: string[]
   // learning this generation: deaths, deaths that repeated a known lesson, lessons added
   stats?: { deaths: number; repeatDeaths: number; newLessons: Lesson[]; newHall?: HallEntry[] }
 }

@@ -9,6 +9,8 @@ const learningFile = () => path.join(process.cwd(), 'data', 'learning.json')
 
 export type LearningRow = {
   generation: number
+  // the seed agent this row's worlds descend from; absent on the whole-generation row
+  lineage?: string
   bestScore: number
   lessonsKnown: number
   // deaths whose cause matches a lesson that already existed when the world died

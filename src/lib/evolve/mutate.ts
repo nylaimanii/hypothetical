@@ -2,7 +2,7 @@
 import type { Lesson, RunSummary } from '../types'
 import type { Candidate } from './store'
 import { wordCount } from './seeds'
-import { chat as llmChat, llmEnabled } from './core'
+import { acquireOllamaLock, chat as llmChat, llmEnabled } from './core'
 
 const SECTIONS = ['Values', 'Religion', 'School', 'Migration', 'Priorities']
 
@@ -22,11 +22,15 @@ function trimWords(text: string, max = 250) {
 // returns null when no llm is configured or the call fails; the caller then uses the offline mutation
 async function chat(prompt: string): Promise<string | null> {
   if (!llmEnabled()) return null
+  // B's lockfile: never use ollama while another job holds it
+  const release = await acquireOllamaLock('evolve mutation')
   try {
     return await llmChat({ system: 'You revise constitutions for a simulated world government. Reply with JSON only.', user: prompt, json: true, temperature: 0.8, maxTokens: 4096 })
   } catch (e) {
     console.log(`[evolve] mutation llm error: ${(e as Error).message}`)
     return null
+  } finally {
+    release()
   }
 }
 
