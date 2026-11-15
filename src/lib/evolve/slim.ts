@@ -6,19 +6,37 @@ import { epitaphOf } from '../notify/epitaph'
 
 // v3 look-and-feel at yearly resolution, so tab thumbnails and graphs work without full frames. each field is
 // only present when the sim filled it (hide empty instead of sending blanks)
+// plus each region's story and stat trends for the year (cause chains). no citizens and no cause links here:
+// those load lazily (frames endpoint, per pip); story.chainIds point into the frame's causes
+type FrameRegion = Frame['regions'][number]
 export type YearVisuals = {
-  regions?: { id: string; visual?: Frame['regions'][number]['visual']; emotionMix?: Frame['regions'][number]['emotionMix'] }[]
+  regions?: { id: string; visual?: FrameRegion['visual']; emotionMix?: FrameRegion['emotionMix']; story?: FrameRegion['story']; trends?: FrameRegion['trends'] }[]
   flows?: Frame['flows']; space?: Frame['space']; atmosphere?: Frame['atmosphere']
 }
 export type SlimYearRow = YearRow & YearVisuals
 
+// lean numbers: fractions to 3 decimals (big counts like population stay whole)
+function round(x: unknown): unknown {
+  if (typeof x === 'number') return Number.isInteger(x) || Math.abs(x) >= 1000 ? x : Math.round(x * 1000) / 1000
+  if (Array.isArray(x)) return x.map(round)
+  if (x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, round(v)]))
+  return x
+}
+// a stable trend says little each year: keep its stat and direction, drop the change and the sentence
+type Trends = NonNullable<FrameRegion['trends']>
+const leanTrends = (ts: Trends): Trends => ts.map(t => (t.direction === 'stable' ? { stat: t.stat, direction: t.direction } as Trends[number] : t))
+
 function visualsOf(f: Frame): YearVisuals {
   const out: YearVisuals = {}
-  const regions = f.regions.filter(r => r.visual || r.emotionMix).map(r => ({ id: r.id, ...(r.visual ? { visual: r.visual } : {}), ...(r.emotionMix ? { emotionMix: r.emotionMix } : {}) }))
+  const regions = f.regions.filter(r => r.visual || r.emotionMix || r.story || r.trends?.length).map(r => ({
+    id: r.id,
+    ...(r.visual ? { visual: round(r.visual) as FrameRegion['visual'] } : {}), ...(r.emotionMix ? { emotionMix: round(r.emotionMix) as FrameRegion['emotionMix'] } : {}),
+    ...(r.story ? { story: r.story } : {}), ...(r.trends?.length ? { trends: round(leanTrends(r.trends)) as Trends } : {}),
+  }))
   if (regions.length) out.regions = regions
-  if (f.flows?.length) out.flows = f.flows
+  if (f.flows?.length) out.flows = round(f.flows) as Frame['flows']
   if (f.space?.length) out.space = f.space
-  if (f.atmosphere) out.atmosphere = f.atmosphere
+  if (f.atmosphere) out.atmosphere = round(f.atmosphere) as Frame['atmosphere']
   return out
 }
 
@@ -41,12 +59,16 @@ export function yearRows(frames: Frame[]): SlimYearRow[] {
   }))
 }
 
-export function decisionRows(frames: Frame[]): DecisionRow[] {
+// decision rows plus the core's reasoning (what it saw, chose, expected, and what happened), when the sim gives it
+export type SlimDecisionRow = DecisionRow & { reasoning?: NonNullable<Frame['decision']>['reasoning'] }
+
+export function decisionRows(frames: Frame[]): SlimDecisionRow[] {
   return frames.filter(f => f.decision).sort((a, b) => a.tick - b.tick).map(f => {
     const d = f.decision!
     return {
       tick: d.tick, date: f.date, religionPolicy: d.religionPolicy, schoolPurpose: d.schoolPolicy.purpose, budget: d.budget,
       lawsEnacted: d.laws.map(l => l.title), citiesFounded: (d.foundCities ?? []).map(c => c.name),
+      ...(d.reasoning ? { reasoning: d.reasoning } : {}),
     }
   })
 }
