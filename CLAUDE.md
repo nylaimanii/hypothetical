@@ -40,6 +40,13 @@ one ai runs a single world government starting 2026-11. physics, biology, econom
 - dead worlds look dead, matching damage.kind, with an epitaph card
 - words on everything: overlays carry legends in words, the explain layer labels notable things in view
 
+## v4 rules
+
+- the sim runs at country level (~190 real countries). regions are only a summary for the governor's brief
+- cities are real (natural earth / geonames), with real populations at tick 0
+- borders come from natural earth admin-0 and admin-1 (public domain, https://www.naturalearthdata.com)
+- every pip lives a day: dayPlan on the timeline clock, at a real workplace, in a real city
+
 ## ownership
 
 - A: scaffold, CLAUDE.md, src/lib/types.ts, src/lib/mock/**, src/app/** (except src/app/api/**), src/components/**

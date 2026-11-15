@@ -29,7 +29,11 @@ export type Precedent = { id: string; event: string; year: number; country: stri
 export type Faction = { id: string; name: string; kind: 'old_energy'|'religious'|'military'|'regional_nationalist'|'labor'|'business'|'science'; regionIds: string[]; power: number; hostility: number; wants: string }
 export type HumanCost = { deaths: number; famineDeaths: number; unrestDeaths: number; displaced: number; approval: number }
 export type Requirement = { id: string; name: string; track: 'mars'|'outer_planets'|'longevity'|'population'|'infrastructure'; progress: number; unlockedTick?: number; prereqs: string[]; realWorld2026: string; url?: string; tier: 'proven'|'emerging'|'speculative'; costUsd?: number }
-export type City = { id: string; name: string; regionId: string; lat: number; lon: number; foundedTick: number; population: number; reason: string; offWorld?: 'moon'|'mars' }
+export type City = {
+  id: string; name: string; regionId: string; lat: number; lon: number; foundedTick: number; population: number; reason: string; offWorld?: 'moon'|'mars'
+  // v4: real cities (natural earth / geonames) carry real tick 0 populations. optional until the sim fills them
+  countryId?: string; adminId?: string; real?: boolean; stats?: PlaceStats
+}
 export type Company = { id: string; name: string; sector: 'energy'|'food'|'transit'|'medicine'|'longevity'|'launch'|'materials'|'housing'|'computing'; regionId: string; foundedTick: number; workers: number; purpose: string }
 export type Frontier = 'none'|'moon_landing'|'moon_base'|'mars_crewed'|'mars_settlement'|'mars_self_sustaining'|'asteroid_mining'|'outer_system'
 export type Lesson = { id: string; fromRunId: string; generation: number; mistake: string; consequence: string; rule: string; timesRelevant: number }
@@ -51,6 +55,8 @@ export type Citizen = {
   heightCm: number; build: 'slim'|'average'|'broad'; personalitySeed: number; job: string; belief: 'religious'|'secular'|'spiritual'
   archetype: Archetype; group: GroupKey; mood: Mood; behavior: Behavior; lifeEvents: LifeEvent[]; opinionOfCore: number; family: { partnerId?: string; kids: number }
   thought: string
+  // v4: where they live and work and what their day looks like. optional until the sim fills them
+  countryId?: string; cityId?: string; workplace?: Workplace; employed?: boolean; income?: number; spending?: number; dayPlan?: { hour: number; activity: Activity }[]
 }
 export type Law = { id: string; title: string; text: string; layer: Layer; enactedTick: number; support: number; compliance: number; vetoed?: boolean; policyKind: string; precedentIds: string[]; lovedBy: string[]; hatedBy: string[] }
 export type Migration = { from: string; to: string; people: number; reason: string }
@@ -73,6 +79,8 @@ export type WorldState = {
   humanCost: HumanCost; globalPopulation: number; globalPeriodLifeExpectancy: number; lessonsKnown: number
   // v3 (optional until the sim fills them; the ui normalizes)
   space?: SpaceAsset[]; atmosphere?: { tint: string; haze: number }; flows?: Flow[]
+  // v4 (optional until the sim fills them)
+  countries?: Country[]; adminAreas?: AdminArea[]
 }
 export type Frame = {
   tick: number; date: string; regions: Region[]; citizens: Citizen[]; laws: Law[]; budget: Budget; religionPolicy: ReligionPolicy; schoolPolicy: SchoolPolicy
@@ -156,3 +164,15 @@ export type Epitaph = { line: string; causeKind: RegionVisual['damage']['kind'] 
 export type Flow = { from: string; to: string; toCityId?: string; people: number; reason: string; forced: boolean }
 // effect: score delta attributed to the step (+ helped). confidence 0..1
 export type Step = { id: string; text: string; kind: 'law'|'budget'|'policy'|'city'|'research'; helpedWorlds: string[]; hurtWorlds: string[]; effect: number; confidence: number }
+
+// ---- v4: real places, living people ----
+
+export type Trend = 'rising'|'stable'|'declining'
+// population is people; housingCost is a multiple of local median income; every other stat is 0..1, higher is better
+export type PlaceStats = { population: number; happiness: number; economy: number; livability: number; trend: Trend; foodSecurity: number; safety: number; health: number; jobs: number; housingCost: number; airQuality: number }
+// id is ISO 3166-1 alpha-3. regionId is the governor-brief region this country rolls up into
+export type Country = { id: string; name: string; regionId: string; stats: PlaceStats; provenance: Record<string, Provenance> }
+// admin-1: states, provinces. id is ISO 3166-2 where one exists
+export type AdminArea = { id: string; countryId: string; name: string; stats: PlaceStats }
+export type Activity = 'sleeping'|'commuting'|'working'|'school'|'eating'|'shopping'|'socializing'|'resting'|'protesting'|'striking'|'praying'|'aid_line'|'moving'|'celebrating'|'idle'
+export type Workplace = 'farm'|'factory'|'office'|'lab'|'clinic'|'school'|'shop'|'launch_site'|'construction'|'power_plant'|'none'

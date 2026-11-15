@@ -68,7 +68,7 @@ export function buildAgents(frame: Frame, extraRevolt: string[] = [], extraFamin
     }
     if (behavior === 'migrating') { const k = lines.get(r.id) ?? 0; lines.set(r.id, k + 1); a.line = { k, n: 0 } }
     if (behavior === 'moving_to_new_city') {
-      const city = frame.cities.find((x) => x.regionId === r.id && !x.offWorld)
+      const city = frame.cities.find((x) => x.regionId === r.id && !x.offWorld && !x.real)
       if (city) a.goal = latLonToVec3(city.lat, city.lon, 1)
     }
     agents.push(a)
