@@ -63,6 +63,11 @@ export function clearNow() {
   } catch {}
 }
 
+// the last snapshot on disk, alive or not (an idle runner still has a last heartbeat to show)
+export function readNowFile(): EvolveNow | null {
+  return readJson<EvolveNow>(nowFile())
+}
+
 // null unless an evolve process is alive and owns the file
 export function readNow(): EvolveNow | null {
   const cur = readJson<EvolveNow>(nowFile())
