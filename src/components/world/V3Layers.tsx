@@ -1,7 +1,7 @@
 'use client'
 // v3 globe layers that belong to the overlay modes and the explain toggle:
 // movement streams, per-region mode labels, the emotion pulse, and the explain callouts.
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
@@ -13,6 +13,7 @@ import { EMOTION_HEX, dominantOf, fmtPeople, regionMood, topEnergy } from './mod
 
 const facing = (p: THREE.Vector3, cam: THREE.Vector3, min = 0.2) => p.clone().normalize().dot(cam) > min
 
+const STREAM_SLOTS = 6
 // ---- movement: a stream of tiny pips along an arc for every flow ----
 type Stream = { key: string; curve: THREE.QuadraticBezierCurve3; n: number; speed: number; forced: boolean; label: string; mid: THREE.Vector3; width: number }
 
@@ -44,7 +45,18 @@ export function MovementStreams({ frame }: { frame: Frame }) {
   const mat = useMemo(() => new THREE.MeshBasicMaterial({ toneMapped: false }), [])
   const camera = useThree((s) => s.camera)
   const labels = useRef<(HTMLDivElement | null)[]>([])
+  const slots = useRef<(THREE.Group | null)[]>([])
   useFrame(({ clock }) => {
+    const c = camera.position.clone().normalize()
+    const on = useStore.getState().overlay === 'movement'
+    for (let i = 0; i < STREAM_SLOTS; i++) {
+      const el = labels.current[i], g = slots.current[i], st = streams[i]
+      if (!el || !g) continue
+      if (!st || !on) { el.style.opacity = '0'; continue }
+      g.position.copy(st.mid)
+      if (el.dataset.k !== st.key) { el.dataset.k = st.key; el.textContent = st.label; el.className = `pointer-events-none whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11.5px] shadow-sm transition-opacity ${st.forced ? 'bg-ink text-bone' : 'bg-bone/90 text-ink'}` }
+      el.style.opacity = facing(st.mid, c, 0.25) ? '1' : '0'
+    }
     const m = mesh.current
     if (!m) return
     const t = clock.elapsedTime
@@ -66,17 +78,17 @@ export function MovementStreams({ frame }: { frame: Frame }) {
     }
     m.instanceMatrix.needsUpdate = true
     if (m.instanceColor) m.instanceColor.needsUpdate = true
-    const c = camera.position.clone().normalize()
-    streams.forEach((st, i) => { const el = labels.current[i]; if (el) el.style.opacity = facing(st.mid, c, 0.25) ? '1' : '0' })
   })
-  if (overlay !== 'movement' || !streams.length) return null
   return (
     <>
-      <instancedMesh key={total} ref={mesh} args={[geo, mat, total]} frustumCulled={false} raycast={() => null} />
-      {streams.map((st, i) => (
-        <Html key={st.key} position={st.mid} center zIndexRange={[6, 0]}>
-          <div ref={(el) => { labels.current[i] = el }} className={`pointer-events-none whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11.5px] shadow-sm transition-opacity ${st.forced ? 'bg-ink text-bone' : 'bg-bone/90 text-ink'}`}>{st.label}</div>
-        </Html>
+      {overlay === 'movement' && streams.length > 0 && <instancedMesh key={total} ref={mesh} args={[geo, mat, total]} frustumCulled={false} raycast={() => null} />}
+      {/* a fixed pool of labels, always mounted: drei Html roots must not unmount mid-render */}
+      {Array.from({ length: STREAM_SLOTS }, (_, i) => (
+        <group key={i} ref={(g) => { slots.current[i] = g }}>
+          <Html center zIndexRange={[6, 0]}>
+            <div ref={(el) => { labels.current[i] = el }} style={{ opacity: 0 }} />
+          </Html>
+        </group>
       ))}
     </>
   )
@@ -89,7 +101,8 @@ export function RegionModeLabels({ frame }: { frame: Frame }) {
   const refs = useRef<(HTMLDivElement | null)[]>([])
   const spots = useMemo(() => frame.regions.map((r) => {
     let text = '', sub = '', color: string | undefined
-    if (overlay === 'population') text = fmtPeople(r.population)
+    if (overlay === 'real' || overlay === 'movement') { /* no numbers in these modes */ }
+    else if (overlay === 'population') text = fmtPeople(r.population)
     else if (overlay === 'emotion') { const d = dominantOf(regionMood(frame, r)); if (d) { text = d.emotion; sub = `${Math.round(d.level * 100)}%`; color = EMOTION_HEX[d.emotion] } }
     else if (overlay === 'energy') { const e = topEnergy(r); if (e) { text = e.key; sub = `${Math.round(e.share * 100)}%` } }
     else if (overlay === 'damage') { const d = r.visual?.damage; if (d && d.level > 0.05) { text = d.kind; sub = `${Math.round(d.level * 100)}%` } }
@@ -97,14 +110,13 @@ export function RegionModeLabels({ frame }: { frame: Frame }) {
   }), [frame, overlay])
   useFrame(() => {
     const c = camera.position.clone().normalize()
-    spots.forEach((s, i) => { const el = refs.current[i]; if (el) el.style.opacity = facing(s.pos, c) ? '1' : '0' })
+    spots.forEach((s, i) => { const el = refs.current[i]; if (el) el.style.opacity = s.text && facing(s.pos, c) ? '1' : '0' })
   })
-  if (overlay === 'real' || overlay === 'movement') return null
   return (
     <>
-      {spots.filter((s) => s.text).map((s, i) => (
-        <Html key={`${overlay}-${s.r.id}`} position={s.pos} center zIndexRange={[6, 0]}>
-          <div ref={(el) => { refs.current[i] = el }} className="pointer-events-none flex items-baseline gap-1.5 whitespace-nowrap rounded-full bg-bone/90 px-2.5 py-0.5 text-[12px] text-ink shadow-sm transition-opacity">
+      {spots.map((s, i) => (
+        <Html key={s.r.id} position={s.pos} center zIndexRange={[6, 0]}>
+          <div ref={(el) => { refs.current[i] = el }} style={{ opacity: 0 }} className="pointer-events-none flex items-baseline gap-1.5 whitespace-nowrap rounded-full bg-bone/90 px-2.5 py-0.5 text-[12px] text-ink shadow-sm transition-opacity">
             {s.color && <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />}
             <span className={overlay === 'population' ? 'font-mono' : 'font-display'}>{s.text}</span>
             {s.sub && <span className="font-mono text-[10.5px] text-ink/55">{s.sub}</span>}
@@ -144,17 +156,21 @@ export function EmotionPulse({ frame }: { frame: Frame }) {
 }
 
 // ---- explain: the ~6 most significant labelled things in view ----
-const SLOTS = 6
+// minimal shell: at most 3 callouts, only close up or out in the orrery, so they never crowd the globe
+const SLOTS = 3
 export function ExplainLayer() {
   const on = useStore((s) => s.explain)
   const camera = useThree((s) => s.camera)
   const groups = useRef<(THREE.Group | null)[]>([])
-  const [shown, setShown] = useState<Callout[]>([])
+  const boxes = useRef<(HTMLDivElement | null)[]>([])
+  const shown = useRef<Callout[]>([])
   const acc = useRef(1)
   const frustum = useMemo(() => new THREE.Frustum(), [])
   const pm = useMemo(() => new THREE.Matrix4(), [])
   useFrame((_, dt) => {
-    if (!on) return
+    const st = useStore.getState()
+    const allowed = on && st.view === 'globe' && (st.zoom === 'close' || sceneRefs.camDist > 85)
+    if (!allowed) { shown.current = []; boxes.current.forEach((b) => { if (b) b.style.opacity = '0' }); return }
     acc.current += dt
     if (acc.current > 0.4) {
       acc.current = 0
@@ -169,7 +185,7 @@ export function ExplainLayer() {
       const picked: Callout[] = [], scr: THREE.Vector3[] = []
       // one of each kind of thing, and fewer when the whole globe is in view
       const titles = new Set<string>()
-      const cap = sceneRefs.camDist > 40 ? 4 : SLOTS
+      const cap = SLOTS
       for (const x of all) {
         if (titles.has(x.title)) continue
         const p = x.pos.clone().project(camera)
@@ -177,22 +193,32 @@ export function ExplainLayer() {
         picked.push(x); scr.push(p); titles.add(x.title)
         if (picked.length >= cap) break
       }
-      const key = picked.map((p) => p.id).join()
-      setShown((prev) => (prev.map((p) => p.id).join() === key ? prev : picked))
+      shown.current = picked
+      // write each slot's words straight into its box
+      for (let i = 0; i < SLOTS; i++) {
+        const b = boxes.current[i], x = picked[i]
+        if (!b) continue
+        if (!x) { b.style.opacity = '0'; continue }
+        if (b.dataset.id !== x.id) {
+          b.dataset.id = x.id
+          b.className = `pointer-events-none w-max max-w-[13rem] rounded-xl border bg-bone/92 px-2.5 py-1.5 text-[11px] leading-snug text-ink shadow-md backdrop-blur transition-opacity ${x.danger ? 'border-ember/60' : 'border-ink/15'}`
+          const t = b.firstChild as HTMLDivElement, d = b.lastChild as HTMLDivElement
+          t.textContent = x.title; t.className = `font-display text-[12.5px] ${x.danger ? 'text-ember' : ''}`
+          d.textContent = x.text
+        }
+        b.style.opacity = '1'
+      }
     }
     // callout positions can move (orbiting assets); follow them every frame
-    shown.forEach((x, i) => { const g = groups.current[i]; if (g) g.position.copy(x.pos) })
+    shown.current.forEach((x, i) => { const g = groups.current[i]; if (g) g.position.copy(x.pos) })
   })
-  if (!on) return null
+  // a fixed pool, always mounted: drei Html roots must not unmount mid-render
   return (
     <>
-      {shown.map((x, i) => (
-        <group key={x.id} ref={(g) => { groups.current[i] = g }} position={x.pos}>
+      {Array.from({ length: SLOTS }, (_, i) => (
+        <group key={i} ref={(g) => { groups.current[i] = g }}>
           <Html center={false} zIndexRange={[7, 0]} style={{ transform: 'translate(10px, -100%)' }}>
-            <div className={`pointer-events-none w-max max-w-[13rem] rounded-xl border bg-bone/92 px-2.5 py-1.5 text-[11px] leading-snug text-ink shadow-md backdrop-blur ${x.danger ? 'border-ember/60' : 'border-ink/15'}`}>
-              <div className={`font-display text-[12.5px] ${x.danger ? 'text-ember' : ''}`}>{x.title}</div>
-              <div className="text-ink/70">{x.text}</div>
-            </div>
+            <div ref={(el) => { boxes.current[i] = el }} style={{ opacity: 0 }}><div /><div className="text-ink/70" /></div>
           </Html>
         </group>
       ))}

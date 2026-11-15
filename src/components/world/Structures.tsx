@@ -4,12 +4,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 import * as THREE from 'three'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
-import { Html } from '@react-three/drei'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { Agent, ArchStyle, Frame, Region } from '@/lib/types'
 import { archStyleFor } from '@/lib/mock/v3'
 import { C, LAND_TOP, STEP, buildTiles, latLonToVec3, surfacePoint, surfaceQuat, tangentBasis, tileIndexAt, toonGradient, vinyl, type Tile } from './lib'
-import { useCallouts, yearOf, type Callout } from './explain'
+import { tipProps, useCallouts, yearOf, type Callout } from './explain'
 import { useStore } from '../state/store'
 
 type EnergyKind = 'solar' | 'wind' | 'nuclear' | 'fossil' | 'hydro'
@@ -491,7 +490,6 @@ function LandmarkShape({ kind, mats }: { kind: string; mats: Record<string, THRE
 
 export default function Structures({ frame, agent }: { frame: Frame; agent?: Agent }) {
   const overlay = useStore((s) => s.overlay)
-  const zoom = useStore((s) => s.zoom)
   const recordAgent = useStore((s) => s.record.agentId)
   const style = useMemo(() => agent?.archStyle ?? archStyleFor(agent?.id ?? recordAgent), [agent, recordAgent])
   const agentName = agent?.name ?? 'the core'
@@ -596,13 +594,9 @@ export default function Structures({ frame, agent }: { frame: Frame; agent?: Age
       {geos.roof && <Static items={L.homes} geo={geos.roof} mat={mats.roof} hover={false} />}
       <Static items={L.homes} geo={geos.accent} mat={mats.accent} hover={false} />
       {L.landmarks.map((lm) => (
-        <group key={lm.key} position={lm.pos} quaternion={lm.quat}>
+        // minimal shell: landmarks name themselves on hover, not with a standing label
+        <group key={lm.key} position={lm.pos} quaternion={lm.quat} {...tipProps(lm.l.label, `landmark, built ${yearOf(lm.l.tick)}`)}>
           <LandmarkShape kind={lm.l.kind} mats={lmMats} />
-          {zoom !== 'far' && (
-            <Html position={[0, 0.75, 0]} center zIndexRange={[4, 0]}>
-              <div className="pointer-events-none select-none whitespace-nowrap rounded-full border border-ink/15 bg-bone/85 px-2 py-0.5 font-display text-[11px] text-ink shadow-sm">{lm.l.label}</div>
-            </Html>
-          )}
         </group>
       ))}
     </group>

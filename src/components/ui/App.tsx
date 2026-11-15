@@ -1,28 +1,20 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { TICKS_PER_SECOND, useStore } from '../state/store'
 import { api, Offline } from './api'
-import Dossier from './Dossier'
-import { SideDrawer, useNarrow } from './Side'
-import { Caption, EventFeed, Intro, useIntroGate, useSound } from './Extras'
+import { Caption, Intro, useIntroGate, useSound } from './Extras'
 import { stopReel } from './Timeline'
 import { loadAgents, openRun, startCompare } from './worlds'
-import Chronicle from './Chronicle'
-import { DailyPaper, DailyPeek } from './Daily'
+import { DailyPaper } from './Daily'
 import { ShortcutSheet, toggleGlobeOnly, useShortcuts } from './Shortcuts'
 import { ensureWindow, needsWindow } from '../state/frames'
-import { AgentsPanel, HallPanel } from './Agents'
 import CompareView from './Compare'
 import Timeline from './Timeline'
-import LivePanel from './LivePanel'
-import { AdvancedDrawer, Leaderboard, MissionBar, RulesDrawer, TopLeft, TopRight } from './Chrome'
-import Roadmap from './Roadmap'
 import WorldTabs from './WorldTabs'
-import { EpitaphCard, HoverTip, OverlayLegend, ViewBar, ViewHost } from './WorldViews'
+import { HoverTip, ViewHost } from './WorldViews'
+import { EventLine, LayerHint, MenuButton, PanelHost, SideMenu, StatsLine, WorldTitle, useEscape } from './Shell'
 
-// dev shows an fps meter in the bottom right corner of the middle row; panels leave it room
-const DEV = process.env.NODE_ENV === 'development'
 
 const Globe = dynamic(() => import('../world/Globe'), { ssr: false })
 
@@ -189,14 +181,6 @@ function Notice() {
   return <div className="panel pointer-events-none px-4 py-2 text-[12.5px]">{notice}</div>
 }
 
-function LeftTabs({ tab, setTab }: { tab: 'runs' | 'chronicle'; setTab: (t: 'runs' | 'chronicle') => void }) {
-  return (
-    <div className="panel pointer-events-auto flex w-fit gap-1 p-1 text-[12px]">
-      {(['runs', 'chronicle'] as const).map((t) => <button key={t} onClick={() => setTab(t)} className={`rounded-full px-3 py-1 ${tab === t ? 'bg-ink text-bone' : 'text-ink/60 hover:bg-ink/5'}`}>{t}</button>)}
-    </div>
-  )
-}
-
 export default function App() {
   usePlayback()
   useRuns()
@@ -210,22 +194,9 @@ export default function App() {
   const globeOnly = useStore((s) => s.globeOnly)
   useEffect(() => { loadAgents() }, [])
   const compare = useStore((s) => s.compare)
-  const [leftTab, setLeftTab] = useState<'runs' | 'chronicle'>('runs')
   const setLive = useStore((s) => s.setLive)
   const liveRunId = useStore((s) => s.liveRunId)
-  const drawerOpen = useStore((s) => s.drawerOpen)
-  const selection = useStore((s) => s.selection)
-  const panel = useStore((s) => s.panel)
-  const advancedOpen = useStore((s) => s.advancedOpen)
-  const narrow = useNarrow()
-  const [leftOpen, setLeftOpen] = useState(false)
-  const [rightOpen, setRightOpen] = useState(false)
-  // narrow layout: picking something or opening the rules slides the right drawer in, clearing both closes it
-  const wantsRight = Boolean(selection) || drawerOpen || advancedOpen
-  const [prevWants, setPrevWants] = useState(wantsRight)
-  if (prevWants !== wantsRight) { setPrevWants(wantsRight); setRightOpen(wantsRight) }
-  const [prevLive, setPrevLive] = useState(liveRunId)
-  if (prevLive !== liveRunId) { setPrevLive(liveRunId); if (liveRunId) setLeftOpen(true) }
+  useEscape()
 
   const startLive = async () => {
     const s = useStore.getState()
@@ -235,11 +206,13 @@ export default function App() {
       s.setRunnerOffline(false)
       setLive(runId)
       s.setPlaying(true)
+      s.setSheet('live')
     } catch {
       // no runner: a local sandbox on the current world, overrides still drive the visuals
       s.setRunnerOffline(true)
       setLive('sandbox')
       s.setNotice('runner offline')
+      s.setSheet('live')
     }
   }
 
@@ -249,67 +222,28 @@ export default function App() {
       {globeOnly && (
         <button onClick={() => toggleGlobeOnly(false)} className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-full bg-bone/70 px-3 py-1 text-[11px] text-ink/60 backdrop-blur hover:text-ink">press f or esc for the ui</button>
       )}
-      <div className={`pointer-events-none absolute inset-0 z-10 flex flex-col p-3 transition-opacity duration-300 xl:p-4 ${globeOnly ? 'invisible opacity-0' : ''}`}>
-        <div className="relative flex flex-wrap items-start justify-between gap-2">
-          <TopLeft />
-          <div className="order-last flex w-full min-w-0 flex-col items-center gap-2 min-[1720px]:order-none min-[1720px]:w-auto min-[1720px]:flex-1">
-            <MissionBar />
-            <Loading />
-            <Notice />
-          </div>
-          <TopRight onLive={startLive} />
+      <div className={`pointer-events-none absolute inset-0 z-10 flex flex-col px-4 pb-3 pt-3 transition-opacity duration-300 ${globeOnly ? 'invisible opacity-0' : ''}`}>
+        {/* top: the world, its tabs, the one menu */}
+        <div className="flex items-start gap-4">
+          <div className="w-56 shrink-0"><WorldTitle /></div>
+          <div className="flex min-w-0 flex-1 justify-center"><WorldTabs onLive={startLive} /></div>
+          <div className="flex w-56 shrink-0 justify-end"><MenuButton /></div>
         </div>
-        <div className="mt-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <WorldTabs onLive={startLive} />
-          <ViewBar />
-        </div>
-        <div className="relative mt-3 flex min-h-0 flex-1 items-stretch justify-between gap-4 xl:mt-4">
-          {narrow ? (
-            <>
-              {!compare && (
-                <SideDrawer side="left" label="runs" open={leftOpen} onToggle={() => setLeftOpen(!leftOpen)}>
-                  <LeftTabs tab={leftTab} setTab={setLeftTab} />
-                  {leftTab === 'runs' ? <><Leaderboard /><LivePanel /></> : <Chronicle />}
-                </SideDrawer>
-              )}
-              {!compare && <div className={`absolute right-0 top-12 flex min-h-0 ${DEV ? 'bottom-14' : 'bottom-0'}`}><EventFeed /></div>}
-              <SideDrawer side="right" label="details" open={rightOpen} onToggle={() => setRightOpen(!rightOpen)} reserveBottom={DEV}>
-                <AdvancedDrawer />
-                <Dossier />
-                {drawerOpen && <RulesDrawer />}
-              </SideDrawer>
-            </>
-          ) : (
-            <>
-              {compare ? <div /> : (
-                <div className="scroll-thin flex min-h-0 flex-col gap-3 overflow-y-auto">
-                  <LeftTabs tab={leftTab} setTab={setLeftTab} />
-                  {leftTab === 'runs' ? <><Leaderboard /><LivePanel /></> : <Chronicle />}
-                </div>
-              )}
-              <div className={`flex min-h-0 items-stretch gap-3 ${DEV ? 'mb-14' : ''}`}>
-                <div className="scroll-thin flex min-h-0 flex-col items-end gap-3 overflow-y-auto">
-                  <AdvancedDrawer />
-                  <Dossier />
-                  {drawerOpen && <RulesDrawer />}
-                </div>
-                {!compare && <EventFeed />}
-              </div>
-            </>
-          )}
-          {panel && (
-            <div className={`pointer-events-none absolute left-0 top-0 z-20 flex ${DEV ? 'bottom-14' : 'bottom-0'} ${narrow ? 'right-0' : selection ? (compare ? 'right-[25rem]' : 'right-[38rem]') : compare ? 'right-0' : 'right-[14.5rem]'}`}>
-              {panel === 'agents' ? <AgentsPanel /> : panel === 'hall' ? <HallPanel /> : <Roadmap />}
-            </div>
-          )}
-          <div className="pointer-events-none absolute bottom-2 left-1/2 z-0 -translate-x-1/2"><Caption /></div>
-          <div className="pointer-events-none absolute left-1/2 top-2 z-20 -translate-x-1/2"><EpitaphCard /></div>
-          {!compare && <div className={`pointer-events-none absolute left-0 z-20 ${DEV ? 'bottom-14' : 'bottom-2'}`}><OverlayLegend /></div>}
+        {/* middle: the globe, and at most one panel */}
+        <div className="relative mt-3 min-h-0 flex-1">
+          <div className="pointer-events-none absolute left-1/2 top-0 z-20 flex -translate-x-1/2 flex-col items-center gap-2"><Loading /><Notice /></div>
+          <PanelHost />
           <ViewHost />
-          {!compare && <div className="absolute bottom-2 left-0 z-20"><DailyPeek /></div>}
+          <div className="pointer-events-none absolute bottom-1 left-1/2 z-0 -translate-x-1/2"><Caption /></div>
         </div>
-        <div className="mt-3 shrink-0 xl:mt-4"><Timeline /></div>
+        {/* bottom: one quiet line, one stats line, the timeline */}
+        <div className="mt-2 flex shrink-0 flex-col items-center gap-1.5">
+          <div className="flex h-5 items-center"><LayerHint /><EventLine /></div>
+          <StatsLine />
+          <div className="w-full"><Timeline /></div>
+        </div>
       </div>
+      <SideMenu onLive={startLive} />
       <DailyPaper />
       <HoverTip />
       <ShortcutSheet />

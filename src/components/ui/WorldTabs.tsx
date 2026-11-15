@@ -91,8 +91,8 @@ function Thumb({ frame, dead }: { frame: Frame | undefined; dead: boolean }) {
     }
     g.putImageData(img, 0, 0)
   }, [frame, tiles, spin, dead])
-  if (!frame) return <span className="skel inline-block h-7 w-7 rounded-full" />
-  return <canvas ref={ref} width={56} height={56} className="h-7 w-7 shrink-0 rounded-full" aria-hidden />
+  if (!frame) return <span className="skel inline-block h-6 w-6 rounded-full" />
+  return <canvas ref={ref} width={48} height={48} className="h-6 w-6 shrink-0 rounded-full" aria-hidden />
 }
 
 // load every tab's record so tabs, graphs and the daily can compare them
@@ -224,15 +224,12 @@ export default function WorldTabs({ onLive }: { onLive: () => void }) {
           const year = f ? tickToDate(f.tick).getUTCFullYear() : undefined
           return (
             <div key={id} draggable onDragStart={() => { drag.current = id }} onDragOver={(e) => e.preventDefault()} onDrop={() => drop(id)}
-              className={`group flex shrink-0 items-center gap-2 rounded-full py-1 pl-1 pr-2 text-[12px] transition ${on ? 'bg-ink text-bone shadow-md' : 'panel hover:bg-bone'} ${tone.ring}`}>
-              <button onClick={() => switchTab(id)} className="flex items-center gap-2" title={`ctrl+${i + 1}`}>
+              className={`group flex h-7 shrink-0 items-center gap-1.5 rounded-full pl-0.5 pr-1.5 text-[12px] backdrop-blur transition ${on ? 'bg-ink/90 text-bone' : 'bg-bone/50 text-ink/75 hover:bg-bone/80'} ${tone.ring}`}>
+              <button onClick={() => switchTab(id)} className="flex items-center gap-1.5" title={`${a?.name ?? prettyAgent(rec?.agentId)} · world #${worldNumber(id, runs)}${year ? ` · ${year}` : ''} · ${tone.word} · ctrl+${i + 1}`}>
                 <Thumb frame={f} dead={status === 'destroyed'} />
-                {a && <Emblem seed={a.emblemSeed} size={18} />}
-                <span className="flex flex-col items-start leading-tight">
-                  <span className="max-w-[9rem] truncate font-display text-[13px]">{a?.name ?? (rec ? prettyAgent(rec.agentId) : 'loading')}</span>
-                  <span className={`text-[10.5px] ${on ? 'text-bone/70' : 'text-ink/55'}`}>world #<Num>{worldNumber(id, runs)}</Num>{year && <> · <Num>{year}</Num></>}</span>
-                </span>
-                <span className={`h-2 w-2 rounded-full ${tone.dot}`} title={tone.word} />
+                <span className="max-w-[8rem] truncate font-display text-[12.5px]">{a?.name ?? (rec ? prettyAgent(rec.agentId) : 'loading')}</span>
+                <span className={`text-[10.5px] ${on ? 'text-bone/60' : 'text-ink/45'}`}>#<Num>{worldNumber(id, runs)}</Num>{year && <> · <Num>{year}</Num></>}</span>
+                <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
               </button>
               {tabs.length > 1 && <button onClick={() => closeTab(id)} aria-label="close world" className={`ml-0.5 rounded-full px-1 text-[13px] leading-none opacity-0 transition group-hover:opacity-100 ${on ? 'text-bone/70 hover:text-bone' : 'text-ink/50 hover:text-ink'}`}>×</button>}
             </div>
@@ -240,7 +237,7 @@ export default function WorldTabs({ onLive }: { onLive: () => void }) {
         })}
       </div>
       <div className="relative shrink-0">
-        <button onClick={() => setPicker((p) => !p)} aria-label="open another world" className="panel flex h-9 w-9 items-center justify-center rounded-full text-[18px] leading-none hover:bg-bone">+</button>
+        <button onClick={() => setPicker((p) => !p)} aria-label="open another world" className="flex h-7 w-7 items-center justify-center rounded-full bg-bone/50 text-[16px] leading-none text-ink/70 backdrop-blur hover:bg-bone/80">+</button>
         {picker && <Picker onClose={() => setPicker(false)} onLive={onLive} />}
       </div>
     </nav>

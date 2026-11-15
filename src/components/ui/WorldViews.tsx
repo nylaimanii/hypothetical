@@ -133,6 +133,11 @@ export function ViewHost() {
   if (view === 'globe') return null
   return (
     <div className="panel pointer-events-auto absolute inset-0 z-30 flex min-h-0 flex-col p-4">
+      <div className="mb-3 flex items-center gap-1 text-[12.5px]">
+        <button onClick={() => useStore.getState().setView('globe')} className="mr-2 rounded-full px-2.5 py-1 text-ink/60 hover:bg-ink/5 hover:text-ink">← globe</button>
+        {VIEWS.filter((v) => v !== 'globe').map((v) => <button key={v} onClick={() => useStore.getState().setView(v)} className={`rounded-full px-3 py-1 ${view === v ? 'bg-ink text-bone' : 'text-ink/60 hover:bg-ink/5'}`}>{v}</button>)}
+        <span className="ml-auto text-[11px] text-ink/40">esc to close</span>
+      </div>
       <div className="min-h-0 flex-1">
         {view === 'daily' && <DailyView />}
         {view === 'graphs' && <Graphs worlds={worlds} />}

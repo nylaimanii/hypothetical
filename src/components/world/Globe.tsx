@@ -287,7 +287,7 @@ export default function Globe() {
           <RegionModeLabels frame={frame} />
           <EmotionPulse frame={frame} />
           <ExplainLayer />
-          {overlay === 'real' && <Labels frame={frame} />}
+          <Labels frame={frame} />
           {overlay === 'real' && <MigrationLines frame={frame} />}
           <Pips frame={frame} />
           <Launches frame={frame} spaceport={spaceport} />

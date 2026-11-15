@@ -99,7 +99,15 @@ export type RunRecord = {
   runId: string; generation: number; seed: number; constitution: string; frames: Frame[]; baseline: BaselineFrame[]; summary: RunSummary; live?: boolean; precedents?: Precedent[]; lessons?: Lesson[]
   agentId: string; snapshots: Snapshot[]; branchedFrom?: { runId: string; tick: number; agentId: string }
 }
-export type RunOptions = { runId: string; generation: number; seed: number; constitution: string; onFrame?: (f: Frame) => void; overrideDir?: string; live?: { msPerTick: number }; frameEvery?: number }
+export type RunOptions = {
+  runId: string; generation: number; seed: number; constitution: string; onFrame?: (f: Frame) => void; overrideDir?: string; live?: { msPerTick: number }; frameEvery?: number
+  // the governing agent. optional only because scripts/live.ts and scripts/run-one.ts still pass it as optional; make it required once they always set it
+  agentId?: string
+  // branch: start from another run's snapshot at that tick instead of tick 0
+  startFrom?: { runId: string; tick: number }
+  // stop early at this tick (inclusive) instead of the horizon
+  untilTick?: number
+}
 
 // ---- agents, lineage, comparison, history ----
 // every run belongs to an Agent (a governor with a constitution). names are original sci-fi names, never real people or brands

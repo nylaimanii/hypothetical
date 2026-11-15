@@ -35,6 +35,8 @@ export type SlimMeta = { firstTick: number; lastTick: number; years: YearRow[]; 
 export type View = 'globe' | 'daily' | 'graphs' | 'people' | 'steps'
 export type Overlay = 'real' | 'emotion' | 'population' | 'movement' | 'energy' | 'damage'
 export type Tip = { title: string; text: string; x: number; y: number }
+// minimal shell: one panel at a time. sheets are the panels that live in the side menu's world
+export type Sheet = 'worlds' | 'chronicle' | 'live' | 'layers' | 'epitaph' | null
 export type Panel = 'offworld' | 'longevity' | 'agents' | 'hall' | null
 export type Compare = { agentIds: string[]; records: RunRecord[]; divergences: Divergence[] }
 // a highlight reel: the top events by significance, played back to back
@@ -89,6 +91,13 @@ type State = {
   explain: boolean
   tip: Tip | null
   swapping: boolean // the quick zoom out / in between tabs
+  menu: boolean
+  sheet: Sheet
+  report: boolean // the selection's full report instead of its slim card
+  setMenu: (open: boolean) => void
+  setSheet: (s: Sheet) => void
+  setReport: (on: boolean) => void
+  closeAll: () => void
   setTabs: (tabs: string[]) => void
   setTabRecord: (r: RunRecord) => void
   setView: (v: View) => void
@@ -134,6 +143,11 @@ type State = {
   setDaily: (d: Partial<{ open: boolean; year: number | null; peek: number | null }>) => void
   setShortcuts: (open: boolean) => void
   mergeFrames: (runId: string, frames: Frame[]) => void
+}
+
+// everything that can be open, closed: opening anything spreads this first
+function closed(s: State): Partial<State> {
+  return { selection: null, report: false, panel: null, drawerOpen: false, advancedOpen: false, shortcutsOpen: false, menu: false, sheet: null, daily: { ...s.daily, open: false, peek: null } }
 }
 
 let juiceId = 1
@@ -187,9 +201,16 @@ export const useStore = create<State>((set) => ({
   explain: true,
   tip: null,
   swapping: false,
+  menu: false,
+  sheet: null,
+  report: false,
+  setMenu: (menu) => set((s) => (menu ? { ...closed(s), menu } : { menu })),
+  setSheet: (sheet) => set((s) => (sheet ? { ...closed(s), sheet } : { sheet })),
+  setReport: (report) => set((s) => (report ? { ...closed(s), selection: s.selection, report } : { report })),
+  closeAll: () => set((s) => closed(s)),
   setTabs: (tabs) => set({ tabs }),
   setTabRecord: (r) => set((s) => ({ tabRecords: { ...s.tabRecords, [r.runId]: r } })),
-  setView: (view) => set({ view }),
+  setView: (view) => set((s) => ({ ...closed(s), view })),
   setOverlay: (overlay) => set({ overlay }),
   setExplain: (explain) => set({ explain }),
   setTip: (tip) => set({ tip }),
@@ -204,8 +225,8 @@ export const useStore = create<State>((set) => ({
   setZoom: (zoom) => set({ zoom }),
   setQuality: (quality) => set({ quality, adaptive: 0 }),
   setAdaptive: (adaptive) => set({ adaptive }),
-  select: (selection) => set({ selection }),
-  setDrawer: (drawerOpen) => set({ drawerOpen }),
+  select: (selection) => set((s) => (selection ? { ...closed(s), selection } : { selection: null, report: false })),
+  setDrawer: (drawerOpen) => set((s) => (drawerOpen ? { ...closed(s), drawerOpen } : { drawerOpen })),
   setLive: (liveRunId) => set({ liveRunId }),
   setRunnerOffline: (runnerOffline) => set({ runnerOffline }),
   addOverride: (o) => set((s) => ({ overrides: [...s.overrides, o] })),
@@ -224,16 +245,16 @@ export const useStore = create<State>((set) => ({
   setVolume: (volume) => set({ volume }),
   setIntro: (introOpen) => set({ introOpen }),
   setShowTwin: (showTwin) => set((s) => ({ showTwin, mode: showTwin ? s.mode : 'ai' })),
-  setAdvanced: (advancedOpen) => set({ advancedOpen }),
-  setPanel: (panel) => set({ panel }),
+  setAdvanced: (advancedOpen) => set((s) => (advancedOpen ? { ...closed(s), advancedOpen } : { advancedOpen })),
+  setPanel: (panel) => set((s) => (panel ? { ...closed(s), panel } : { panel })),
   setAgents: (agents, agentsSource) => set({ agents, agentsSource }),
   setCompare: (compare) => set({ compare, compareFocus: null, selection: null, panel: null }),
   setCompareFocus: (compareFocus) => set({ compareFocus }),
   setReel: (reel) => set({ reel }),
   setGlobeOnly: (globeOnly) => set({ globeOnly }),
   setLoading: (loading) => set({ loading }),
-  setDaily: (d) => set((s) => ({ daily: { ...s.daily, ...d } })),
-  setShortcuts: (shortcutsOpen) => set({ shortcutsOpen }),
+  setDaily: (d) => set((s) => (d.open ? { ...closed(s), daily: { ...s.daily, ...d } } : { daily: { ...s.daily, ...d } })),
+  setShortcuts: (shortcutsOpen) => set((s) => (shortcutsOpen ? { ...closed(s), shortcutsOpen } : { shortcutsOpen })),
   setSlim: (runId, meta) => set((s) => ({ slim: { ...s.slim, [runId]: meta } })),
   mergeFrames: (runId, frames) => set((s) => {
     if (!frames.length) return {}

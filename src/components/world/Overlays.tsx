@@ -4,11 +4,13 @@ import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Html, Line } from '@react-three/drei'
 import type { Frame } from '@/lib/types'
-import { C, LAND_TOP, latLonToVec3 } from './lib'
+import { C, LAND_TOP, ZOOM_CLOSE, latLonToVec3, sceneRefs } from './lib'
 import { useStore } from '../state/store'
 
+// minimal shell: at most 5 names at once, biggest population first, only at mid zoom, fading as you come close.
+// always mounted (drei Html roots can't unmount mid-render); hidden ones just go transparent
+const MAX_LABELS = 5
 export function Labels({ frame }: { frame: Frame }) {
-  const zoom = useStore((s) => s.zoom)
   const select = useStore((s) => s.select)
   const camera = useThree((s) => s.camera)
   const refs = useRef<(HTMLDivElement | null)[]>([])
@@ -21,30 +23,33 @@ export function Labels({ frame }: { frame: Frame }) {
     const c = camera.position.clone().normalize()
     acc.current += dt
     const relayout = acc.current > 0.12
+    const zoom = useStore.getState().zoom
+    // fade out on approach: full at mid distance, gone by the close threshold
+    const near = Math.max(0, Math.min(1, (sceneRefs.camDist - ZOOM_CLOSE) / 6))
     if (relayout) {
       acc.current = 0
       const placed: DOMRect[] = []
+      let count = 0
       for (const i of order) {
         const el = refs.current[i]
         const facing = spots[i].n.dot(c) > 0.15
-        if (!el || !facing) { shown.current[i] = false; continue }
+        if (!el || !facing || zoom !== 'mid' || useStore.getState().overlay !== 'real' || count >= MAX_LABELS) { shown.current[i] = false; continue }
         const b = el.getBoundingClientRect()
         const pad = 4
         const hit = placed.some((p) => b.left - pad < p.right && b.right + pad > p.left && b.top - pad < p.bottom && b.bottom + pad > p.top)
         shown.current[i] = !hit
-        if (!hit) placed.push(b)
+        if (!hit) { placed.push(b); count++ }
       }
     }
     spots.forEach((s, i) => {
       const el = refs.current[i]
       if (!el) return
       const face = Math.max(0, Math.min(1, (s.n.dot(c) - 0.15) * 3))
-      const op = shown.current[i] ? face : 0
+      const op = shown.current[i] ? face * near : 0
       el.style.opacity = String(op)
       el.style.pointerEvents = op > 0.5 ? 'auto' : 'none'
     })
   })
-  if (zoom !== 'mid') return null
   return (
     <>
       {spots.map((s, i) => (

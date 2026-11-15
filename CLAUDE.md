@@ -47,6 +47,13 @@ one ai runs a single world government starting 2026-11. physics, biology, econom
 - borders come from natural earth admin-0 and admin-1 (public domain, https://www.naturalearthdata.com)
 - every pip lives a day: dayPlan on the timeline clock, at a real workplace, in a real city
 
+## presentation rules
+
+- the globe gets the whole screen. default chrome is only: world name + date (small, top left), world tabs (thin strip, top), a one-line stats strip (bottom), and the timeline (bottom)
+- one panel open at a time. opening anything closes what's open. esc closes it
+- default text is one plain line. depth lives in "full report"
+- nothing auto-opens or stacks over the globe
+
 ## ownership
 
 - A: scaffold, CLAUDE.md, src/lib/types.ts, src/lib/mock/**, src/app/** (except src/app/api/**), src/components/**

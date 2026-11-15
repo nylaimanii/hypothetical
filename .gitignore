@@ -47,3 +47,5 @@ data/generations/
 data/inject/
 data/live/
 data/reports/
+data/.ollama.lock
+data/evolve-now.json

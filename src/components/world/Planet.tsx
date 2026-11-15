@@ -206,10 +206,19 @@ export default function Planet({ frame }: { frame: Frame }) {
     if (t && t.region >= 0) select({ kind: 'region', id: frame.regions[t.region].id })
   }
   const stackTiles = useMemo(() => layout.stacks.map((s) => s.tile), [layout])
-  const hover = {
-    onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer' },
-    onPointerOut: () => { document.body.style.cursor = '' },
+  // hovering land names its region in one plain line: the labels only show the biggest few
+  const tipFor = (list: number[]) => (e: ThreeEvent<PointerEvent>) => {
+    const t = e.instanceId != null ? tiles[list[e.instanceId]] : undefined
+    const r = t && t.region >= 0 ? frame.regions[t.region] : undefined
+    if (!r) return
+    const pop = r.population >= 1e9 ? `${(r.population / 1e9).toFixed(2)}B` : `${Math.round(r.population / 1e6)}M`
+    useStore.getState().setTip({ title: r.name, text: `${pop} people · approval ${Math.round(r.approval * 100)}%`, x: e.nativeEvent.clientX, y: e.nativeEvent.clientY })
   }
+  const hoverOn = (list: number[]) => ({
+    onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer' },
+    onPointerMove: tipFor(list),
+    onPointerOut: () => { document.body.style.cursor = ''; useStore.getState().setTip(null) },
+  })
   const shadow = quality === 'high'
 
   return (
@@ -220,8 +229,8 @@ export default function Planet({ frame }: { frame: Frame }) {
       </mesh>
       <instancedMesh ref={oceanRef} args={[geo, ocean.mat, layout.sea.length]} receiveShadow raycast={() => null} />
       <instancedMesh ref={foamRef} args={[foamGeo, foam.mat, Math.max(1, layout.coast.length)]} raycast={() => null} />
-      <instancedMesh ref={landRef} args={[geo, landMat, layout.land.length]} castShadow={shadow} receiveShadow onClick={pick(layout.land)} {...hover} />
-      <instancedMesh ref={stackRef} args={[blockGeo, landMat, Math.max(1, layout.stacks.length)]} castShadow={shadow} receiveShadow onClick={pick(stackTiles)} {...hover} />
+      <instancedMesh ref={landRef} args={[geo, landMat, layout.land.length]} castShadow={shadow} receiveShadow onClick={pick(layout.land)} {...hoverOn(layout.land)} />
+      <instancedMesh ref={stackRef} args={[blockGeo, landMat, Math.max(1, layout.stacks.length)]} castShadow={shadow} receiveShadow onClick={pick(stackTiles)} {...hoverOn(stackTiles)} />
       <instancedMesh ref={glowRef} args={[geo, undefined, layout.land.length]} raycast={() => null} renderOrder={2}>
         <meshBasicMaterial ref={glowMat} transparent depthWrite={false} blending={THREE.AdditiveBlending} side={THREE.BackSide} toneMapped={false} />
       </instancedMesh>
