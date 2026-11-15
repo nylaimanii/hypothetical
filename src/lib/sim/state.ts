@@ -8,6 +8,8 @@ import { initSpace, type SpaceState } from './space'
 import { initRequirements, type ReqState } from './requirements'
 import { initFrontier, type FrontierState } from './frontier'
 import type { LawMeta } from './precedents'
+import { HEADLINE_MIN, headlineFor } from './headlines'
+import { START_MONTH, START_YEAR } from './constants'
 
 export const EMOTIONS = ['joy', 'fear', 'anger', 'hope', 'grief', 'pride', 'envy', 'boredom', 'awe', 'distrust'] as const
 export const BEHAVIORS: Behavior[] = ['working', 'protesting', 'striking', 'rioting', 'migrating', 'hoarding', 'panic_buying', 'celebrating', 'praying', 'gossiping', 'trend_following', 'conspiracy_posting', 'volunteering', 'moving_to_new_city', 'starting_family', 'idle']
@@ -150,6 +152,7 @@ export type World = {
   peakPLE: number
   diseasesEradicated: string[]
   lessonsApplied: Set<string>
+  frameCursor: number // index into events at the last emitted frame (part of the snapshot so branches resume exactly)
 }
 
 export const clamp = (x: number, lo = 0, hi = 1) => (x < lo ? lo : x > hi ? hi : x)
@@ -217,7 +220,7 @@ export function initWorld(seed: number, twin: boolean): World {
     status: 'alive', wellbeingSum: 0, wellbeingN: 0, revenueShare: REVENUE_SHARE, citizens: [], crewDeaths: 0, citizenSeq: 0, citizenMeta: {},
     requirements: initRequirements(), cities: [], cityScores: {}, companies: [], factions: initFactions(), frontier: 'none', frontierState: initFrontier(),
     humanCost: { deaths: 0, famineDeaths: 0, unrestDeaths: 0, displaced: 0, approval: 0.5 }, lessonsKnown: 0, researchFocus: [], lawMeta: {}, lawsuits: {},
-    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(),
+    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), frameCursor: 0,
   }
 }
 
@@ -259,7 +262,11 @@ export type EventInput = Omit<WorldEvent, 'tick' | 'significance'> & { significa
 // significance 0..1: severity scaled by the share of humanity affected, mission impact and rarity (see significanceOf)
 export function event(w: World, e: EventInput): WorldEvent {
   const ev: WorldEvent = { tick: w.tick, ...e, severity: clamp(e.severity), significance: 0 }
-  ev.significance = clamp(e.significance ?? significanceOf(w, ev))
+  ev.significance = Math.round(clamp(e.significance ?? significanceOf(w, ev)) * 1000) / 1000
+  if (ev.significance >= HEADLINE_MIN && !ev.headline) {
+    const year = START_YEAR + Math.floor((START_MONTH - 1 + w.tick) / 12)
+    ev.headline = headlineFor(ev, w.regions.find(r => r.r.id === ev.regionId)?.r.name, year)
+  }
   w.events.push(ev)
   return ev
 }

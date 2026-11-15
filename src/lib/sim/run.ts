@@ -1,9 +1,10 @@
 // runWorld: the only simulation entry point (contract in CLAUDE.md).
-// monthly step, governor every 12 ticks, frame every opts.frameEvery ticks (default 12, live 1) and on death.
-// a no-ai baseline twin runs on the same seed with 2026 policies frozen and no llm calls.
+// monthly step, governor every 12 ticks for 30 years then every 24, frame every opts.frameEvery ticks
+// (default 12, live 1), at every decision and on death. a no-ai baseline twin runs on the same seed with
+// 2026 policies frozen and no llm calls. full state snapshots every 60 ticks allow exact branching.
 import fs from 'node:fs'
 import path from 'node:path'
-import type { BaselineFrame, Decision, Frame, Lesson, Override, RunOptions, RunRecord, RunSummary, WorldEvent } from '../types'
+import type { BaselineFrame, Decision, Frame, Lesson, Override, RunOptions, RunRecord, RunSummary, Snapshot, WorldEvent } from '../types'
 import { decide, type GovernorMemory } from '../agent/governor'
 import { withUsage, type Usage } from '../agent/groq'
 import { BASELINE_BUDGET, BASELINE_RELIGION, BASELINE_SCHOOL, dateOf, decisionDue } from './constants'
@@ -14,6 +15,7 @@ import { score } from './end'
 import { applyEvent } from './events'
 import { fmt } from './physics'
 import { applyDecision, baselineFrame, lawPrecedents, snapshot, stepWorld } from './step'
+import { SNAPSHOT_EVERY, restoreWorld, snapshotWorld } from './snapshot'
 import { event, initWorld, regionPop, worldPop, type World } from './state'
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -23,9 +25,6 @@ const BASELINE_DECISION = (tick: number): Decision => ({
   schoolPolicy: { ...BASELINE_SCHOOL, curriculum: [...BASELINE_SCHOOL.curriculum] }, rationale: 'baseline twin: 2026 policies frozen', respondedToOverrides: [],
   foundCities: [], charterCompanies: [], researchFocus: [], publicStatement: '', lessonsApplied: [],
 })
-
-// RunOptions as A defines it, plus fields B accepts ahead of the contract
-export type RunOpts = RunOptions & { agentId?: string }
 
 // reads every override file in dir that is due, applies it, deletes it. returns the applied overrides.
 export function applyOverrides(w: World, dir: string | undefined, mem: GovernorMemory): Override[] {
@@ -72,6 +71,10 @@ function applyOverride(w: World, o: Override, mem: GovernorMemory) {
   }
 }
 
+// RunOptions as A defines it, plus fields B accepts ahead of the contract (requested in the report):
+// agentId stamps the record; startFrom branches from a saved run at a tick.
+export type RunOpts = RunOptions & { agentId?: string; startFrom?: { runId: string; tick: number } }
+
 export async function runWorld(opts: RunOpts): Promise<RunSummary> {
   const usage: Usage = { llmCalls: 0, tokens: 0 }
   const summary = await withUsage(usage, () => runInner(opts, usage))
@@ -79,81 +82,121 @@ export async function runWorld(opts: RunOpts): Promise<RunSummary> {
   return summary
 }
 
+export function loadRun(runId: string): RunRecord | null {
+  for (const d of ['runs', 'showcase', 'live']) {
+    try { return JSON.parse(fs.readFileSync(path.join(process.cwd(), 'data', d, `${runId}.json`), 'utf8')) as RunRecord } catch { /* next */ }
+  }
+  return null
+}
+
+type Ctx = { mem: GovernorMemory; pendingOverrides: Override[]; snapshots: Snapshot[] }
+
+// one month of the main world. shared by live runs, replays and branches so they execute identical code.
+async function tickBody(w: World, ctx: Ctx, decideFn: (w: World) => Promise<Decision | undefined>, opts: { overrideDir?: string; llmThoughts: boolean }): Promise<Decision | undefined> {
+  if (w.tick % SNAPSHOT_EVERY === 0) ctx.snapshots.push(snapshotWorld(w))
+  ctx.pendingOverrides.push(...applyOverrides(w, opts.overrideDir, ctx.mem))
+  let decision: Decision | undefined
+  if (decisionDue(w.tick)) {
+    const d = await decideFn(w)
+    if (d) {
+      const { migrations } = applyDecision(w, d)
+      // record the enacted laws (real ids, metadata, support) and the migrations as ordered; how many really
+      // moved is logged as an event. keeping the order (not the outcome) lets a branch replay this exactly.
+      decision = { ...d, laws: w.laws.filter(l => l.enactedTick === w.tick).map(l => ({ ...l })) }
+      for (const m of migrations) if (m.actual < m.requested) event(w, { kind: 'migration', regionId: m.from, text: `only ${fmt(m.actual)} of ${fmt(m.requested)} ordered to move actually left`, severity: 0.1 })
+      ctx.mem.last = decision
+      ctx.pendingOverrides = []
+    }
+  }
+  if (w.tick % 12 === 0) {
+    // yearly: birthdays, pip counts, partners, one batched thought call (thoughts never touch sim numbers)
+    if (w.tick > 0) { ageCitizens(w); syncCitizenCounts(w); pairPartners(w) }
+    updateMoods(w)
+    await refreshThoughts(w, opts.llmThoughts)
+  }
+  return decision
+}
+
 async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   const live = !!opts.live
   const frameEvery = live ? 1 : Math.max(1, opts.frameEvery ?? 12)
-  const w = initWorld(opts.seed, false)
-  const twin = initWorld(opts.seed, true)
-  initCitizens(w)
   const knownLessons = loadLessons()
-  const mem: GovernorMemory = { vetoedTitles: new Set(), lessons: knownLessons }
-  w.lessonsKnown = knownLessons.length
-  let lessonsLearned: Lesson[] = []
+  const ctx: Ctx = { mem: { vetoedTitles: new Set(), lessons: knownLessons }, pendingOverrides: [], snapshots: [] }
   const frames: Frame[] = []
-  const baseline: BaselineFrame[] = [baselineFrame(twin)]
-  let pendingOverrides: Override[] = []
-  let eventCursor = 0
+  let lessonsLearned: Lesson[] = []
+  let branchedFrom: RunRecord['branchedFrom']
+  let w: World
 
-  const writeLive = (done: boolean) => {
-    if (!live) return
-    const rec = record(opts, w, twin, frames, baseline, !done, usage, lessonsLearned, knownLessons)
-    writeJsonAtomic(path.join(process.cwd(), 'data', 'live', `${opts.runId}.json`), rec)
-  }
-  const emit = (decision?: Decision) => {
-    const fresh = w.events.slice(eventCursor)
-    eventCursor = w.events.length
-    const f = snapshot(w, fresh, decision)
-    frames.push(f)
-    opts.onFrame?.(f)
-    writeLive(w.status !== 'alive')
-  }
-
-  applyDecision(twin, BASELINE_DECISION(0))
-  while (w.status === 'alive') {
-    pendingOverrides.push(...applyOverrides(w, opts.overrideDir, mem))
-    let decision: Decision | undefined
-    if (decisionDue(w.tick)) {
-      const d = await decide(w, opts.constitution, pendingOverrides, mem)
-      const { migrations } = applyDecision(w, d)
-      // record what actually happened: real law ids and support, and how many people really moved
-      decision = {
-        ...d,
-        laws: w.laws.filter(l => l.enactedTick === w.tick).map(l => ({ ...l })),
-        migrations: migrations.map(m => ({ from: m.from, to: m.to, people: m.actual, reason: d.migrations.find(x => x.from === m.from && x.to === m.to)?.reason ?? '' })),
-      }
-      for (const m of migrations) if (m.actual < m.requested) event(w, { kind: 'migration', regionId: m.from, text: `only ${fmt(m.actual)} of ${fmt(m.requested)} ordered to move actually left`, severity: 0.1 })
-      mem.last = decision
-      pendingOverrides = []
-    }
-    if (w.tick % 12 === 0) {
-      // yearly: birthdays, pip counts, partners, one batched thought call
-      if (w.tick > 0) { ageCitizens(w); syncCitizenCounts(w); pairPartners(w) }
+  if (opts.startFrom) {
+    // branch: restore the nearest snapshot at or before the tick, replay the source's own decisions to the
+    // exact tick (no llm, no overrides), then hand over to this run's constitution
+    const src = loadRun(opts.startFrom.runId)
+    if (!src) throw new Error(`startFrom: run ${opts.startFrom.runId} not found`)
+    const target = Math.max(0, Math.floor(opts.startFrom.tick))
+    const snap = (src.snapshots ?? []).filter(s => s.tick <= target).sort((a, b) => b.tick - a.tick)[0]
+    if (!snap) throw new Error(`startFrom: run ${opts.startFrom.runId} has no snapshot at or before tick ${target}`)
+    w = restoreWorld(snap)
+    const srcDecisions = new Map(src.frames.filter(f => f.decision).map(f => [f.decision!.tick, f.decision!]))
+    ctx.mem.last = [...srcDecisions.values()].filter(d => d.tick < snap.tick).sort((a, b) => b.tick - a.tick)[0]
+    // where the source emitted frames, reset the per-frame accumulators (whys, new-event cursor) the same way
+    const srcFrameTicks = new Set(src.frames.map(f => f.tick))
+    while (w.tick < target && w.status === 'alive') {
+      await tickBody(w, ctx, async x => srcDecisions.get(x.tick), { llmThoughts: false })
+      if (srcFrameTicks.has(w.tick)) { for (const rs of w.regions) rs.whyAcc = {}; w.frameCursor = w.events.length }
+      stepWorld(w)
       updateMoods(w)
-      await refreshThoughts(w, true)
     }
-    if (w.tick % frameEvery === 0) emit(decision)
-    stepWorld(w)
-    if (twin.status === 'alive') {
-      stepWorld(twin)
-      if (twin.tick % 12 === 0 || twin.status !== 'alive') baseline.push(baselineFrame(twin))
-    }
-    updateMoods(w)
-    if (w.status !== 'alive') emit()
-    else if (live) await sleep(opts.live!.msPerTick)
+    if (w.status !== 'alive') throw new Error(`startFrom: the source world had already ended by tick ${target}`)
+    for (const l of w.laws) if (l.vetoed) ctx.mem.vetoedTitles.add(l.title.toLowerCase())
+    ctx.mem.last = [...srcDecisions.values()].filter(d => d.tick < target).sort((a, b) => b.tick - a.tick)[0]
+    frames.push(...src.frames.filter(f => f.tick < target))
+    ctx.snapshots = (src.snapshots ?? []).filter(s => s.tick < target)
+    branchedFrom = { runId: src.runId, tick: target, agentId: src.agentId ?? src.summary.agentId ?? 'unassigned' }
+  } else {
+    w = initWorld(opts.seed, false)
+    initCitizens(w)
   }
-  // finish the twin so the ui can compare outcomes
-  while (twin.status === 'alive') {
+  w.lessonsKnown = knownLessons.length
+
+  // the twin always runs from tick 0: it never depends on the governor, so it is identical across branches
+  const twin = initWorld(opts.seed, true)
+  const baseline: BaselineFrame[] = [baselineFrame(twin)]
+  applyDecision(twin, BASELINE_DECISION(0))
+  const stepTwin = () => {
+    if (twin.status !== 'alive') return
     stepWorld(twin)
     if (twin.tick % 12 === 0 || twin.status !== 'alive') baseline.push(baselineFrame(twin))
   }
-  if (w.status === 'destroyed') lessonsLearned = await extractLessons(record(opts, w, twin, frames, baseline, false, usage, [], knownLessons))
-  const rec = record(opts, w, twin, frames, baseline, false, usage, lessonsLearned, knownLessons)
-  writeJsonAtomic(path.join(process.cwd(), 'data', 'runs', `${opts.runId}.json`), rec)
-  if (live) writeJsonAtomic(path.join(process.cwd(), 'data', 'live', `${opts.runId}.json`), rec)
-  return rec.summary
+  while (twin.tick < w.tick && twin.status === 'alive') stepTwin()
+
+  const rec = (done: boolean) => record(opts, w, twin, frames, baseline, !done, usage, lessonsLearned, knownLessons, ctx.snapshots, branchedFrom)
+  const emit = (decision?: Decision) => {
+    const fresh = w.events.slice(w.frameCursor)
+    w.frameCursor = w.events.length
+    const f = snapshot(w, fresh, decision)
+    frames.push(f)
+    opts.onFrame?.(f)
+    if (live) writeJsonAtomic(path.join(process.cwd(), 'data', 'live', `${opts.runId}.json`), rec(w.status !== 'alive'))
+  }
+
+  while (w.status === 'alive') {
+    const decision = await tickBody(w, ctx, x => decide(x, opts.constitution, ctx.pendingOverrides, ctx.mem), { overrideDir: opts.overrideDir, llmThoughts: true })
+    if (w.tick % frameEvery === 0 || decision) emit(decision)
+    stepWorld(w)
+    stepTwin()
+    updateMoods(w)
+    if (w.status !== 'alive') { ctx.snapshots.push(snapshotWorld(w)); emit() }
+    else if (live) await sleep(opts.live!.msPerTick)
+  }
+  while (twin.status === 'alive') stepTwin()
+  if (w.status === 'destroyed') lessonsLearned = await extractLessons(rec(true))
+  const final = rec(true)
+  writeJsonAtomic(path.join(process.cwd(), 'data', 'runs', `${opts.runId}.json`), final)
+  if (live) writeJsonAtomic(path.join(process.cwd(), 'data', 'live', `${opts.runId}.json`), final)
+  return final.summary
 }
 
-function record(opts: RunOpts, w: World, twin: World, frames: Frame[], baseline: BaselineFrame[], liveFlag: boolean, usage: Usage, lessonsLearned: Lesson[], knownLessons: Lesson[]): RunRecord {
+function record(opts: RunOpts, w: World, twin: World, frames: Frame[], baseline: BaselineFrame[], liveFlag: boolean, usage: Usage, lessonsLearned: Lesson[], knownLessons: Lesson[], snapshots: Snapshot[], branchedFrom?: RunRecord['branchedFrom']): RunRecord {
   const topEvents: WorldEvent[] = w.events.filter(e => e.kind !== 'law' && e.kind !== 'override').slice().sort((a, b) => b.significance - a.significance || b.severity - a.severity || a.tick - b.tick).slice(0, 8)
   const agentId = opts.agentId ?? 'unassigned'
   const summary: RunSummary = {
@@ -169,7 +212,8 @@ function record(opts: RunOpts, w: World, twin: World, frames: Frame[], baseline:
   }
   return {
     runId: opts.runId, generation: opts.generation, seed: opts.seed, constitution: opts.constitution, frames, baseline, summary,
-    agentId, snapshots: [], precedents: lawPrecedents(w), lessons: knownLessons,
+    agentId, snapshots, precedents: lawPrecedents(w), lessons: knownLessons,
+    ...(branchedFrom ? { branchedFrom } : {}),
     ...(liveFlag ? { live: true } : {}),
   }
 }
