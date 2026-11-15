@@ -13,9 +13,11 @@ import {
   type Candidate, type GenerationFile, type LeaderboardEntry,
 } from './store'
 import { lessonsForPrompt, matchesKnownLesson, mergeLessons, readLearning, readLessons, writeLearning } from './lessons'
-import { notifyGeneration, notifyGoal, notifyWorldDied, send } from '../notify/telegram'
+import { notifyGeneration, notifyGoal, notifyHall, notifyWorldDied, send } from '../notify/telegram'
 import { isTransient, realClock, runQueue, type Clock } from './queue'
 import { trackWorld } from './usage'
+import { recordAgentRun, registerPopulation, settleGeneration } from './agents'
+import { checkHall } from './hall'
 import { sendDigest, sendGoalReport } from '../notify/email'
 
 export type EvolveOptions = {
@@ -176,6 +178,7 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, deps: Deps)
     writeJson(path.join(dirs.runs, `${runId}.json`), record)
   }
   indexRun(summary, seed)
+  recordAgentRun(summary)
   const learning = readLearning()
   learning.worldsRun++
   writeLearning(learning)
@@ -186,6 +189,16 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, deps: Deps)
   if (summary.status === 'destroyed' && !summary.causeOfDeath?.startsWith('runner error')) {
     const { added, repeat } = await learnFromDeath(g, record, deps)
     await notifyWorldDied(summary, record, { generation: g.generation, worldNo: learning.worldsRun, agentName: c.name, added, repeat })
+  }
+  // hall of history: firsts, records, catastrophes, milestones. every hall world is showcased
+  if (!summary.causeOfDeath?.startsWith('runner error')) {
+    const entries = checkHall(record, c.name)
+    if (entries.length) {
+      writeShowcase(record)
+      g.stats = g.stats ?? { deaths: 0, repeatDeaths: 0, newLessons: [] }
+      g.stats.newHall = [...(g.stats.newHall ?? []), ...entries]
+      for (const e of entries) { deps.log(`  hall of history: ${e.title} (${c.name})`); await notifyHall(e, c.name) }
+    }
   }
   if (isWin(summary)) {
     control.goalReached = true
@@ -273,15 +286,16 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
   const bestRecord = (bestRun && (records.get(bestRun.runId) ?? readJson<RunRecord>(path.join(dirs.runs, `${bestRun.runId}.json`)))) || null
   if (bestRecord) writeShowcase(bestRecord)
 
+  const champion = settleGeneration(g.population.map(c => c.id))
   const learning = readLearning()
   learning.rows = learning.rows.filter(r => r.generation !== g.generation)
   learning.rows.push({
     generation: g.generation, bestScore: bestRun?.score ?? 0, lessonsKnown, repeatMistakeRate: Math.round(repeatRate * 1000) / 1000,
-    worlds: allRuns.length, deaths: stats.deaths, repeatDeaths: stats.repeatDeaths, goalAchieved: goals, champion: best?.name, at: new Date().toISOString(),
+    worlds: allRuns.length, deaths: stats.deaths, repeatDeaths: stats.repeatDeaths, goalAchieved: goals, champion: champion?.name ?? best?.name, at: new Date().toISOString(),
   })
   writeLearning(learning)
 
-  const line = `gen ${g.generation} done: best ${best.name} avg ${best.score} (top world ${round4(bestRun?.score ?? 0)}) | lessons known ${lessonsKnown} | repeat-mistake rate ${Math.round(repeatRate * 100)}% (${stats.repeatDeaths}/${stats.deaths} deaths)${goals ? ` | ${goals} goal achieved` : ''}`
+  const line = `gen ${g.generation} done: champion ${champion?.name ?? best.name} | best this gen ${best.name} avg ${best.score} (top world ${round4(bestRun?.score ?? 0)}) | lessons known ${lessonsKnown} | repeat-mistake rate ${Math.round(repeatRate * 100)}% (${stats.repeatDeaths}/${stats.deaths} deaths)${goals ? ` | ${goals} goal achieved` : ''}`
   log(line)
   await notifyGeneration(line)
   await sendDigest({ generation: g, leaderboard, bestRecord, allRuns, learning: learning.rows, lessonsKnown })
@@ -301,6 +315,9 @@ export async function evolve(opts: EvolveOptions) {
     else current = { generation: last.generation + 1, seeds: seedsFor(last.generation + 1), status: 'running', startedAt: new Date().toISOString(), population: await breed(last, popSize, deps.log) }
 
     for (let done = 0; done < gens && !control.stopRequested; done++) {
+      // every active agent runs the same 2 seeds this generation, so compare mode has like-for-like worlds
+      registerPopulation(current.population, current.generation)
+      settleGeneration(current.population.map(c => c.id))
       deps.log(`gen ${current.generation} start: ${current.population.length} constitutions x seeds ${current.seeds.join(', ')}`)
       await runGeneration(current, opts.concurrency, deps, opts.clock ?? realClock)
       // the mission is done: finish this generation, then stop

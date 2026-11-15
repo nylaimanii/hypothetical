@@ -1,5 +1,5 @@
 // telegram notifications. missing env logs once and every call becomes a no-op. never throws.
-import type { Lesson, RunRecord, RunSummary } from '../types'
+import type { HallEntry, Lesson, RunRecord, RunSummary } from '../types'
 
 let warned = false
 export function telegramEnv(): { token: string; chatId: string } | null {
@@ -74,4 +74,12 @@ export async function notifyGoal(s: RunSummary, record: RunRecord, ctx: { genera
 
 export async function notifyGeneration(line: string) {
   await send(line)
+}
+
+// hall of history entries get their own message, e.g. "🏆 first mars city ever: halcyon ii, 2071"
+export async function notifyHall(e: HallEntry, agentName: string) {
+  const year = 2026 + Math.floor((e.tick + 10) / 12)
+  const icon = e.kind === 'catastrophe' ? '💀' : e.kind === 'milestone' ? '🌍' : '🏆'
+  const title = e.kind === 'record' ? `new record, ${e.title}` : e.title
+  await send(`${icon} ${title}: ${agentName}, ${year}\n${e.text}`)
 }

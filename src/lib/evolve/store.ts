@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
-import type { Lesson, RunRecord, RunSummary } from '../types'
+import type { HallEntry, Lesson, RunRecord, RunSummary } from '../types'
 
 export const DATA = path.join(process.cwd(), 'data')
 // paths resolve at call time (statically scoped under data/ so deploy file tracing stays narrow)
@@ -51,7 +51,7 @@ export type GenerationFile = {
   finishedAt?: string
   population: Candidate[]
   // learning this generation: deaths, deaths that repeated a known lesson, lessons added
-  stats?: { deaths: number; repeatDeaths: number; newLessons: Lesson[] }
+  stats?: { deaths: number; repeatDeaths: number; newLessons: Lesson[]; newHall?: HallEntry[] }
 }
 export type LeaderboardEntry = {
   candidateId: string
@@ -71,8 +71,8 @@ export function readLeaderboard(): LeaderboardEntry[] {
 // gzipped with a small summary index next to them.
 const showcaseIndexFile = () => path.join(process.cwd(), 'data', 'showcase', 'index.json')
 
-export function listShowcase(): RunSummary[] {
-  const idx = readJson<RunSummary[]>(showcaseIndexFile())
+export function listShowcase(): (RunSummary & { seed?: number })[] {
+  const idx = readJson<(RunSummary & { seed?: number })[]>(showcaseIndexFile())
   if (idx) return idx
   try {
     return fs.readdirSync(path.join(process.cwd(), 'data', 'showcase')).filter(f => f.endsWith('.json') && f !== 'index.json')
@@ -96,7 +96,7 @@ export function writeShowcase(record: RunRecord): boolean {
   fs.mkdirSync(dirs.showcase, { recursive: true })
   fs.writeFileSync(file, zlib.gzipSync(JSON.stringify(record), { level: 9 }))
   const idx = listShowcase().filter(s => s.runId !== record.runId)
-  writeJson(showcaseIndexFile(), [...idx, record.summary])
+  writeJson(showcaseIndexFile(), [...idx, { ...record.summary, seed: record.seed }])
   return true
 }
 

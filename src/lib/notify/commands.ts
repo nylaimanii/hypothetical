@@ -1,11 +1,13 @@
-// long-polls telegram getUpdates while evolve runs. answers only TELEGRAM_CHAT_ID.
+// polls telegram getUpdates while evolve runs. answers only TELEGRAM_CHAT_ID.
 import { control } from '../evolve/evolve'
 import { loadRecord, readLeaderboard } from '../evolve/store'
 import { askCore, CORE_REAL } from '../evolve/core'
 import { readDay } from '../evolve/usage'
+import { topAgents } from '../evolve/agents'
 import { send, telegramEnv, tg } from './telegram'
 
 type Update = { update_id: number; message?: { chat: { id: number }; text?: string } }
+const POLL_MS = 2000
 
 async function ask(question: string): Promise<string> {
   if (!CORE_REAL) return 'core offline'
@@ -34,6 +36,11 @@ async function reply(cmd: string, rest: string): Promise<string | null> {
     }
     case '/ask':
       return ask(rest)
+    case '/agents': {
+      const top = topAgents(5)
+      if (!top.length) return 'no agent has governed a world yet'
+      return top.map((a, i) => `${i + 1}. ${a.name}${a.champion ? ' (champion)' : ''}${a.retired ? ' (retired)' : ''}: avg ${a.avgScore}, best ${a.bestScore}, ${a.worlds} worlds, ${a.deaths} died, frontier ${a.bestFrontier.replace(/_/g, ' ')}`).join('\n')
+    }
     case '/best': {
       const best = readLeaderboard()[0]
       if (!best) return 'no finished generation yet'
@@ -60,10 +67,11 @@ export function startCommands(): () => void {
     // skip anything sent before this run started
     const old = await tg<Update[]>('getUpdates', { offset: -1, timeout: 0 })
     if (old?.length) offset = old[old.length - 1].update_id + 1
+    // short polling on purpose: a pending long poll makes node's fetch queue every other telegram call
+    // (sendMessage included) behind it for the full timeout, which stalled evolve 25s per message
     while (!stopped) {
-      const updates = await tg<Update[]>('getUpdates', { offset, timeout: 25, allowed_updates: ['message'] }, ctrl.signal)
-      if (!updates) { if (!stopped) await new Promise(r => setTimeout(r, 3000)); continue }
-      for (const u of updates) {
+      const updates = await tg<Update[]>('getUpdates', { offset, timeout: 0, allowed_updates: ['message'] }, ctrl.signal)
+      for (const u of updates ?? []) {
         offset = u.update_id + 1
         if (String(u.message?.chat.id) !== env.chatId) continue
         const raw = (u.message?.text ?? '').trim()
@@ -71,6 +79,7 @@ export function startCommands(): () => void {
         const text = await reply(cmd, raw.replace(/^\S+\s*/, ''))
         if (text) await send(text)
       }
+      if (!stopped) await new Promise(r => setTimeout(r, POLL_MS))
     }
   })()
   return () => { stopped = true; ctrl.abort() }

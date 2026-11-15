@@ -141,6 +141,8 @@ test('evolve: deaths write lessons, repeats are counted, the charter survives br
       score: dies ? 10 : 40 + (n % 5), constitution: o.constitution, peakPopulation: 8e9, moonStage: 'orbital',
       causeOfDeath: dies ? 'The world food supply stayed below 1800 kcal per person for a full year and civilization starved.' : undefined,
       lessonsLearned: dies ? [lesson(o.runId, 'raise food spending before supply drops under 2100 kcal anywhere')] : [],
+      // like the real runWorld, stamp the agent the world belongs to
+      agentId: (o as RunOptions & { agentId?: string }).agentId,
     })
   }
   await evolve({ gens: 2, concurrency: 1, runWorld: fake, clock: fakeClock(), log: () => {} })
@@ -158,4 +160,20 @@ test('evolve: deaths write lessons, repeats are counted, the charter survives br
   assert.ok(gen2.population.some((c: { name: string }) => / ii$/.test(c.name)), 'mutations are named <parent> ii')
   assert.ok(gen2.population.some((c: { name: string }) => c.name.includes(' × ')), 'crossovers are named a × b')
   assert.ok(fs.readdirSync(path.join(dir, 'data/showcase')).some(f => f.endsWith('.json.gz')), 'best world of each generation is showcased')
+
+  // agents registry: seven seeds plus their children, one champion, retired agents left out of gen 2
+  const agents = JSON.parse(fs.readFileSync(path.join(dir, 'data/agents.json'), 'utf8'))
+  assert.ok(agents.length > 7)
+  assert.equal(agents.filter((a: { champion: boolean }) => a.champion).length, 1)
+  const longNow = agents.find((a: { id: string }) => a.id === 'long-now')
+  assert.ok(longNow.protected && !longNow.retired && longNow.worlds === 4)
+  const inGen2 = new Set(gen2.population.map((c: { id: string }) => c.id))
+  for (const a of agents) assert.equal(a.retired, !a.protected && !inGen2.has(a.id), `${a.id} retired flag`)
+  assert.ok(agents.every((a: { emblemSeed: number }) => Number.isInteger(a.emblemSeed)))
+  // hall: the first world to reach the horizon is a milestone, and it is showcased
+  const hall = JSON.parse(fs.readFileSync(path.join(dir, 'data/hall.json'), 'utf8'))
+  const horizon = hall.entries.find((e: { title: string }) => e.title === 'first world to reach 2126')
+  assert.ok(horizon, 'milestone recorded once')
+  assert.equal(hall.entries.filter((e: { title: string }) => e.title === 'first world to reach 2126').length, 1)
+  assert.ok(fs.existsSync(path.join(dir, `data/showcase/${horizon.runId}.json.gz`)))
 }))

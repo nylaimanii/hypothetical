@@ -1,10 +1,13 @@
-// npm run live -- --runId <id> --seed <n> --constitution-file <path>
+// npm run live -- --runId <id> --seed <n> --constitution-file <path> [--agentId <id>] [--start-from <runId>:<tick>] [--batch]
+// live (default): 1 tick per --msPerTick, overrides from data/inject/<runId>, runWorld writes data/live/<runId>.json
+// --batch: runs at full speed with no live file (compare fills in missing worlds this way)
 import fs from 'node:fs'
 // env first, so keys are set before the sim modules load
 import '../src/lib/evolve/env'
 import { runWorld } from '../src/lib/evolve/core'
-import { writeJson, SAFE_ID } from '../src/lib/evolve/store'
-import { injectDir, liveFile, liveRecord } from '../src/lib/evolve/live'
+import { indexRun, writeJson, SAFE_ID } from '../src/lib/evolve/store'
+import { recordAgentRun } from '../src/lib/evolve/agents'
+import { injectDir, liveFile, liveRecord, pendingFile } from '../src/lib/evolve/live'
 import { arg } from './args'
 
 async function main() {
@@ -14,13 +17,29 @@ async function main() {
   const file = arg('constitution-file')
   if (!file) throw new Error('--constitution-file is required')
   const constitution = fs.readFileSync(file, 'utf8')
-  const msPerTick = Number(arg('msPerTick', '1000'))
-  const overrideDir = injectDir(runId)
-  fs.mkdirSync(overrideDir, { recursive: true })
-
-  // placeholder until the first frame; from then on runWorld owns data/live/<runId>.json
-  if (!fs.existsSync(liveFile(runId))) writeJson(liveFile(runId), liveRecord(runId, seed, constitution, []))
-  const summary = await runWorld({ runId, generation: 0, seed, constitution, overrideDir, live: { msPerTick }, frameEvery: 1 })
-  console.log(`live ${runId} ${summary.status} ${summary.endDate} score ${summary.score}`)
+  const agentId = arg('agentId')
+  const from = arg('start-from')
+  const startFrom = from ? { runId: from.slice(0, from.lastIndexOf(':')), tick: Number(from.slice(from.lastIndexOf(':') + 1)) } : undefined
+  const batch = process.argv.includes('--batch')
+  try {
+    if (batch) {
+      const summary = await runWorld({ runId, generation: 0, seed, constitution, frameEvery: 12, ...(agentId ? { agentId } : {}) })
+      indexRun(summary, seed)
+      if (agentId) recordAgentRun(summary)
+      console.log(`batch ${runId} ${summary.status} ${summary.endDate} score ${summary.score}`)
+      return
+    }
+    const msPerTick = Number(arg('msPerTick', '1000'))
+    const overrideDir = injectDir(runId)
+    fs.mkdirSync(overrideDir, { recursive: true })
+    // placeholder until the first frame; from then on runWorld owns data/live/<runId>.json
+    if (!fs.existsSync(liveFile(runId))) writeJson(liveFile(runId), liveRecord(runId, seed, constitution, [], undefined, agentId))
+    const summary = await runWorld({ runId, generation: 0, seed, constitution, overrideDir, live: { msPerTick }, frameEvery: 1, ...(agentId ? { agentId } : {}), ...(startFrom ? { startFrom } : {}) })
+    indexRun(summary, seed)
+    if (agentId) recordAgentRun(summary)
+    console.log(`live ${runId} ${summary.status} ${summary.endDate} score ${summary.score}`)
+  } finally {
+    fs.rmSync(pendingFile(runId), { force: true })
+  }
 }
 main().then(() => process.exit(0), e => { console.error(e); process.exit(1) })

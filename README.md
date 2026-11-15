@@ -58,6 +58,14 @@ If any of these is missing, that feature logs once and is skipped. Nothing crash
   - Later governors get the most relevant lessons in their prompt.
   - A death whose cause matches a lesson that already existed counts as a repeat mistake.
   - `data/learning.json` tracks, per generation: best score, lessons known, and the repeat-mistake rate. It is served at `GET /api/learning`.
+- **Agents:**
+  - Every constitution is an agent with an original name, kept in `data/agents.json`.
+  - The seeds are long now (the charter), meridian, atlas, solace, halcyon, vesper and kestrel.
+  - Mutations count up (`halcyon ii`, `halcyon iii`) and crossovers join names (`meridian × kestrel`).
+  - Each agent tracks its worlds, deaths, scores, best frontier and best lifespan.
+  - The champion is the active agent with the best average. Agents dropped from evolution are retired.
+- **Fairness:** every active agent runs the same 2 seeds each generation, so compare mode always has like-for-like worlds.
+- **Hall of history:** `data/hall.json` records firsts (moon, a Mars city, an eradicated disease, 150 and 200 year lifespans), records (population, lifespan, fastest moon), catastrophes (biggest collapse, deadliest famine) and milestones. Each entry links to its world and tick, and every hall world is showcased.
 - Evolution keeps going, generation after generation, until a world achieves the goal. Then it finishes that generation and stops. Use `--gens n` to stop sooner.
 - Evolution is resumable: rerunning `npm run evolve` continues the unfinished generation.
 - Rate limits are not deaths. A world that fails on a 429, a timeout or a network error is marked interrupted. It is not scored, and it is retried after 30s, then 2m, then 10m, then at the next hour. If 3 worlds in a row are interrupted, the whole generation pauses, sends one telegram message, and resumes on its own.
@@ -66,7 +74,8 @@ If any of these is missing, that feature logs once and is skipped. Nothing crash
 ## telegram
 
 - **Every destroyed world:** world number, generation, date and cause; what it got wrong and the lesson it added; how far it got (frontier, period life expectancy, population); and its human cost.
-- **End of each generation:** the best score, lessons known, and the repeat-mistake rate.
+- **End of each generation:** the champion, the best score, lessons known, and the repeat-mistake rate.
+- **Every new hall of history entry:** its own message, e.g. "🏆 first mars city ever: halcyon ii, 2071".
 - **Goal achieved:** a big celebration.
 - **Commands while evolve runs** (answered only in `TELEGRAM_CHAT_ID`):
 
@@ -74,6 +83,7 @@ If any of these is missing, that feature logs once and is skipped. Nothing crash
 | --- | --- |
 | `/status` | progress, plus today's LLM calls and finished and interrupted worlds |
 | `/best` | the best constitution so far |
+| `/agents` | the top 5 agents |
 | `/pause`, `/resume` | stop and restart new worlds being started |
 | `/ask <question>` | asks the governor about the current best world |
 
@@ -88,6 +98,7 @@ PDFs styled like the site go out over gmail and are always saved to `data/report
   - a requirements table for the two goal tracks, Mars and 200 years
   - the crowd's finest moments
   - every death and its cause
+  - the agents leaderboard, the family tree, and new hall of history entries
   - the leaderboard
   - the best constitution in full
   - how the constitutions changed
@@ -100,6 +111,11 @@ PDFs styled like the site go out over gmail and are always saved to `data/report
 | --- | --- |
 | `GET /api/runs` | `RunSummary[]` (leaderboard best worlds and showcase) |
 | `GET /api/learning` | one row per generation: best score, lessons known, repeat-mistake rate |
+| `GET /api/agents` | `Agent[]` |
+| `GET /api/agents/[id]` | `{ agent, runs }` |
+| `GET /api/compare?agents=a,b,c,d` | `{ seed, runs, divergences, pending, note? }`: each agent's best world on their most shared seed, plus divergences for every pair. Missing worlds are started in the background (local only) |
+| `GET /api/hall` | `HallEntry[]` |
+| `POST /api/branch` `{ runId, tick, agentId }` | `{ runId }`, a new live world from that moment, governed by that agent |
 | `GET /api/runs/[id]` | `RunRecord` |
 | `POST /api/live/start` `{ constitution?, seed? }` | `{ runId }`, spawns a live world at 1 second per month |
 | `GET /api/live/[id]` | the live `RunRecord` so far |
@@ -110,7 +126,7 @@ PDFs styled like the site go out over gmail and are always saved to `data/report
 
 The site deploys to vercel as a normal Next.js app. A deployed copy has no writable disk, so it detects read-only mode (or `READ_ONLY=1`):
 
-- `/api/runs` and `/api/runs/[id]` serve only the committed worlds in `data/showcase/`.
-- live, override and ask return `503 {"error":"runner offline, local only"}`.
+- `/api/runs` and `/api/runs/[id]` serve only the committed worlds in `data/showcase/`. Agents, compare, hall and learning read whatever data is committed.
+- live, override, ask and branch return `503 {"error":"runner offline, local only"}`.
 
 Evolution and live worlds run on your own machine.

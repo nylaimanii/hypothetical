@@ -6,6 +6,7 @@ import PDFDocument from 'pdfkit'
 import type { CrowdState, RunRecord, RunSummary, WorldEvent } from '../types'
 import { isWin, type GenerationFile, type LeaderboardEntry } from '../evolve/store'
 import type { LearningRow } from '../evolve/lessons'
+import { familyTree, readAgents } from '../evolve/agents'
 
 const C = { bone: '#EFE9DD', ink: '#1C1A17', muted: '#6B655B', rule: '#CFC6B4', ember: '#C2410C' }
 const FONTS = path.join(process.cwd(), 'fonts')
@@ -296,6 +297,27 @@ export async function digestPdf({ generation: g, leaderboard, bestRecord, allRun
     const arc = story(doc, bestRecord, years)
     if (arc.length) { h2(doc, 'religion and school arc'); for (const a of arc) mono(doc, a, C.ink) }
     aiVsTwin(doc, bestRecord)
+  }
+
+  const hall = g.stats?.newHall ?? []
+  if (hall.length) {
+    h2(doc, 'new in the hall of history')
+    for (const e of hall) {
+      const year = 2026 + Math.floor((e.tick + 10) / 12)
+      h3(doc, `${e.title}, ${year}`, e.kind === 'catastrophe' ? C.ember : C.ink)
+      para(doc, e.text, e.kind === 'catastrophe' ? C.ember : C.ink)
+      mono(doc, `${e.kind}   world ${e.runId}`)
+    }
+  }
+
+  const agents = readAgents().filter(a => a.worlds > 0).sort((x, y) => Number(x.retired) - Number(y.retired) || y.avgScore - x.avgScore)
+  if (agents.length) {
+    h2(doc, 'agents')
+    table(doc, ['agent', 'avg', 'best', 'worlds', 'died', 'frontier', 'life exp', ''],
+      agents.slice(0, 15).map(a => [a.name, a.avgScore, a.bestScore, a.worlds, a.deaths, words(a.bestFrontier), a.bestPeriodLifeExpectancy ? a.bestPeriodLifeExpectancy.toFixed(1) : '', [a.champion ? 'champion' : '', a.retired ? 'retired' : '', a.protected ? 'protected' : ''].filter(Boolean).join(', ')]),
+      [2.2, 0.8, 0.8, 0.7, 0.6, 1.4, 0.8, 1.2])
+    const tree = familyTree()
+    if (tree.length) { h3(doc, 'family tree'); for (const line of tree) mono(doc, line, C.ink) }
   }
 
   if (leaderboard.length) {
