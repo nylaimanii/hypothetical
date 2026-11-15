@@ -25,6 +25,7 @@ import { paceStats } from './usage'
 import { isTransient, realClock, runQueue, type Clock } from './queue'
 import { trackWorld } from './usage'
 import { lineageRoots, recordAgentRun, registerPopulation, settleGeneration } from './agents'
+import { indexFeatures, recomputeSteps } from './steps'
 import { checkHall } from './hall'
 import { sendDigest, sendGoalReport } from '../notify/email'
 
@@ -224,6 +225,8 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, stage: Stag
   }
   indexRun(summary, seed)
   recordAgentRun(summary, stage)
+  // feature row for the steps recipe (real llm runs only)
+  try { indexFeatures(record) } catch (e) { deps.log(`  steps: could not index ${runId}: ${(e as Error).message}`) }
   const learning = readLearning()
   learning.worldsRun++
   writeLearning(learning)
@@ -394,11 +397,18 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
   }
   writeLearning(learning)
 
+  const steps = recomputeSteps()
+  const topStep = steps.helped[0], deadliest = steps.hurt[0]
+  const stepLines = [
+    topStep ? `top step so far: ${topStep.text} (effect +${topStep.effect}, ${topStep.helpedWorlds.length} worlds helped)` : '',
+    deadliest ? `deadliest step so far: ${deadliest.text} (in ${deadliest.hurtWorlds.length} worlds that did worse${deadliest.hurtWorlds.some(id => allRuns.some(r => r.runId === id && r.status === 'destroyed')) ? ' or died' : ''})` : '',
+  ].filter(Boolean)
   const line = `gen ${g.generation} done: champion ${champion?.name ?? best.name} | best screening ${best.name} avg ${best.score} | best 100-year world ${round4(bestRun?.score ?? 0)} | lessons known ${lessonsKnown} | repeat-mistake rate ${Math.round(repeatRate * 100)}% (${stats.repeatDeaths}/${stats.deaths} deaths)${goals ? ` | ${goals} goal achieved` : ''}`
   log(line)
+  for (const l of stepLines) log(`  ${l}`)
   if (g.stats?.newHall?.length) await notifyHallBatch(g.generation, g.stats.newHall)
-  await notifyGeneration(line)
-  await sendDigest({ generation: g, leaderboard, bestRecord, allRuns, learning: learning.rows.filter(r => !r.lineage), lessonsKnown })
+  await notifyGeneration([line, ...stepLines].join('\n'))
+  await sendDigest({ generation: g, leaderboard, bestRecord, allRuns, learning: learning.rows.filter(r => !r.lineage), lessonsKnown, steps })
 }
 
 // background chores while evolve runs: lastHeartbeat every minute, a telegram heartbeat every hour, a warning

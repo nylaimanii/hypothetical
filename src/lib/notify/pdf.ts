@@ -3,9 +3,12 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import PDFDocument from 'pdfkit'
-import type { CrowdState, RunRecord, RunSummary, WorldEvent } from '../types'
-import { isWin, type GenerationFile, type LeaderboardEntry } from '../evolve/store'
+import type { CrowdState, RunRecord, RunSummary, Step, WorldEvent } from '../types'
+import { dirs, isWin, readJson, type GenerationFile, type LeaderboardEntry } from '../evolve/store'
 import type { LearningRow } from '../evolve/lessons'
+import type { StepsFile } from '../evolve/steps'
+import { learningReport, worldReport, type LearningReport, type Ref, type ReportSection, type WorldReport } from '../evolve/report'
+import { epitaphOf } from './epitaph'
 import { familyTree, readAgents } from '../evolve/agents'
 
 const C = { bone: '#EFE9DD', ink: '#1C1A17', muted: '#6B655B', rule: '#CFC6B4', ember: '#C2410C' }
@@ -244,60 +247,109 @@ function learningCurve(doc: Doc, rows: LearningRow[]) {
   table(doc, ['gen', 'best score', 'lessons', 'deaths', 'repeat-mistake rate'], rows.slice(-12).map(r => [r.generation, r.bestScore, r.lessonsKnown, r.deaths, pct(r.repeatMistakeRate)]), [0.6, 1, 1, 1, 1.4])
 }
 
-export type DigestInput = {
-  generation: GenerationFile; leaderboard: LeaderboardEntry[]; bestRecord: RunRecord | null; allRuns: RunSummary[]
-  learning?: LearningRow[]; lessonsKnown?: number
+// a WorldReport rendered the same way the site shows it: summary lines, then sections of claims with their refs
+function renderReport(doc: Doc, r: WorldReport, only?: ReportSection['id'][]) {
+  if (r.epitaph) { doc.moveDown(0.2); para(doc, `“${r.epitaph}”`, C.ember) }
+  doc.moveDown(0.2)
+  for (const line of r.summary) para(doc, line)
+  for (const sec of r.sections) {
+    if (only && !only.includes(sec.id)) continue
+    const deadly = sec.id === 'cost' || (sec.id === 'ending' && r.status === 'destroyed')
+    h3(doc, sec.title, deadly ? C.ember : C.ink)
+    for (const c of sec.claims) {
+      para(doc, c.text)
+      refs(doc, c.refs)
+      doc.moveDown(0.25)
+    }
+  }
 }
 
-export async function digestPdf({ generation: g, leaderboard, bestRecord, allRuns, learning = [], lessonsKnown }: DigestInput): Promise<Buffer> {
+// refs in mono: dates for event ticks, world ids, and source urls as links
+function refs(doc: Doc, rs: Ref[]) {
+  if (!rs.length) return
+  const plain = rs.filter(x => !x.url).map(x => x.date ? `${x.date} (tick ${x.tick})` : x.runId ? `world ${x.runId}` : '').filter(Boolean)
+  if (plain.length) mono(doc, plain.join('   '))
+  for (const x of rs.filter(x => x.url)) {
+    doc.font('mono').fontSize(8).fillColor(C.muted).text(x.url!, M, doc.y, { width: width(doc), link: x.url, underline: true })
+  }
+}
+
+function stepsPage(doc: Doc, steps: StepsFile) {
+  if (!steps.helped.length && !steps.hurt.length) return
+  doc.addPage()
+  h2(doc, 'the steps')
+  mono(doc, `the recipe so far, from ${steps.worlds} real worlds. effect: how much better (or worse) worlds with the step did, in standard units. confidence grows with sample size`)
+  const list = (title: string, xs: Step[], color: string) => {
+    if (!xs.length) return
+    h3(doc, title, color)
+    xs.forEach((st, i) => {
+      para(doc, `${i + 1}. ${st.text}`, color === C.ember ? C.ember : C.ink)
+      mono(doc, `effect ${st.effect > 0 ? '+' : ''}${st.effect}   confidence ${pct(st.confidence)}   helped ${st.helpedWorlds.length}   hurt ${st.hurtWorlds.length}`)
+      const proof = [...st.helpedWorlds.slice(0, 3).map(id => `+ ${id}`), ...st.hurtWorlds.slice(0, 3).map(id => `- ${id}`)]
+      if (proof.length) mono(doc, proof.join('   '))
+    })
+  }
+  list('in the worlds that did best for everyone', steps.helped, C.ink)
+  list('in the worlds that died', steps.hurt, C.ember)
+}
+
+function learningStory(doc: Doc, rep: LearningReport, last = 15) {
+  const entries = rep.entries.filter(e => e.status === 'destroyed' || e.lesson).slice(-last)
+  if (!entries.length) return
+  h2(doc, 'the learning story')
+  mono(doc, `${rep.worlds} worlds, ${rep.deaths} died, ${rep.lessons} lessons.${rep.avoidedShare !== null ? ` later worlds avoided ${pct(rep.avoidedShare)} of the mistakes a lesson named.` : ''}`)
+  for (const e of entries) {
+    h3(doc, `#${e.order} ${e.agentName}, ${e.status === 'destroyed' ? `died ${e.endDate}` : `${words(e.status)} ${e.endDate}`}`, e.status === 'destroyed' ? C.ember : C.ink)
+    if (e.cause) para(doc, e.cause, C.ember)
+    if (e.lesson) para(doc, `lesson: ${e.lesson.rule}`)
+    if (e.lesson && e.later.avoided !== null) mono(doc, e.later.avoided ? `avoided by all ${e.later.worlds} later worlds` : `repeated by ${e.later.repeatedBy.length} later world${e.later.repeatedBy.length > 1 ? 's' : ''}: ${e.later.repeatedBy.slice(0, 4).join(', ')}`, e.later.avoided ? C.muted : C.ember)
+    mono(doc, `world ${e.runId}`)
+  }
+}
+
+export type DigestInput = {
+  generation: GenerationFile; leaderboard: LeaderboardEntry[]; bestRecord: RunRecord | null; allRuns: RunSummary[]
+  learning?: LearningRow[]; lessonsKnown?: number; steps?: StepsFile
+}
+
+// same structure as the site's reports (GET /api/report/[runId], /api/report/learning), so both read the same
+export async function digestPdf({ generation: g, leaderboard, bestRecord, allRuns, learning = [], lessonsKnown, steps }: DigestInput): Promise<Buffer> {
   const { doc, done } = makeDoc(`generation ${g.generation} digest`)
   const ranked = [...g.population].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
   const best = ranked[0]
   const goals = allRuns.filter(isWin).length
   const deaths = allRuns.filter(r => r.status === 'destroyed')
   cover(doc, 'hypothetical / generation digest', `generation ${g.generation}`,
-    `${g.population.length} constitutions on seeds ${g.seeds.join(' and ')}. ${deaths.length} of ${allRuns.length} worlds died${goals ? `, ${goals} achieved the goal` : ''}.${lessonsKnown !== undefined ? ` ${lessonsKnown} lessons known.` : ''}`)
-
-  if (bestRecord) {
-    const s = bestRecord.summary
-    h2(doc, 'the best world')
-    mono(doc, best?.score !== undefined ? `${best.name}, average score ${num(best.score)}` : '')
-    humanCost(doc, s)
-    doc.moveDown(0.3)
-    summaryFacts(doc, s)
-  }
+    `${g.population.length} constitutions screened for 50 years on seeds ${g.seeds.join(' and ')}, the top 2 run for 100. ${deaths.length} of ${allRuns.length} worlds died${goals ? `, ${goals} achieved the goal` : ''}.${lessonsKnown !== undefined ? ` ${lessonsKnown} lessons known.` : ''}`)
 
   learningCurve(doc, learning)
 
   const fresh = g.stats?.newLessons ?? []
   if (fresh.length) {
     h2(doc, 'new lessons')
-    for (const l of fresh) { h3(doc, l.rule); mono(doc, `from ${l.fromRunId}`); para(doc, `mistake: ${l.mistake}`); para(doc, `result: ${l.consequence}`, C.ember) }
-  }
-
-  if (deaths.length) {
-    h2(doc, 'deaths')
-    for (const d of deaths) {
-      h3(doc, `${d.runId}, died ${d.endDate}`, C.ember)
-      if (d.causeOfDeath) para(doc, d.causeOfDeath, C.ember)
-      mono(doc, `score ${num(d.score)}   frontier ${words(d.frontier)}   life exp ${d.peakPeriodLifeExpectancy.toFixed(1)}   deaths ${pop(d.humanCost?.deaths ?? 0)}`)
-    }
+    for (const l of fresh) { h3(doc, l.rule); mono(doc, `from world ${l.fromRunId}`); para(doc, `mistake: ${l.mistake}`); para(doc, `result: ${l.consequence}`, C.ember) }
   }
 
   if (bestRecord) {
+    h2(doc, 'the best world')
+    mono(doc, `world ${bestRecord.runId}${best?.score !== undefined ? `   ${best.name}, screening average ${num(best.score)}` : ''}`)
+    renderReport(doc, worldReport(bestRecord))
     requirementsTable(doc, bestRecord)
-    const moments = crowdMoments(bestRecord)
-    if (moments.length) {
-      h2(doc, 'the crowd, at its finest')
-      for (const m of moments) para(doc, `${m.date}, ${m.region}: ${words(m.c.phase)} about ${m.c.topic}${m.endedBored ? `. bored of it by ${m.endedBored}.` : '.'}`)
-    }
-    h2(doc, 'the best world, year by year')
-    const years = Math.max(1, Math.ceil(bestRecord.summary.ticks / 12 / 40))
-    if (years > 1) mono(doc, `every ${years} years, plus every year with a major event`)
-    const arc = story(doc, bestRecord, years)
-    if (arc.length) { h2(doc, 'religion and school arc'); for (const a of arc) mono(doc, a, C.ink) }
-    aiVsTwin(doc, bestRecord)
   }
+
+  if (deaths.length) {
+    h2(doc, 'the dead')
+    for (const d of deaths) {
+      h3(doc, `${d.runId}, died ${d.endDate}`, C.ember)
+      const rec = readJson<RunRecord>(path.join(dirs.runs, `${d.runId}.json`))
+      if (rec) renderReport(doc, worldReport(rec), ['ending', 'cost'])
+      else { para(doc, `“${epitaphOf(d, d.agentId).line}”`, C.ember); if (d.causeOfDeath) para(doc, d.causeOfDeath, C.ember) }
+    }
+  }
+
+  if (steps) stepsPage(doc, steps)
+  learningStory(doc, learningReport())
+  if (bestRecord) aiVsTwin(doc, bestRecord)
 
   const hall = g.stats?.newHall ?? []
   if (hall.length) {
@@ -345,6 +397,7 @@ export async function goalPdf(record: RunRecord, agentName: string): Promise<Buf
   const s = record.summary
   const { doc, done } = makeDoc(`goal achieved: ${s.runId}`)
   cover(doc, 'hypothetical / goal achieved', `humanity endures, ${s.endDate}`, `${agentName}. world ${s.runId}, generation ${record.generation}, seed ${record.seed}`)
+  renderReport(doc, worldReport(record))
   humanCost(doc, s)
   doc.moveDown(0.3)
   summaryFacts(doc, s)

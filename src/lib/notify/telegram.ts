@@ -1,6 +1,7 @@
 // telegram notifications. missing env logs once and every call becomes a no-op. never throws.
 import type { HallEntry, Lesson, RunRecord, RunSummary } from '../types'
 import { readAgents } from '../evolve/agents'
+import { epitaphOf } from './epitaph'
 
 let warned = false
 export function telegramEnv(): { token: string; chatId: string } | null {
@@ -43,6 +44,7 @@ export function deathMessage(s: RunSummary, ctx: DeathContext): string {
   const lesson = ctx.added[0]
   const lines = [
     `world #${ctx.worldNo} (gen ${ctx.generation}, ${ctx.agentName}) died ${s.endDate}`,
+    `"${epitaphOf(s, ctx.agentName, lesson ?? ctx.repeat).line}"`,
     s.causeOfDeath ? `cause: ${s.causeOfDeath}` : '',
     lesson ? `got wrong: ${lesson.mistake}` : ctx.repeat ? `got wrong: ${ctx.repeat.mistake}` : '',
     lesson ? `lesson added: ${lesson.rule}` : '',

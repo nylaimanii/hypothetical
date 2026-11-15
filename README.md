@@ -84,8 +84,8 @@ If any of these is missing, that feature logs once and is skipped. Nothing crash
 
 ## telegram
 
-- **Every destroyed world:** world number, generation, date and cause; what it got wrong and the lesson it added; how far it got (frontier, period life expectancy, population); and its human cost.
-- **End of each generation:** the champion, the best score, lessons known, and the repeat-mistake rate.
+- **Every destroyed world:** world number, generation, date, its epitaph and cause; what it got wrong and the lesson it added; how far it got (frontier, period life expectancy, population); and its human cost.
+- **End of each generation:** the champion, the best score, lessons known, the repeat-mistake rate, the top step so far, and the deadliest step so far.
 - **New hall of history entries:** one message per generation, one line each, e.g. "🏆 first mars city ever: halcyon ii, 2071".
 - **Goal achieved:** a big celebration.
 - **Every hour:** a heartbeat, e.g. "alive · gen 3 · world 9/16 · 41 min per world · 12 deaths so far · best score 0.61".
@@ -106,7 +106,7 @@ If any of these is missing, that feature logs once and is skipped. Nothing crash
 
 PDFs styled like the site go out over gmail and are always saved to `data/reports/`:
 
-- **Generation digest, after every generation:**
+- **Generation digest, after every generation.** It uses the same report structure as `/api/report`, so the site and the inbox read the same. Each digest has:
   - the learning curve
   - new lessons
   - the best world: its human cost up front, then its story year by year
@@ -132,6 +132,9 @@ PDFs styled like the site go out over gmail and are always saved to `data/report
 | `GET /api/evolve/now` | mission control: the running generation, current world and its latest frame, `lastHeartbeat` (refreshed every minute), the queue, the last 5 worlds, new lessons, stats (worlds lost, lessons known, best score, champion, minutes per world, worlds by morning), with `running: true`. When idle: 200 `{ running: false, lastHeartbeat }` |
 | `GET /api/runs/[id]/frames?from=&to=` | `FramesResponse` `{ runId, from, to, frames }`: full frames in an inclusive tick range, for lazy loading |
 | `GET /api/hall` | `HallEntry[]` |
+| `GET /api/steps[?runs=a,b]` | `Step[]`, the cross-world recipe over real LLM worlds: up to 15 steps found in the worlds that did best for everyone (effect > 0), then up to 15 found in the dead ones. Each has plain-words text, effect, confidence (by sample size), and helped/hurt world ids as proof. Recomputed after every generation into `data/steps.json`; `?runs` restricts it to those worlds |
+| `GET /api/report/[runId]` | one world in plain words: a summary (5 lines max), then what it decided and why, what people felt, who moved and why, what it cost in lives, what it learned from earlier worlds, what killed it (or how far it got), and the steps it got right or wrong. Every claim carries refs: an event tick, a source url, or another world |
+| `GET /api/report/learning` | the cross-world story: every world in order, its cause of death, the lesson it added, and whether later worlds avoided that mistake |
 | `POST /api/branch` `{ runId, tick, agentId }` | `{ runId }`, a new live world from that moment, governed by that agent |
 | `GET /api/runs/[id]` | `RunRecord`; with `?slim=1` a `SlimRun` (no frames, yearly rows and decision rows) |
 | `POST /api/live/start` `{ constitution?, seed? }` | `{ runId }`, spawns a live world at 1 second per month |

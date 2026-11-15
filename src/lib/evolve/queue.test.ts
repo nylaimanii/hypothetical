@@ -217,3 +217,50 @@ test('evolve: deaths write lessons, repeats are counted, the charter survives br
   assert.equal(hall.entries.filter((e: { title: string }) => e.title === 'first world to reach 2126').length, 1)
   assert.ok(!fs.existsSync(path.join(dir, `data/showcase/${horizon.runId}.json.gz`)), 'hall worlds from offline runs stay out of the showcase')
 }))
+
+test('steps: a law common in the best worlds ranks as helped, one common in dead worlds as hurt', async () => {
+  const { computeSteps } = await import('./steps')
+  const budget = { food: 0.2, energy: 0.15, education: 0.15, space: 0.1, security: 0.1, welfare: 0.2, research: 0.1 }
+  const world = (id: string, score: number, destroyed: boolean, laws: string[]) => ({
+    runId: id, agentId: 'a', generation: 1, horizon: 'screen' as const, budget, lawFirstTick: Object.fromEntries(laws.map(l => [l, 24])),
+    religion: 'free', schoolYearsMax: 10, citiesFirstTick: null, research: {}, decisions: 25,
+    outcome: { score, le: 70 + score * 10, popTrend: destroyed ? 0.5 : 1, deathRatio: destroyed ? 0.3 : 0.01, approval: 0.5, destroyed },
+  })
+  const runs = [
+    world('w1', 0.6, false, ['rail']), world('w2', 0.55, false, ['rail']), world('w3', 0.5, false, ['rail', 'crackdown']),
+    world('w4', 0.1, true, ['crackdown']), world('w5', 0.12, true, ['crackdown']), world('w6', 0.3, false, []),
+  ]
+  const out = computeSteps(runs)
+  const rail = out.helped.find(s => s.id === 'law-rail')
+  assert.ok(rail && rail.effect > 0, 'rail helped')
+  assert.deepEqual(rail!.helpedWorlds.sort(), ['w1', 'w2', 'w3'])
+  assert.equal(rail!.text, 'pass a rail law')
+  const crack = out.hurt.find(s => s.id === 'law-crackdown')
+  assert.ok(crack && crack.effect < 0, 'crackdown hurt')
+  assert.ok(crack!.hurtWorlds.includes('w4') && crack!.hurtWorlds.includes('w5'))
+  assert.ok(crack!.confidence > 0 && crack!.confidence < 1)
+  assert.ok(!out.helped.some(s => s.id === 'law-crackdown'))
+})
+
+test('learning report: a lesson repeated by a later death is not avoided; epitaph falls back to the cause', inTempDir(async dir => {
+  const { learningReport } = await import('./report')
+  const { placeholderSummary } = await import('./store')
+  const { epitaphOf } = await import('../notify/epitaph')
+  const starve = 'The world food supply stayed below 1800 kcal per person for a full year and civilization starved.'
+  const sum = (runId: string, status: 'destroyed' | 'complete', cause?: string) => ({
+    ...placeholderSummary({ runId, generation: 1, status, endDate: '2040-01', ticks: 158, constitution: 'x', peakPopulation: 8e9, moonStage: 'none', agentId: 'meridian', causeOfDeath: cause }), seed: 1002,
+  })
+  fs.mkdirSync(path.join(dir, 'data/runs'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'data/runs/index.json'), JSON.stringify([sum('w1', 'destroyed', starve), sum('w2', 'complete'), sum('w3', 'destroyed', starve)]))
+  fs.writeFileSync(path.join(dir, 'data/lessons.json'), JSON.stringify([{ id: 'w1-l0', fromRunId: 'w1', generation: 1, mistake: 'kept food spending flat while harvests failed', consequence: starve, rule: 'raise food spending early', timesRelevant: 1 }]))
+  const rep = learningReport()
+  assert.equal(rep.worlds, 3)
+  const first = rep.entries[0]
+  assert.equal(first.lesson?.rule, 'raise food spending early')
+  assert.deepEqual(first.later.repeatedBy, ['w3'])
+  assert.equal(first.later.avoided, false)
+  assert.equal(rep.avoidedShare, 0)
+  const ep = epitaphOf(sum('w1', 'destroyed', starve), 'meridian', { id: 'x', fromRunId: 'w1', generation: 1, mistake: 'kept food spending flat while harvests failed', consequence: '', rule: '', timesRelevant: 1 })
+  assert.equal(ep.causeKind, 'famine')
+  assert.equal(ep.line, "here lies meridian's world, 2026 to 2040. it kept food spending flat while harvests failed.")
+}))
