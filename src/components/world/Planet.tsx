@@ -8,6 +8,7 @@ import type { Biome } from './geodata'
 import { buildTiles, C, LAND_TOP, OCEAN_TOP, R, STEP, toonGradient } from './lib'
 import { tickToDate } from './time'
 import { useStore } from '../state/store'
+import { regionModeColor } from './modes'
 
 const TILE_H = 0.5
 
@@ -19,6 +20,14 @@ const DEPTH_HEX = ['#86BBCB', '#5F97B0', '#4A7F9D', '#3A6886']
 const SNOW = new THREE.Color('#F3F2EE')
 const ROCK = new THREE.Color('#9D978D')
 const DRY = new THREE.Color('#EADFC6')
+// v3: the world repainted by its decisions
+const FOREST = new THREE.Color('#3B6B43')
+const FIELD = new THREE.Color('#CDBB62')
+const SMOG = new THREE.Color('#8C7A5B')
+const MURK = new THREE.Color('#5E6B5A')
+const PALE_SEA = new THREE.Color('#C9D3D2')
+const SCAR: Record<string, THREE.Color> = { famine: new THREE.Color('#9C7F57'), revolt: new THREE.Color('#5F5853'), war: new THREE.Color('#57524E'), collapse: new THREE.Color('#8A8782'), disaster: new THREE.Color('#6B5E52') }
+const hash01 = (i: number) => ((i * 2654435761) % 1000) / 1000
 
 // ocean and foam move in the vertex shader: no per frame cpu work
 function animated(base: THREE.MeshToonMaterial, kind: 'ocean' | 'foam') {
@@ -59,6 +68,14 @@ export default function Planet({ frame }: { frame: Frame }) {
   const quality = useStore((s) => s.quality)
   // seasons move monthly: recolor when the month changes, not every frame
   const month = useStore((s) => Math.floor(s.playhead))
+  const overlay = useStore((s) => s.overlay)
+  // population mode: land rises with the people on it
+  const popKey = overlay === 'population' ? frame.regions.map((r) => Math.round(r.population / 1e7)).join() : ''
+  const lift = useMemo(() => {
+    if (!popKey) return null
+    const max = Math.max(...frame.regions.map((r) => r.population))
+    return frame.regions.map((r) => Math.sqrt(r.population / max) * 0.55)
+  }, [popKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const geo = useMemo(() => new RoundedBoxGeometry(1, TILE_H, 1, 2, 0.09), [])
   const blockGeo = useMemo(() => new RoundedBoxGeometry(1, STEP, 1, 2, 0.03), [])
@@ -90,9 +107,10 @@ export default function Planet({ frame }: { frame: Frame }) {
     const mtx = new THREE.Matrix4(), pos = new THREE.Vector3(), scl = new THREE.Vector3()
     layout.land.forEach((ti, k) => {
       const t = tiles[ti]
-      pos.copy(t.normal).multiplyScalar(LAND_TOP - TILE_H / 2)
-      L.setMatrixAt(k, mtx.compose(pos, t.quat, scl.set(t.w * 1.03, 1, t.d * 1.03)))
-      const top = LAND_TOP + t.band * STEP
+      const up = lift && t.region >= 0 ? lift[t.region] : 0
+      pos.copy(t.normal).multiplyScalar(LAND_TOP - TILE_H / 2 + up / 2)
+      L.setMatrixAt(k, mtx.compose(pos, t.quat, scl.set(t.w * 1.03, 1 + up / TILE_H, t.d * 1.03)))
+      const top = LAND_TOP + t.band * STEP + (lift && t.region >= 0 ? lift[t.region] : 0)
       pos.copy(t.normal).multiplyScalar(top - TILE_H / 2)
       G.setMatrixAt(k, mtx.compose(pos, t.quat, layout.border[ti] ? scl.set(t.w * 1.02, 1.08, t.d * 1.02) : scl.set(0, 0, 0)))
     })
@@ -100,7 +118,7 @@ export default function Planet({ frame }: { frame: Frame }) {
       const t = tiles[tile]
       // each block a little narrower than the one under it: chunky stepped ridges
       const inset = 1 - level * 0.09
-      pos.copy(t.normal).multiplyScalar(LAND_TOP + (level - 0.5) * STEP)
+      pos.copy(t.normal).multiplyScalar(LAND_TOP + (level - 0.5) * STEP + (lift && t.region >= 0 ? lift[t.region] : 0))
       S.setMatrixAt(k, mtx.compose(pos, t.quat, scl.set(t.w * inset, 1, t.d * inset)))
     })
     layout.sea.forEach((ti, k) => {
@@ -120,7 +138,7 @@ export default function Planet({ frame }: { frame: Frame }) {
       F.setMatrixAt(k, mtx.compose(pos, q, scl.set(1 + Math.abs(jitter), 1, 1)))
     })
     for (const m of [L, S, O, F, G]) { m.instanceMatrix.needsUpdate = true; m.computeBoundingSphere() }
-  }, [tiles, layout])
+  }, [tiles, layout, lift])
 
   // colors: biome tinted by region, real seasonal snow, drought pales, unrest glows ember on borders
   useEffect(() => {
@@ -135,10 +153,20 @@ export default function Planet({ frame }: { frame: Frame }) {
     const dry = frame.regions.map((r) => r.foodKcalPerCapita < 2150 || frame.newEvents.some((e) => (e.kind === 'famine' || /drought/i.test(e.text)) && e.regionId === r.id))
     const ember = new THREE.Color(C.ember), off = new THREE.Color(0, 0, 0)
     const col = new THREE.Color(), tmp = new THREE.Color()
+    const modeCols = frame.regions.map((r) => { const h = regionModeColor(overlay, frame, r); return h ? new THREE.Color(h) : null })
     const surface = (ti: number, level: number) => {
       const t = tiles[ti]
+      const mc = t.region >= 0 ? modeCols[t.region] : null
+      if (mc) return col.copy(mc).multiplyScalar(0.94 + hash01(ti) * 0.08 + level * 0.03)
       col.set(BIOME_HEX[t.biome])
       if (t.region >= 0) col.lerp(regionCols[t.region], 0.22)
+      const vis = t.region >= 0 ? frame.regions[t.region].visual : undefined
+      if (vis && overlay === 'real' && !t.ice) {
+        if (t.biome !== 'desert' && t.biome !== 'tundra') col.lerp(FOREST, Math.max(0, vis.forest - 0.3) * 0.5)
+        if ((t.biome === 'temperate' || t.biome === 'savanna') && hash01(ti * 31) < vis.farmland * 0.55) col.lerp(FIELD, 0.45)
+        col.lerp(SMOG, vis.pollution * 0.3)
+        if (vis.damage.level > 0.05 && SCAR[vis.damage.kind]) col.lerp(SCAR[vis.damage.kind], vis.damage.level * 0.65)
+      }
       if (t.region >= 0 && dry[t.region]) col.lerp(DRY, 0.55)
       if (level >= 2) col.lerp(ROCK, 0.25 * level)
       const snowy = t.biome !== 'desert' && (t.lat > snowLat || (t.band === 3 && level === 3) || (t.band >= 2 && level === t.band && t.lat > snowLat - 14))
@@ -154,9 +182,16 @@ export default function Planet({ frame }: { frame: Frame }) {
       G.setColorAt(k, g > 0 ? tmp.copy(ember).multiplyScalar(0.25 + g * 0.75) : off)
     })
     layout.stacks.forEach(({ tile, level }, k) => S.setColorAt(k, surface(tile, level)))
-    layout.sea.forEach((ti, k) => O.setColorAt(k, col.set(DEPTH_HEX[tiles[ti].depth]).multiplyScalar(0.97 + ((ti * 7919) % 100) / 100 * 0.06)))
+    // pollution murks the ocean; data modes pale it so the land reads
+    const murk = overlay === 'real' ? frame.regions.reduce((a, r) => a + (r.visual?.pollution ?? 0) * r.population, 0) / Math.max(1, frame.regions.reduce((a, r) => a + r.population, 0)) : 0
+    layout.sea.forEach((ti, k) => {
+      col.set(DEPTH_HEX[tiles[ti].depth]).multiplyScalar(0.97 + ((ti * 7919) % 100) / 100 * 0.06)
+      if (overlay !== 'real') col.lerp(PALE_SEA, 0.55)
+      else if (murk > 0.2) col.lerp(MURK, (murk - 0.2) * 0.7)
+      O.setColorAt(k, col)
+    })
     for (const m of [L, S, O, G]) if (m.instanceColor) m.instanceColor.needsUpdate = true
-  }, [frame, tiles, layout, month])
+  }, [frame, tiles, layout, month, overlay])
 
   useFrame(({ clock }) => {
     ocean.uniforms.uTime.value = clock.elapsedTime

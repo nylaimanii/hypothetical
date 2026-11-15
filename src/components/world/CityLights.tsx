@@ -3,6 +3,7 @@ import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import type { Frame } from '@/lib/types'
+import { lightFactor } from './Structures'
 import { LAND_TOP, STEP, buildTiles, groundRadius, latLonToVec3, sceneRefs, surfacePoint } from './lib'
 
 const MAX = 900
@@ -17,7 +18,8 @@ export default function CityLights({ frame }: { frame: Frame }) {
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
     frame.regions.forEach((r, ri) => {
       const land = tiles.filter((t) => t.region === ri)
-      const count = Math.min(90, Math.round(Math.sqrt(r.population / 1e6) * 2.2))
+      // v3: lit by how much of the region is built and still working
+      const count = Math.min(90, Math.round(Math.sqrt(r.population / 1e6) * 2.2 * lightFactor(frame, ri)))
       for (let k = 0; k < count && land.length; k++) {
         const t = land[Math.floor(rnd() * land.length)]
         const p = surfacePoint(t.normal, (rnd() - 0.5) * t.w * 0.8, (rnd() - 0.5) * t.d * 0.8, LAND_TOP + t.band * STEP + 0.012)
@@ -27,11 +29,12 @@ export default function CityLights({ frame }: { frame: Frame }) {
     for (const c of frame.cities) {
       if (c.offWorld) continue
       const center = latLonToVec3(c.lat, c.lon, 1)
-      const n = Math.min(40, 6 + Math.round(Math.log10(Math.max(10, c.population)) * 4))
+      const ri = frame.regions.findIndex((r) => r.id === c.regionId)
+      const n = Math.round(Math.min(40, 6 + Math.round(Math.log10(Math.max(10, c.population)) * 4)) * (ri >= 0 ? lightFactor(frame, ri) : 1))
       for (let k = 0; k < n; k++) { const q = surfacePoint(center, (rnd() - 0.5) * 0.7, (rnd() - 0.5) * 0.7, LAND_TOP); pts.push({ n: q.setLength(groundRadius(q) + 0.012), s: 0.9 + rnd() * 0.9 }) }
     }
     return pts.slice(0, MAX)
-  }, [frame.regions, frame.cities, tiles])
+  }, [frame, tiles])
 
   const mat = useMemo(() => new THREE.MeshBasicMaterial({ toneMapped: false, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }), [])
   const warm = useMemo(() => new THREE.Color('#FFC77A').multiplyScalar(1.7), [])

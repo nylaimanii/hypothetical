@@ -31,6 +31,10 @@ export type ShotRequest = { id: number; target: 'region' | 'core'; regionId?: st
 export type Caption = { id: number; parts: { t: string; mono?: boolean }[]; danger?: boolean }
 // what is known about a run without its frames. lazy runs load frames around the scrubber
 export type SlimMeta = { firstTick: number; lastTick: number; years: YearRow[]; decisions: DecisionRow[]; lazy: boolean }
+// v3: every open world is a tab; each world has these views and the globe has these overlay modes
+export type View = 'globe' | 'daily' | 'graphs' | 'people' | 'steps'
+export type Overlay = 'real' | 'emotion' | 'population' | 'movement' | 'energy' | 'damage'
+export type Tip = { title: string; text: string; x: number; y: number }
 export type Panel = 'offworld' | 'longevity' | 'agents' | 'hall' | null
 export type Compare = { agentIds: string[]; records: RunRecord[]; divergences: Divergence[] }
 // a highlight reel: the top events by significance, played back to back
@@ -78,6 +82,20 @@ type State = {
   loading: string | null // what is loading, shown as a pill
   daily: { open: boolean; year: number | null; peek: number | null }
   shortcutsOpen: boolean
+  tabs: string[] // run ids, in tab order
+  tabRecords: Record<string, RunRecord> // every open world's record, so views can compare them
+  view: View
+  overlay: Overlay
+  explain: boolean
+  tip: Tip | null
+  swapping: boolean // the quick zoom out / in between tabs
+  setTabs: (tabs: string[]) => void
+  setTabRecord: (r: RunRecord) => void
+  setView: (v: View) => void
+  setOverlay: (o: Overlay) => void
+  setExplain: (on: boolean) => void
+  setTip: (t: Tip | null) => void
+  setSwapping: (on: boolean) => void
   setRecord: (r: RunRecord, source: Source) => void
   replaceRecord: (r: RunRecord) => void
   setRuns: (runs: RunSummary[], src: 'mock' | 'api') => void
@@ -162,7 +180,21 @@ export const useStore = create<State>((set) => ({
   loading: null,
   daily: { open: false, year: null, peek: null },
   shortcutsOpen: false,
-  setRecord: (raw, source) => set((s) => { const record = source === 'mock' ? raw : normalizeRecord(raw); return { record, source, playhead: source === 'live' ? (record.frames.at(-1)?.tick ?? 0) : 0, selection: null, overrides: s.record.runId === record.runId ? s.overrides : [] } }),
+  tabs: [],
+  tabRecords: {},
+  view: 'globe',
+  overlay: 'real',
+  explain: true,
+  tip: null,
+  swapping: false,
+  setTabs: (tabs) => set({ tabs }),
+  setTabRecord: (r) => set((s) => ({ tabRecords: { ...s.tabRecords, [r.runId]: r } })),
+  setView: (view) => set({ view }),
+  setOverlay: (overlay) => set({ overlay }),
+  setExplain: (explain) => set({ explain }),
+  setTip: (tip) => set({ tip }),
+  setSwapping: (swapping) => set({ swapping }),
+  setRecord: (raw, source) => set((s) => { const record = source === 'mock' ? raw : normalizeRecord(raw); return { record, tabRecords: { ...s.tabRecords, [record.runId]: record }, tabs: s.tabs.includes(record.runId) ? s.tabs : [...s.tabs, record.runId], source, playhead: source === 'live' ? (record.frames.at(-1)?.tick ?? 0) : 0, selection: null, overrides: s.record.runId === record.runId ? s.overrides : [] } }),
   replaceRecord: (record) => set((s) => ({ record: s.source === 'mock' ? record : normalizeRecord(record) })),
   setRuns: (runs, runsSource) => set({ runs, runsSource }),
   setPlayhead: (playhead) => set({ playhead }),
@@ -212,6 +244,7 @@ export const useStore = create<State>((set) => ({
     }
     const out: Partial<State> = {}
     if (s.record.runId === runId) out.record = merge(s.record)
+    if (s.tabRecords[runId]) out.tabRecords = { ...s.tabRecords, [runId]: merge(s.tabRecords[runId]) }
     if (s.compare?.records.some((r) => r.runId === runId)) out.compare = { ...s.compare, records: s.compare.records.map((r) => (r.runId === runId ? merge(r) : r)) }
     return out
   }),

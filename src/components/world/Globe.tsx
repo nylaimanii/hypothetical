@@ -23,24 +23,31 @@ import { sunDirection, tickToDate } from './time'
 import CityLights from './CityLights'
 import { Atmosphere, Clouds, DisasterFx } from './Weather'
 import { useCurrentFrame, useStore } from '../state/store'
+import Structures from './Structures'
+import Orrery from './Orrery'
+import DeadWorld, { CoreShards, useDeathMood } from './DeadWorld'
+import { EmotionPulse, ExplainLayer, MovementStreams, RegionModeLabels } from './V3Layers'
+import { setDeathMuffle } from '../sound/engine'
 
-export function Sky() {
+export function Sky({ grey = 0 }: { grey?: number }) {
   const scene = useThree((s) => s.scene)
   useEffect(() => {
     const cv = document.createElement('canvas')
     cv.width = 4; cv.height = 256
     const g = cv.getContext('2d')!
     const grad = g.createLinearGradient(0, 0, 0, 256)
-    grad.addColorStop(0, '#9C97B2') // muted dusk
-    grad.addColorStop(0.55, '#D4CCC6')
-    grad.addColorStop(1, C.bone)
+    // a collapsed world loses its color: the sky goes flat grey
+    const mixG = (hex: string, to: string) => { const a = new THREE.Color(hex), b = new THREE.Color(to); return `#${a.lerp(b, grey).getHexString()}` }
+    grad.addColorStop(0, mixG('#9C97B2', '#8C8A87')) // muted dusk
+    grad.addColorStop(0.55, mixG('#D4CCC6', '#B5B2AE'))
+    grad.addColorStop(1, mixG(C.bone, '#CFCBC5'))
     g.fillStyle = grad
     g.fillRect(0, 0, 4, 256)
     const tex = new THREE.CanvasTexture(cv)
     tex.colorSpace = THREE.SRGBColorSpace
     scene.background = tex
     return () => { scene.background = null; tex.dispose() }
-  }, [scene])
+  }, [scene, grey])
   return null
 }
 
@@ -125,7 +132,8 @@ function CameraRig({ destroyed }: { destroyed: boolean }) {
     const hit = ray.intersectSphere(new THREE.Sphere(new THREE.Vector3(), LAND_TOP), new THREE.Vector3())
     sceneRefs.focus.copy(hit ?? camera.position.clone().setLength(LAND_TOP))
   })
-  return <OrbitControls ref={controls} makeDefault enablePan={false} enableDamping dampingFactor={0.07} minDistance={MIN_DIST} maxDistance={MAX_DIST} zoomSpeed={0.7} autoRotate={introOpen} autoRotateSpeed={0.35} />
+  // v3: zooming out past the moon reaches the orrery
+  return <OrbitControls ref={controls} makeDefault enablePan={false} enableDamping dampingFactor={0.07} minDistance={MIN_DIST} maxDistance={MAX_DIST + 185} zoomSpeed={0.7} autoRotate={introOpen} autoRotateSpeed={0.35} />
 }
 
 // frame events become visual juice; disasters also become physical shockwaves
@@ -221,10 +229,27 @@ export default function Globe() {
   const spaceport = useMemo(() => spaceportId(record.frames, idx, frame.regions), [record.frames, idx, frame.regions])
   const destroyed = frame.status === 'destroyed'
   const dev = process.env.NODE_ENV === 'development'
+  const agents = useStore((s) => s.agents)
+  const agent = useMemo(() => agents.find((a) => a.id === (record.agentId ?? record.summary.agentId)), [agents, record])
+  const death = useDeathMood(frame)
+  const shattered = death.kind === 'collapse' && death.level > 0.5
+  const swapping = useStore((s) => s.swapping)
+  const overlay = useStore((s) => s.overlay)
+  const view = useStore((s) => s.view)
+  const sky = death.kind === 'collapse' || death.kind === 'war' ? death.level : 0
+  // a dying world goes quiet and low
+  useEffect(() => { setDeathMuffle(destroyed ? 1 : death.level * 0.5) }, [destroyed, death.level])
 
   return (
     // isolate: html labels inside the canvas can never stack above the ui panels
-    <div className="absolute inset-0 isolate z-0" style={{ filter: destroyed ? 'grayscale(1) brightness(0.92)' : 'none', transition: 'filter 3s ease' }}>
+    <div className="absolute inset-0 isolate z-0" style={{
+      filter: destroyed ? 'grayscale(1) brightness(0.92)' : 'none',
+      // switching tabs: a quick zoom out, the world swaps, then back in
+      transform: swapping ? 'scale(0.78)' : 'scale(1)', opacity: swapping ? 0 : 1,
+      // other views cover the whole middle: hide the globe and its floating labels
+      visibility: view === 'globe' ? 'visible' : 'hidden',
+      transition: swapping ? 'transform 180ms ease-in, opacity 180ms ease-in, filter 3s ease' : 'transform 320ms cubic-bezier(.2,.8,.2,1), opacity 260ms ease-out, filter 3s ease',
+    }}>
       <Canvas
         key={quality}
         shadows={high ? { type: THREE.PCFShadowMap } : false}
@@ -232,10 +257,12 @@ export default function Globe() {
         flat
         gl={{ antialias: false, powerPreference: 'high-performance', stencil: false }}
         camera={{ position: [20, 16, 56], fov: 38, near: 0.05, far: 500 }}
+        // other views cover the globe: stop rendering it underneath
+        frameloop={view === 'globe' ? 'always' : 'never'}
         onPointerMissed={() => select(null)}
       >
         <AdaptiveQuality high={high} />
-        <Sky />
+        <Sky grey={sky} />
         <KeyLight high={high} />
         {high && !dbg('nopcss') && <SoftShadows size={12} samples={6} focus={0.5} />}
         <Environment resolution={256} frames={1}>
@@ -247,14 +274,21 @@ export default function Globe() {
         <Suspense fallback={null}>
           <Planet frame={frame} />
           <CityLights frame={frame} />
-          <Atmosphere />
+          <Atmosphere tint={frame.atmosphere?.tint} haze={frame.atmosphere?.haze ?? 0} />
           <Clouds frame={frame} />
           <DisasterFx frame={frame} />
-          <Core frame={frame} prev={prev} idx={idx} />
+          {shattered ? <CoreShards active /> : <Core frame={frame} prev={prev} idx={idx} />}
           <Moon frame={frame} />
           <Symbols frame={frame} spaceport={spaceport} />
-          <Labels frame={frame} />
-          <MigrationLines frame={frame} />
+          <Structures frame={frame} agent={agent} />
+          <DeadWorld frame={frame} />
+          <Orrery frame={frame} />
+          <MovementStreams frame={frame} />
+          <RegionModeLabels frame={frame} />
+          <EmotionPulse frame={frame} />
+          <ExplainLayer />
+          {overlay === 'real' && <Labels frame={frame} />}
+          {overlay === 'real' && <MigrationLines frame={frame} />}
           <Pips frame={frame} />
           <Launches frame={frame} spaceport={spaceport} />
         </Suspense>

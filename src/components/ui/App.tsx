@@ -18,6 +18,8 @@ import Timeline from './Timeline'
 import LivePanel from './LivePanel'
 import { AdvancedDrawer, Leaderboard, MissionBar, RulesDrawer, TopLeft, TopRight } from './Chrome'
 import Roadmap from './Roadmap'
+import WorldTabs from './WorldTabs'
+import { EpitaphCard, HoverTip, OverlayLegend, ViewBar, ViewHost } from './WorldViews'
 
 // dev shows an fps meter in the bottom right corner of the middle row; panels leave it room
 const DEV = process.env.NODE_ENV === 'development'
@@ -105,7 +107,7 @@ function useReel() {
   useEffect(() => { if (paused && useStore.getState().reel) stopReel() }, [paused])
 }
 
-// every view is a deep link: ?run=<id>&t=<tick>, or ?cmp=<agent,agent>&t=<tick>. back and forward work
+// every view is a deep link: ?tabs=<id,id>&active=<id>&t=<tick> (older ?run=<id> still opens), or ?cmp=<agent,agent>&t=<tick>. back and forward work
 function useUrlState() {
   const applying = useRef(true)
   useEffect(() => {
@@ -120,8 +122,11 @@ function useUrlState() {
         if (s.compare?.agentIds.join() !== ids.join()) await startCompare(ids, t ?? 0)
       } else {
         if (s.compare) s.setCompare(null)
-        const run = q.get('run')
+        const tabs = (q.get('tabs') ?? '').split(',').filter(Boolean)
+        const run = q.get('active') ?? q.get('run') ?? tabs[0]
+        if (tabs.length) useStore.getState().setTabs(run && !tabs.includes(run) ? [...tabs, run] : tabs)
         if (run && run !== useStore.getState().record.runId) await openRun(run, t)
+        if (!useStore.getState().tabs.length) useStore.getState().setTabs([useStore.getState().record.runId])
       }
       if (t !== undefined && isFinite(t)) useStore.getState().setPlayhead(t)
       setTimeout(() => { applying.current = false }, 50)
@@ -133,7 +138,7 @@ function useUrlState() {
     let lastWrite = 0
     const unsub = useStore.subscribe((s) => {
       if (applying.current) return
-      const key = s.compare ? `cmp=${s.compare.agentIds.join(',')}` : `run=${s.record.runId}`
+      const key = s.compare ? `cmp=${s.compare.agentIds.join(',')}` : `tabs=${(s.tabs.length ? s.tabs : [s.record.runId]).join(',')}&active=${s.record.runId}`
       const url = `?${key}&t=${Math.round(s.playhead)}`
       if (`${window.location.search}` === url) return
       if (key !== lastKey) { lastKey = key; window.history.pushState(null, '', url); return }
@@ -254,6 +259,10 @@ export default function App() {
           </div>
           <TopRight onLive={startLive} />
         </div>
+        <div className="mt-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <WorldTabs onLive={startLive} />
+          <ViewBar />
+        </div>
         <div className="relative mt-3 flex min-h-0 flex-1 items-stretch justify-between gap-4 xl:mt-4">
           {narrow ? (
             <>
@@ -294,11 +303,15 @@ export default function App() {
             </div>
           )}
           <div className="pointer-events-none absolute bottom-2 left-1/2 z-0 -translate-x-1/2"><Caption /></div>
+          <div className="pointer-events-none absolute left-1/2 top-2 z-20 -translate-x-1/2"><EpitaphCard /></div>
+          {!compare && <div className={`pointer-events-none absolute left-0 z-20 ${DEV ? 'bottom-14' : 'bottom-2'}`}><OverlayLegend /></div>}
+          <ViewHost />
           {!compare && <div className="absolute bottom-2 left-0 z-20"><DailyPeek /></div>}
         </div>
         <div className="mt-3 shrink-0 xl:mt-4"><Timeline /></div>
       </div>
       <DailyPaper />
+      <HoverTip />
       <ShortcutSheet />
       <Intro />
     </main>

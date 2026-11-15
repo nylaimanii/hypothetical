@@ -1,5 +1,5 @@
 'use client'
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import type { Frame, WorldEvent } from '@/lib/types'
@@ -8,9 +8,9 @@ import { useStore } from '../state/store'
 
 // ---------- atmosphere: thin rim, blue by day, warm along the terminator ----------
 
-export function Atmosphere() {
+export function Atmosphere({ tint = '#8CB8E6', haze = 0 }: { tint?: string; haze?: number }) {
   const mat = useMemo(() => new THREE.ShaderMaterial({
-    uniforms: { uSun: { value: new THREE.Vector3(1, 0, 0) } },
+    uniforms: { uSun: { value: new THREE.Vector3(1, 0, 0) }, uTint: { value: new THREE.Color('#8CB8E6') }, uHaze: { value: 0 } },
     vertexShader: `
       varying vec3 vN; varying vec3 vView;
       void main() {
@@ -20,19 +20,22 @@ export function Atmosphere() {
         gl_Position = projectionMatrix * viewMatrix * wp;
       }`,
     fragmentShader: `
-      uniform vec3 uSun; varying vec3 vN; varying vec3 vView;
+      uniform vec3 uSun; uniform vec3 uTint; uniform float uHaze; varying vec3 vN; varying vec3 vView;
       void main() {
         float rim = pow(1.0 - max(dot(vN, vView), 0.0), 3.2);
         float sun = dot(vN, uSun);
         float day = smoothstep(-0.25, 0.35, sun);
         float dusk = exp(-pow(sun / 0.22, 2.0));
-        vec3 col = mix(vec3(0.55, 0.72, 0.9), vec3(1.0, 0.62, 0.38), dusk);
-        float a = rim * (0.12 + 0.75 * max(day, dusk));
+        // v3: each world's air: its tint, and pollution haze thickens the rim and creeps inward
+        vec3 col = mix(mix(vec3(0.55, 0.72, 0.9), uTint, 0.55), vec3(1.0, 0.62, 0.38), dusk * (1.0 - uHaze * 0.6));
+        float rimH = pow(1.0 - max(dot(vN, vView), 0.0), mix(3.2, 1.6, uHaze));
+        float a = rimH * (0.12 + 0.75 * max(day, dusk)) * (1.0 + uHaze * 0.8);
         gl_FragColor = vec4(col * a, a);
       }`,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
   }), [])
   useFrame(() => { mat.uniforms.uSun.value.copy(sceneRefs.sunDir) })
+  useEffect(() => { mat.uniforms.uTint.value.set(tint); mat.uniforms.uHaze.value = haze }, [mat, tint, haze])
   return (
     <mesh material={mat} raycast={() => null} renderOrder={3}>
       <sphereGeometry args={[R + 0.75, 64, 48]} />

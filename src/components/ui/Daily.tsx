@@ -9,7 +9,7 @@ const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 
 const longDate = (d: string) => `${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`
 
 // jump the scrubber and the camera to what a story is about
-function go(s: Story, close: () => void) {
+export function go(s: Story, close: () => void) {
   if (!s.ref) return
   const st = useStore.getState()
   st.setPlayhead(s.ref.tick)
@@ -29,7 +29,7 @@ function StoryBlock({ s, size, onGo }: { s: Story; size: 'lead' | 'small'; onGo:
   )
 }
 
-function FrontPage({ issue, onGo }: { issue: Issue; onGo: (s: Story) => void }) {
+export function FrontPage({ issue, onGo }: { issue: Issue; onGo: (s: Story) => void }) {
   return (
     <div className="font-display text-ink">
       {/* masthead */}

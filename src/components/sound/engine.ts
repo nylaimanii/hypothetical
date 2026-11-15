@@ -27,13 +27,30 @@ function noiseSource(loop = true) {
   return src
 }
 
+let lowpass: BiquadFilterNode | null = null
+let duckGain: GainNode | null = null
+
+// 0 = normal, 1 = the world is dead: muffled and quiet
+export function setDeathMuffle(level: number) {
+  if (!bus || !lowpass || !duckGain) return
+  const t = bus.ctx.currentTime
+  const l = Math.max(0, Math.min(1, level))
+  lowpass.frequency.setTargetAtTime(18000 * Math.pow(1 - l, 2) + 380 * l, t, 0.8)
+  duckGain.gain.setTargetAtTime(1 - l * 0.7, t, 0.8)
+}
+
 export function soundStart(volume: number, fadeSeconds = 0.3) {
   if (!bus) {
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
     const ctx = new Ctx()
     const master = ctx.createGain()
     master.gain.value = 0
-    master.connect(ctx.destination)
+    // a dead world goes quiet and low: everything passes through this lowpass and duck
+    lowpass = ctx.createBiquadFilter()
+    lowpass.type = 'lowpass'
+    lowpass.frequency.value = 18000
+    duckGain = ctx.createGain()
+    master.connect(lowpass).connect(duckGain).connect(ctx.destination)
     bus = { ctx, master, noise: makeNoise(ctx) }
     buildHum()
     buildCrowd()
