@@ -343,6 +343,9 @@ function noteBehavior(w: World, c: Citizen, rs: RegionState) {
 
 export function addLifeEvent(w: World, c: Citizen, text: string) {
   if (c.lifeEvents.some(e => e.text === text && w.tick - e.tick < 12)) return
+  const arc = (w.lifeArchive[c.id] ??= { name: c.name, regionId: c.regionId, events: [] })
+  arc.events.push({ tick: w.tick, text })
+  arc.regionId = c.regionId
   c.lifeEvents = [...c.lifeEvents, { tick: w.tick, text }].slice(-10)
   const m = w.citizenMeta[c.id]
   if (m) m.affectedTick = w.tick

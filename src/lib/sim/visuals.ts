@@ -254,7 +254,8 @@ export function emotionsOf(w: World, rs: RegionState): { emotionMix: Mood; emoti
   }
   const groups = new Map<string, typeof pips>()
   for (const c of pips) {
-    for (const g of [`age:${c.group.ageBand}`, `income:${c.group.incomeBand}`, `belief:${c.group.belief}`, `archetype:${c.archetype}`]) {
+    // age, income and belief groups (archetype groups are left to the pips themselves to keep frames small)
+    for (const g of [`age:${c.group.ageBand}`, `income:${c.group.incomeBand}`, `belief:${c.group.belief}`]) {
       const arr = groups.get(g) ?? []
       arr.push(c)
       groups.set(g, arr)

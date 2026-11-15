@@ -253,6 +253,8 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   if (w.status === 'destroyed') lessonsLearned = await extractLessons(rec(true))
   const final = rec(true)
   writeJsonAtomic(path.join(process.cwd(), 'data', 'runs', `${opts.runId}.json`), final)
+  // full life histories of every pip that ever lived in this world, loaded lazily by the ui
+  writeJsonAtomic(path.join(process.cwd(), 'data', 'runs', `${opts.runId}.lives.json`), { runId: opts.runId, lives: w.lifeArchive })
   if (live) writeJsonAtomic(path.join(process.cwd(), 'data', 'live', `${opts.runId}.json`), final)
   return final.summary
 }

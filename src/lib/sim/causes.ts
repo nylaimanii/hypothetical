@@ -15,7 +15,10 @@ export type CauseLink = {
   lawId?: string; eventId?: string
   causeIds: string[]; nextIds: string[]
   stat?: string // set on yearly stat-change links
+  sig?: number // 0..1, how much this link matters (frames keep links >= CAUSE_SIG_MIN)
 }
+
+export const CAUSE_SIG_MIN = 0.3
 export type Trend = { stat: string; direction: 'rising' | 'declining' | 'stable'; change: number; text: string }
 export type Story = { year: number; sentences: string[]; chainIds: string[][] }
 export type CauseInput = { because?: string; byWhom?: ByWhom; causeIds?: string[]; lawId?: string; value?: number }
@@ -26,6 +29,11 @@ export const ppl = (x: number) => (x >= 1e9 ? `${(x / 1e9).toFixed(2)}B` : x >= 
 
 export function link(w: World, l: Omit<CauseLink, 'id' | 'tick' | 'nextIds' | 'causeIds'> & { causeIds?: string[] }): CauseLink {
   const c: CauseLink = { id: `k${w.causeSeq++}`, tick: w.tick, nextIds: [], ...l, causeIds: (l.causeIds ?? []).filter(Boolean) }
+  // default significance: stat changes by size of the move, protests by share of the region, laws always matter
+  if (c.sig === undefined) {
+    const rs = w.regions.find(r => r.r.id === c.placeId)
+    c.sig = c.lawId && c.byWhom === 'core' ? 0.6 : c.stat ? clamp(Math.abs(c.value) * 5) : /protested/.test(c.what) && rs ? clamp(c.value / Math.max(regionPop(rs), 1) * 100) : clamp(c.value)
+  }
   for (const pid of c.causeIds) {
     const p = w.causes.find(x => x.id === pid)
     if (p && !p.nextIds.includes(c.id)) p.nextIds.push(c.id)
@@ -71,7 +79,7 @@ export function onEvent(w: World, e: WorldEvent, cause?: CauseInput): CauseLink 
   if (e.kind === 'law' && !cause) return undefined
   const d = { ...defaultCause(w, e), ...(cause ?? {}) }
   const l = link(w, {
-    placeId: e.regionId ?? 'world', what: e.text.replace(/ \[[a-z ]+: [^\]]+\]$/, ''), value: d.value ?? e.severity,
+    placeId: e.regionId ?? 'world', what: e.text.replace(/ \[[a-z ]+: [^\]]+\]$/, ''), value: d.value ?? e.severity, sig: Math.max(e.significance, d.lawId ? 0.6 : 0),
     because: d.because ?? '', byWhom: d.byWhom ?? 'core', lawId: d.lawId, eventId: (e as WorldEvent & { id?: string }).id, causeIds: d.causeIds,
   })
   return l

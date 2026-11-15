@@ -8,7 +8,7 @@ import type { World } from './state'
 
 export const SNAPSHOT_EVERY = 60
 
-type Plain = Omit<World, 'rng' | 'lessonsApplied' | 'regions'> & {
+type Plain = Omit<World, 'rng' | 'lessonsApplied' | 'regions' | 'lifeArchive'> & {
   rng: Record<keyof World['rng'], number>
   lessonsApplied: string[]
   regions: (Omit<World['regions'][number], 'eduTargets'> & { eduTail: number[]; eduOffset: number })[]
@@ -17,8 +17,10 @@ type Plain = Omit<World, 'rng' | 'lessonsApplied' | 'regions'> & {
 export function snapshotWorld(w: World): Snapshot {
   // education reads its target from exactly 120 ticks back, so only the last 121 entries matter
   const offset = Math.max(0, w.tick - 121)
+  const { lifeArchive: _lives, ...rest } = w
+  void _lives
   const plain: Plain = {
-    ...w,
+    ...rest,
     rng: Object.fromEntries(Object.entries(w.rng).map(([k, f]) => [k, f.s])) as Plain['rng'],
     lessonsApplied: [...w.lessonsApplied],
     regions: w.regions.map(({ eduTargets, ...r }) => ({ ...r, eduTail: eduTargets.slice(offset), eduOffset: offset })),
@@ -34,5 +36,5 @@ export function restoreWorld(s: Snapshot): World {
     eduTail.forEach((v, i) => { eduTargets[eduOffset + i] = v })
     return { ...r, eduTargets }
   })
-  return { ...plain, rng, lessonsApplied: new Set(plain.lessonsApplied), regions } as World
+  return { ...plain, rng, lessonsApplied: new Set(plain.lessonsApplied), regions, lifeArchive: {} } as World
 }

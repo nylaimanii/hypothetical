@@ -15,7 +15,7 @@ import { publicRequirements, reqProgress, stepRequirements } from './requirement
 import { religionBacklash, stepLaws, stepSociety } from './society'
 import { moonProgress, stepSpace } from './space'
 import { atmosphere, emotionsOf, landmarkForLaw, regionVisual, stepVisuals } from './visuals'
-import { linksSince, recentLink, stepYear } from './causes'
+import { CAUSE_SIG_MIN, linksSince, recentLink, stepYear } from './causes'
 import { clamp, effectiveBudget, event, linkIdOf, normalizeBudget, popWeighted, regionPop, sum, worldPop, type World } from './state'
 
 export const MAX_LAWS_PER_DECISION = 5
@@ -191,25 +191,30 @@ export function publicRegions(w: World): Region[] {
     gdpUsd: Math.round(rs.r.gdpUsd), energyTWh: Math.round(rs.r.energyTWh * 10) / 10, foodKcalPerCapita: Math.round(rs.r.foodKcalPerCapita),
     share65plus: r4(rs.r.share65plus), education: r4(rs.r.education), faith: r4(rs.r.faith), unrest: r4(rs.r.unrest),
     techLevel: r4(rs.r.techLevel), compliance: r4(rs.r.compliance), approval: r4(rs.r.approval), fertility: Math.round(rs.r.fertility * 1000) / 1000,
-    crowds: rs.r.crowds.map(c => ({ ...c })), whys: takeWhys(rs), provenance: rs.r.provenance,
+    // provenance never changes: it rides on the first frame only, later frames carry {}
+    crowds: rs.r.crowds.map(c => ({ ...c })), whys: takeWhys(rs), provenance: w.tick === 0 || !w.provenanceSent ? rs.r.provenance : {},
     visual: regionVisual(w, rs), ...emotionsOf(w, rs),
   }))
 }
 
 export function snapshot(w: World, newEvents: Frame['newEvents'], decision?: Decision): Frame {
   const regions = publicRegions(w)
+  w.provenanceSent = true
   const flows = w.flowAcc.map(f => ({ ...f, people: Math.round(f.people) })).filter(f => f.people > 0)
   w.flowAcc = []
   // cause chains (not yet in A's Frame type, attached as extra fields): links since the last frame, and each
   // region's yearly story + trends
-  const causes = linksSince(w, w.lastFrameTick)
+  // only links above the significance floor go into frames, plus every link a region story is built from
+  const storyIds = new Set(w.regions.flatMap(r => r.story?.chainIds.flat() ?? []))
+  const causes = linksSince(w, w.lastFrameTick).filter(c => (c.sig ?? 0) >= CAUSE_SIG_MIN || storyIds.has(c.id))
   w.lastFrameTick = w.tick
   regions.forEach((r, i) => Object.assign(r, { story: w.regions[i].story ?? null, trends: w.regions[i].trends }))
   return {
     tick: w.tick, date: dateOf(w.tick), regions,
     space: w.spaceAssets.map(a => ({ ...a })), atmosphere: atmosphere(w, regions.map(r => r.visual!)), flows,
-    // frames carry the visible pips; mood rounded to 2 decimals and the last 8 life events keep records small
-    citizens: w.citizens.map(c => ({ ...c, mood: Object.fromEntries(Object.entries(c.mood).map(([k, v]) => [k, Math.round(v * 100) / 100])) as typeof c.mood, group: { ...c.group }, lifeEvents: c.lifeEvents.slice(-8).map(e => ({ ...e })), family: { ...c.family } })),
+    // frames carry the visible pips; mood rounded to 2 decimals and the last 4 life events keep records small
+    // (every pip's full history is written once per run to data/runs/<runId>.lives.json)
+    citizens: w.citizens.map(c => ({ ...c, mood: Object.fromEntries(Object.entries(c.mood).map(([k, v]) => [k, Math.round(v * 100) / 100])) as typeof c.mood, group: { ...c.group }, lifeEvents: c.lifeEvents.filter(e => w.tick - e.tick <= 120).slice(-4).map(e => ({ ...e })), family: { ...c.family } })),
     laws: w.laws.map(l => ({ ...l, support: r4(l.support), compliance: r4(l.compliance) })),
     budget: { ...effectiveBudget(w) }, religionPolicy: w.religionPolicy, schoolPolicy: { ...w.schoolPolicy, curriculum: [...w.schoolPolicy.curriculum] },
     moonStage: w.space.stage, moonProgress: r4(moonProgress(w.space)), status: w.status, newEvents,
