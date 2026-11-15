@@ -27,7 +27,10 @@ import { trackWorld } from './usage'
 import { lineageRoots, recordAgentRun, registerPopulation, settleGeneration } from './agents'
 import { indexFeatures, recomputeSteps } from './steps'
 import { diskReport, gb, sweep, writeSlim } from './retention'
-import { enterVersion, inRunner, runningSimVersion, simVersionOnDisk, upstreamSimVersion, verifyLessons } from './version'
+import { backupDue, backupToGit, markQuality, morningDigest, morningDue, qualityDue, stableDue } from './maintenance'
+import { codeRoot } from './version'
+import { spawn } from 'node:child_process'
+import { enterVersion, inRunner, runnerCodeChanged, runningSimVersion, simVersionOnDisk, upstreamSimVersion, verifyLessons } from './version'
 import { realityCheckDue, runRealityCheck } from './reality'
 import { agentRanges, EXTRA_SEEDS, markUncertaintyDone, milestoneYears, readUncertainty, versionTopAgents } from './uncertainty'
 import { checkHall } from './hall'
@@ -58,6 +61,8 @@ export const control = {
   worldsTotal: 0,
   worldsInterrupted: 0,
   concurrency: 1,
+  // set while upkeep holds the queue (the weekly quality replay): the stall warning stays quiet
+  maintenance: null as string | null,
   // run ids of the generation in progress: retention never touches them
   activeRunIds: new Set<string>(),
   // when the last world finished (or evolve started), for the stall warning
@@ -354,6 +359,38 @@ async function runStage(g: GenerationFile, stage: Stage, tasks: { c: Candidate; 
   })
 }
 
+// weekly: replay the champion's best full world with the bigger model, between worlds (evolve holds ollama anyway)
+const QUALITY_MODEL = process.env.QUALITY_MODEL || 'qwen2.5:14b'
+async function qualityCheck(deps: Deps) {
+  if (!qualityDue()) return
+  markQuality()
+  const champ = readAgents().find(a => a.champion)
+  const best = champ && readRunIndex().filter(r => r.agentId === champ.id && isFullRun(r.runId) && (!r.simVersion || r.simVersion === control.simVersion)).sort((a, b) => b.score - a.score)[0]
+  if (!champ || !best) { deps.log('quality check: no champion with a full run yet, skipped'); return }
+  const runId = `qc${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${best.runId}`.slice(0, 80)
+  const prevModel = process.env.LLM_MODEL
+  control.maintenance = 'quality check'
+  deps.log(`quality check: replaying ${best.runId} (${champ.name}) with ${QUALITY_MODEL}`)
+  try {
+    process.env.LLM_MODEL = QUALITY_MODEL
+    const s = await deps.run({ runId, generation: best.generation, seed: best.seed, constitution: champ.constitution, frameEvery: 12, agentId: champ.id })
+    const died = (x: { status: string }) => x.status === 'destroyed'
+    const drift = best.score ? (s.score - best.score) / Math.abs(best.score) : 0
+    const holds = died(s) === died(best) && Math.abs(drift) <= 0.2
+    const verdict = `${holds ? 'holds up' : 'does NOT hold up'}: ${champ.name}'s best world with ${QUALITY_MODEL} scored ${s.score} vs ${best.score} with the screening model (${(drift * 100).toFixed(0)}%), ${s.status} ${s.endDate} vs ${best.status} ${best.endDate}, frontier ${s.frontier.replace(/_/g, ' ')} vs ${best.frontier.replace(/_/g, ' ')}`
+    writeJson(path.join(process.cwd(), 'data', 'quality', `${new Date().toISOString().slice(0, 10)}.json`), { at: new Date().toISOString(), model: QUALITY_MODEL, original: best, replay: s, drift, holds, verdict })
+    deps.log(`quality check ${verdict}`)
+    await send(`weekly quality check ${verdict}`)
+  } catch (e) {
+    deps.log(`quality check failed: ${(e as Error).message}`)
+  } finally {
+    if (prevModel === undefined) delete process.env.LLM_MODEL
+    else process.env.LLM_MODEL = prevModel
+    control.maintenance = null
+    control.lastWorldAt = Date.now()
+  }
+}
+
 async function runUncertainty(g: GenerationFile, concurrency: number, deps: Deps, clock: Clock, records: Map<string, RunRecord>) {
   const done = readUncertainty().done
   const pending = versionTopAgents().filter(id => !done[id])
@@ -481,6 +518,7 @@ function startWatchdogs(log: (l: string) => void, logFile?: string) {
   let lastHourly = startedAt
   let restartSent = false
   let lowDiskWarned = false
+  let stableRunning = false
   const tick = async () => {
     try {
       heartbeatNow()
@@ -510,8 +548,21 @@ function startWatchdogs(log: (l: string) => void, logFile?: string) {
         if (disk.low && !lowDiskWarned) { lowDiskWarned = true; await send(`warning: only ${gb(disk.freeBytes)} free disk (under 50GB). data/ uses ${gb(disk.dataBytes)}`) }
         if (!disk.low) lowDiskWarned = false
       }
+      // daily upkeep: backup of what the ai learned, the 8am digest, and the stable promotion (in a child process,
+      // because a full build would block this loop for minutes)
+      if (backupDue()) {
+        try { const b = backupToGit(); log(`backup: ${b.note}${b.sha ? ` (${b.sha.slice(0, 7)})` : ''}`) } catch (e) { log(`backup failed: ${(e as Error).message.split('\n')[0]}`) }
+      }
+      if (morningDue()) await send(await morningDigest())
+      if (stableDue() && !stableRunning) {
+        stableRunning = true
+        const child = spawn(process.execPath, [path.join(codeRoot(), 'node_modules', 'tsx', 'dist', 'cli.mjs'), path.join(codeRoot(), 'scripts', 'promote-stable.ts')], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'], env: process.env })
+        let out = ''
+        child.stdout.on('data', d => { out += d })
+        child.on('exit', () => { stableRunning = false; const last = out.trim().split('\n').pop(); if (last) log(last) })
+      }
       // a stall: nothing finished for 90 min (one warning per stall; a finished world resets it)
-      if (!control.paused && now - control.lastWorldAt >= 90 * MIN && stallWarned !== control.lastWorldAt) {
+      if (!control.paused && !control.maintenance && now - control.lastWorldAt >= 90 * MIN && stallWarned !== control.lastWorldAt) {
         stallWarned = control.lastWorldAt
         let tail = ''
         try { if (logFile) tail = fs.readFileSync(logFile, 'utf8').trimEnd().split('\n').slice(-12).join('\n') } catch {}
@@ -530,9 +581,14 @@ export async function evolve(opts: EvolveOptions) {
   const log = opts.log ?? console.log
   const llmUp = opts.llmUp ?? ollamaUp
   const clock = opts.clock ?? realClock
+  const llmWait = llmGate({ up: llmUp, clock, notify: send, log })
   const deps: Deps = {
     run: opts.runWorld ?? runWorld, extract: opts.extractLessons ?? extractLessons, log, llmUp,
-    gate: llmGate({ up: llmUp, clock, notify: send, log }),
+    gate: async () => {
+      await llmWait()
+      // between worlds: the weekly quality replay (real runs only, never in tests with a fake runWorld)
+      if (!opts.runWorld) await qualityCheck(deps)
+    },
   }
   const stopWatchdogs = startWatchdogs(log, opts.logFile)
   control.concurrency = opts.concurrency
@@ -579,6 +635,12 @@ export async function evolve(opts: EvolveOptions) {
         control.restartForVersion = next
         const msg = `sim version changed (${control.simVersion} to ${next}) after gen ${current.generation}: restarting evolution on the new version`
         deps.log(msg); await send(msg)
+        break
+      }
+      // the evolution code itself was updated on origin/main: same sim version, just restart onto the new code
+      if (runnerCodeChanged()) {
+        control.restartForVersion = control.simVersion
+        deps.log(`evolve code updated on origin/main after gen ${current.generation}: restarting onto it (sim version unchanged)`)
         break
       }
       last = current

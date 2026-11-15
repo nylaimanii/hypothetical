@@ -36,6 +36,10 @@ function sources(dir: string): string[] {
   } catch { return [] }
 }
 
+// what decides a world's outcome: the sim, the governor, and D's lives when the sim uses them
+const SIM_PATHS = ['src/lib/sim', 'src/lib/agent', 'src/lib/life']
+// the evolution runner's own code: a pushed change to these restarts evolve at the next generation boundary
+const RUNNER_PATHS = ['src/lib/evolve', 'src/lib/notify', 'scripts/evolve.ts', 'scripts/run-evolve.sh']
 const git = (args: string[], cwd: string) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60_000 })
 
 // the sim version of a git ref: its SIM_VERSION constant, or a hash of the sim and agent trees at that ref
@@ -44,13 +48,20 @@ export function simVersionOfRef(ref: string, repo = codeRoot()): string {
     const m = /export\s+const\s+SIM_VERSION\s*=\s*['"`]([^'"`]+)['"`]/.exec(git(['show', `${ref}:src/lib/sim/version.ts`], repo))
     if (m) return m[1]
   } catch { /* no version file at that ref */ }
-  const tree = git(['ls-tree', '-r', ref, '--', 'src/lib/sim', 'src/lib/agent'], repo)
+  const tree = git(['ls-tree', '-r', ref, '--', ...SIM_PATHS], repo)
   return `tree-${crypto.createHash('sha256').update(tree).digest('hex').slice(0, 10)}`
 }
 
 // the version pushed to origin/main right now (fetches first)
 export function upstreamSimVersion(repo = process.cwd()): string | null {
   try { git(['fetch', '-q', 'origin', 'main'], repo); return simVersionOfRef('origin/main', repo) } catch { return null }
+}
+
+// in the runner: has the evolution code changed on origin/main since this process started? (call after a fetch,
+// e.g. upstreamSimVersion). the sim version stays the same, so no rollover, only a restart onto the new code
+export function runnerCodeChanged(): boolean {
+  if (!inRunner()) return false
+  try { execFileSync('git', ['diff', '--quiet', 'HEAD', 'origin/main', '--', ...RUNNER_PATHS], { cwd: codeRoot(), stdio: 'ignore', timeout: 60_000 }); return false } catch { return true }
 }
 
 // the version of the code this process runs: the runner's commit, or (outside the runner) the files on disk
@@ -60,7 +71,7 @@ export function runningSimVersion(): string {
 }
 
 export function simVersionOnDisk(): string {
-  const files = [...sources(path.join(codeRoot(), 'src', 'lib', 'sim')), ...sources(path.join(codeRoot(), 'src', 'lib', 'agent'))]
+  const files = SIM_PATHS.flatMap(p => sources(path.join(codeRoot(), ...p.split('/'))))
   for (const f of files) {
     const m = /export\s+const\s+SIM_VERSION\s*=\s*['"`]([^'"`]+)['"`]/.exec(fs.readFileSync(f, 'utf8'))
     if (m) return m[1]

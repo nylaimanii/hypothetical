@@ -25,6 +25,9 @@ npm run evolve -- --gens 10 --concurrency 1   # one gpu: keep it at 1
 # overnight, without the mac sleeping, from a clean worktree of the pushed origin/main:
 nohup caffeinate -i scripts/run-evolve.sh --gens 50 --concurrency 1 > data/evolve.log 2>&1 &
 npm run run-one -- --seed 1 --constitution technocrat
+npm run backup                 # push agents, lessons, steps, hall, leaderboards, learning to origin data-backup now
+npm run promote-stable         # if origin/main typechecks, builds and passes tests, fast-forward origin stable
+npm run morning                # send the morning digest now
 npm run retention              # one disk retention pass now (evolve runs it hourly)
 npm run reality-check          # the no-ai twin vs real published data, writes data/reality-check.json
 npm run live -- --runId mylive --seed 7 --constitution-file path/to/constitution.txt
@@ -103,6 +106,19 @@ Full records are about 34MB, and evolution makes about 130 a day, so retention r
 - **Everything else:** gzipped after 6 hours, and deleted once it is 3 days old. Its slim payload stays.
 - **Scope:** only worlds evolve itself indexed are touched.
 - **Disk report:** in `/status` and the hourly heartbeat, with a telegram warning when free disk drops under 50GB.
+
+## upkeep (scheduled by the evolve watchdog)
+
+- **Backups, daily:** the small files that hold what the AI learned (agents, lessons and life lessons, steps, hall, leaderboards, learning curves, versions) are committed to the `data-backup` branch on origin.
+  - The commit is built with a throwaway git index, so the shared working tree is never touched.
+  - It is not on `main`, so these files never collide with anyone's untracked copies.
+  - Restore with `git checkout origin/data-backup -- data/`.
+- **Stable deploys, daily between 3 and 6am:** a clean copy of `origin/main` is typechecked, built and tested. If all three pass, `stable` fast-forwards to it.
+  - Vercel should deploy production from `stable` (set the production branch in the Vercel project settings).
+  - `vercel.json` turns off deploys of `main` and `data-backup`.
+- **Morning digest, 8am:** one telegram with the night's worlds, the best world, new lessons, deaths, D's life stories when there are any, and disk and health.
+- **Quality check, weekly:** between worlds, the champion's best full world is replayed with `qwen2.5:14b` (`QUALITY_MODEL`). The report says whether the result holds up against the 7b screening (same survival, score within 20%). It is saved to `data/quality/`.
+- **Restarts:** the runner also restarts at a generation boundary when the evolution code itself changes on `origin/main`, with no version rollover.
 
 ## reality check
 
