@@ -32,6 +32,7 @@ export const DecisionSchema = z.object({
   rationale: z.string().min(10).transform(x => x.slice(0, 2500)),
   respondedToOverrides: z.array(z.string()).default([]),
   lessonsApplied: z.array(z.string()).default([]),
+  expectedResult: z.string().default('').transform(x => x.slice(0, 300)),
 })
 
 // json schema handed to the model so its reply is always parseable (ollama structured outputs)
@@ -63,7 +64,7 @@ A HUMAN OBSERVER may veto your laws, inject events, or force your budget. These 
 
 ACTIVE LAWS are listed in the brief. Do not re-enact an active law: a law matching one already in force does nothing and is logged as repeated. To change a law, repeal it by id and pass a different one, or pick something new.
 
-Reply with one JSON decision (laws, repeal, migrations, budget, religionPolicy, schoolPolicy, foundCities, charterCompanies, researchFocus as requirement ids or tracks, publicStatement in plain words, rationale in first person with no em-dashes, respondedToOverrides, lessonsApplied). Company sectors: ${SECTORS.join(', ')}.
+Reply with one JSON decision (laws, repeal, migrations, budget, religionPolicy, schoolPolicy, foundCities, charterCompanies, researchFocus as requirement ids or tracks, publicStatement in plain words, rationale in first person with no em-dashes, respondedToOverrides, lessonsApplied, expectedResult: what you expect to change in 2 years, with numbers). Company sectors: ${SECTORS.join(', ')}.
 Be brief, every word costs time: at most 3 new laws, each law text under 25 words; rationale under 60 words; publicStatement one sentence; researchFocus at most 4 ids; empty lists are fine. At most 3 cities and 3 companies. Names must be original. Region ids: ${REGION_IDS.join(', ')}.`
 }
 
@@ -114,6 +115,7 @@ export async function decide(w: World, constitution: string, overrides: Override
         rationale: parsed.rationale.replace(/[—–]/g, ', '),
         respondedToOverrides: parsed.respondedToOverrides.filter(id => ids.includes(id)),
         lessonsApplied: parsed.lessonsApplied.filter(id => lessons.some(l => l.id === id)),
+        ...({ expectedResult: parsed.expectedResult.replace(/[\u2014\u2013]/g, ', ') } as object),
       }
       return finish(d, w)
     } catch (e) {

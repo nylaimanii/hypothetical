@@ -10,14 +10,14 @@ import { acquireOllamaLock, assertLlmReady, withUsage, type Usage } from '../age
 import { BASELINE_BUDGET, BASELINE_RELIGION, BASELINE_SCHOOL, dateOf, decisionDue } from './constants'
 import { extractLessons, loadLessons } from '../agent/lessons'
 import { globalPLE } from './end'
-import { ageCitizens, initCitizens, pairPartners, refreshThoughts, syncCitizenCounts, updateMoods } from './citizens'
+import { ageCitizens, initCitizens, pairPartners, personalYear, refreshThoughts, syncCitizenCounts, updateMoods } from './citizens'
 import { score } from './end'
 import { applyEvent } from './events'
 import { fmt } from './physics'
-import { applyDecision, baselineFrame, lawPrecedents, snapshot, stepWorld } from './step'
+import { applyDecision, baselineFrame, lawPrecedents, sawOf, snapshot, stepWorld } from './step'
 import { SNAPSHOT_EVERY, restoreWorld, snapshotWorld } from './snapshot'
 import { epitaphFor } from './visuals'
-import { event, initWorld, regionPop, worldPop, type World } from './state'
+import { event, initWorld, popWeighted, regionPop, worldPop, type World } from './state'
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
@@ -100,7 +100,43 @@ export function loadRun(runId: string): RunRecord | null {
   return null
 }
 
-type Ctx = { mem: GovernorMemory; pendingOverrides: Override[]; snapshots: Snapshot[]; due: (tick: number) => boolean }
+type Ctx = { mem: GovernorMemory; pendingOverrides: Override[]; snapshots: Snapshot[]; due: (tick: number) => boolean; pendingOutcomes: { d: Decision & { reasoning?: Reasoning }; tick: number; before: Vitals }[] }
+
+// the core's reasoning chain for one decision: what it saw -> what it chose -> what it expected -> what happened
+// two years later. not yet in A's Decision type, attached as decision.reasoning.
+export type Reasoning = { saw: string[]; chose: string[]; expected: string; outcome?: string }
+type Vitals = { pop: number; food: number; unrest: number; approval: number; le: number; frontier: string; stage: string }
+const vitals = (w: World): Vitals => ({ pop: worldPop(w), food: popWeighted(w, r => r.r.foodKcalPerCapita), unrest: popWeighted(w, r => r.r.unrest), approval: w.humanCost.approval, le: globalPLE(w), frontier: w.frontier, stage: w.space.stage })
+
+function choseOf(prev: Decision | undefined, d: Decision, enacted: Decision['laws']): string[] {
+  const out: string[] = []
+  if (prev) for (const [k, v] of Object.entries(d.budget) as [keyof Decision['budget'], number][]) {
+    const p = prev.budget[k]
+    if (Math.abs(v - p) >= 0.01) out.push(`${k} ${(p * 100).toFixed(1)}% -> ${(v * 100).toFixed(1)}%`)
+  } else out.push(`budget ${Object.entries(d.budget).map(([k, v]) => `${k} ${(v * 100).toFixed(1)}%`).join(', ')}`)
+  for (const l of enacted) out.push(`law ${l.id} "${l.title}"`)
+  if (d.repeal.length) out.push(`repealed ${d.repeal.join(', ')}`)
+  if (prev && prev.religionPolicy !== d.religionPolicy) out.push(`religion ${prev.religionPolicy} -> ${d.religionPolicy}`)
+  for (const c of d.foundCities ?? []) out.push(`new city ${c.name} (${c.regionId})`)
+  for (const m of d.migrations) out.push(`move ${fmt(m.people)} ${m.from} -> ${m.to}`)
+  return out.length ? out : ['kept the previous policy']
+}
+
+function outcomeOf(w: World, d: Decision, before: Vitals): string {
+  const now = vitals(w)
+  const parts = [
+    `population ${fmt(before.pop)} -> ${fmt(now.pop)}`, `food ${Math.round(before.food)} -> ${Math.round(now.food)} kcal`,
+    `unrest ${before.unrest.toFixed(2)} -> ${now.unrest.toFixed(2)}`, `approval ${Math.round(before.approval * 100)}% -> ${Math.round(now.approval * 100)}%`,
+    `life expectancy ${before.le.toFixed(1)} -> ${now.le.toFixed(1)}`,
+  ]
+  if (before.frontier !== now.frontier) parts.push(`frontier ${before.frontier} -> ${now.frontier}`)
+  else if (before.stage !== now.stage) parts.push(`moon program ${before.stage} -> ${now.stage}`)
+  for (const l of d.laws) {
+    const live = w.laws.find(x => x.id === l.id)
+    parts.push(live ? `law ${l.id}: support ${Math.round(live.support * 100)}%, compliance ${Math.round(live.compliance * 100)}%${live.compliance < 0.3 ? ' (mostly ignored)' : ''}` : `law ${l.id} no longer in force`)
+  }
+  return `2 years later: ${parts.join(', ')}`
+}
 
 // one month of the main world. shared by live runs, replays and branches so they execute identical code.
 async function tickBody(w: World, ctx: Ctx, decideFn: (w: World) => Promise<Decision | undefined>, opts: { overrideDir?: string; llmThoughts: boolean }): Promise<Decision | undefined> {
@@ -108,20 +144,29 @@ async function tickBody(w: World, ctx: Ctx, decideFn: (w: World) => Promise<Deci
   ctx.pendingOverrides.push(...applyOverrides(w, opts.overrideDir, ctx.mem))
   let decision: Decision | undefined
   if (ctx.due(w.tick)) {
+    const saw = sawOf(w).map(s => s.text)
+    const before = vitals(w)
     const d = await decideFn(w)
     if (d) {
+      const prev = ctx.mem.last
       const { migrations } = applyDecision(w, d)
       // record the enacted laws (real ids, metadata, support) and the migrations as ordered; how many really
       // moved is logged as an event. keeping the order (not the outcome) lets a branch replay this exactly.
       decision = { ...d, laws: w.laws.filter(l => l.enactedTick === w.tick).map(l => ({ ...l })) }
+      const expected = ((d as Decision & { expectedResult?: string }).expectedResult || d.rationale.split(/(?<=[.!?])\s/)[0] || '').slice(0, 300)
+      const reasoning: Reasoning = { saw, chose: choseOf(prev, d, decision.laws), expected }
+      Object.assign(decision, { reasoning })
+      ctx.pendingOutcomes.push({ d: decision as Decision & { reasoning?: Reasoning }, tick: w.tick, before })
       for (const m of migrations) if (m.actual < m.requested) event(w, { kind: 'migration', regionId: m.from, text: `only ${fmt(m.actual)} of ${fmt(m.requested)} ordered to move actually left`, severity: 0.1 })
       ctx.mem.last = decision
       ctx.pendingOverrides = []
     }
   }
+  for (const p of ctx.pendingOutcomes) if (w.tick >= p.tick + 24 && p.d.reasoning && !p.d.reasoning.outcome) p.d.reasoning.outcome = outcomeOf(w, p.d, p.before)
+  ctx.pendingOutcomes = ctx.pendingOutcomes.filter(p => !p.d.reasoning?.outcome)
   if (w.tick % 12 === 0) {
     // yearly: birthdays, pip counts, partners, one batched thought call (thoughts never touch sim numbers)
-    if (w.tick > 0) { ageCitizens(w); syncCitizenCounts(w); pairPartners(w) }
+    if (w.tick > 0) { ageCitizens(w); syncCitizenCounts(w); pairPartners(w); personalYear(w) }
     updateMoods(w)
     await refreshThoughts(w, opts.llmThoughts)
   }
@@ -132,7 +177,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   const live = !!opts.live
   const frameEvery = live ? 1 : Math.max(1, opts.frameEvery ?? 12)
   const knownLessons = loadLessons()
-  const ctx: Ctx = { mem: { vetoedTitles: new Set(), lessons: knownLessons }, pendingOverrides: [], snapshots: [], due: t => decisionDue(t, live) }
+  const ctx: Ctx = { mem: { vetoedTitles: new Set(), lessons: knownLessons }, pendingOverrides: [], snapshots: [], due: t => decisionDue(t, live), pendingOutcomes: [] }
   const frames: Frame[] = []
   let lessonsLearned: Lesson[] = []
   let branchedFrom: RunRecord['branchedFrom']
@@ -155,7 +200,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
     ctx.due = t => srcDecisions.has(t)
     while (w.tick < target && w.status === 'alive') {
       await tickBody(w, ctx, async x => srcDecisions.get(x.tick), { llmThoughts: false })
-      if (srcFrameTicks.has(w.tick)) { for (const rs of w.regions) rs.whyAcc = {}; w.frameCursor = w.events.length; w.flowAcc = [] }
+      if (srcFrameTicks.has(w.tick)) { for (const rs of w.regions) rs.whyAcc = {}; w.frameCursor = w.events.length; w.flowAcc = []; w.lastFrameTick = w.tick }
       stepWorld(w)
       updateMoods(w)
     }

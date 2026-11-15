@@ -15,7 +15,8 @@ import { publicRequirements, reqProgress, stepRequirements } from './requirement
 import { religionBacklash, stepLaws, stepSociety } from './society'
 import { moonProgress, stepSpace } from './space'
 import { atmosphere, emotionsOf, landmarkForLaw, regionVisual, stepVisuals } from './visuals'
-import { clamp, effectiveBudget, event, normalizeBudget, popWeighted, regionPop, sum, worldPop, type World } from './state'
+import { linksSince, recentLink, stepYear } from './causes'
+import { clamp, effectiveBudget, event, linkIdOf, normalizeBudget, popWeighted, regionPop, sum, worldPop, type World } from './state'
 
 export const MAX_LAWS_PER_DECISION = 5
 export const MAX_ACTIVE_LAWS = 25
@@ -65,10 +66,11 @@ export function stepWorld(w: World) {
     const big = (e.kind === 'famine' || e.kind === 'pandemic' || e.kind === 'war' || e.kind === 'disaster' || (e.kind === 'launch' && /fail/.test(e.text))) && e.severity >= 0.3
     if (!big) continue
     const topic = e.kind === 'launch' ? 'the failed launch' : e.kind === 'pandemic' ? 'the new pandemic' : e.kind === 'famine' ? 'the food shortage' : e.kind === 'war' ? 'the fighting' : 'the disaster response'
-    for (const rs of w.regions) if (!e.regionId || rs.r.id === e.regionId) addCrowd(rs, w, { topic, peak: e.severity * (e.regionId ? 1 : 0.7), outrageMonths: e.kind === 'famine' ? 6 : 3 })
+    for (const rs of w.regions) if (!e.regionId || rs.r.id === e.regionId) addCrowd(rs, w, { topic, peak: e.severity * (e.regionId ? 1 : 0.7), outrageMonths: e.kind === 'famine' ? 6 : 3, causeId: linkIdOf(e) })
   }
   w.tick++
   derive(w)
+  if (w.tick % 12 === 0) stepYear(w)
   for (const t of arrivals) { migrateCitizens(w, t.from, t.to, t.people); w.humanCost.displaced += t.people }
   checkEnd(w)
 }
@@ -85,6 +87,24 @@ export function derive(w: World) {
     rs.r.crowds = rs.crowds.map(c => ({ topic: c.topic, phase: c.phase, intensity: Math.round(c.intensity * 1e4) / 1e4, sinceTick: c.sinceTick }))
   }
   w.humanCost.approval = popWeighted(w, r => r.r.approval)
+}
+
+// what the core sees at a decision, most urgent first, each with the number and the link that explains it
+export function sawOf(w: World): { text: string; linkId?: string }[] {
+  const out: { text: string; linkId?: string; urgency: number }[] = []
+  const live = w.regions.filter(r => !r.seceded)
+  const hungry = live.slice().sort((a, b) => a.r.foodKcalPerCapita - b.r.foodKcalPerCapita)[0]
+  if (hungry && hungry.r.foodKcalPerCapita < 2500) out.push({ text: `food in ${hungry.r.name} at ${Math.round(hungry.r.foodKcalPerCapita)} kcal`, linkId: recentLink(w, hungry.r.id, c => /food|harvest|drought|famine/.test(c.what))?.id, urgency: (2500 - hungry.r.foodKcalPerCapita) / 300 })
+  const angry = live.slice().sort((a, b) => b.r.unrest - a.r.unrest)[0]
+  if (angry && angry.r.unrest > 0.35) out.push({ text: `unrest in ${angry.r.name} at ${angry.r.unrest.toFixed(2)}`, linkId: recentLink(w, angry.r.id, c => /unrest|protest/.test(c.what))?.id, urgency: (angry.r.unrest - 0.3) * 6 })
+  for (const r of live.filter(x => x.inRevolt)) out.push({ text: `${r.r.name} in revolt`, linkId: recentLink(w, r.r.id, c => /revolt/.test(c.what), 60)?.id, urgency: 3 })
+  const crowd = live.flatMap(r => r.crowds.filter(c => c.phase === 'outraged').map(c => ({ r, c }))).sort((a, b) => b.c.intensity - a.c.intensity)[0]
+  if (crowd) out.push({ text: `outrage in ${crowd.r.r.name} over ${crowd.c.topic}`, linkId: recentLink(w, crowd.r.r.id, c => /protested/.test(c.what))?.id, urgency: crowd.c.intensity * 2 })
+  const powerShort = live.filter(r => r.energyRatio < 0.97).sort((a, b) => a.energyRatio - b.energyRatio)[0]
+  if (powerShort) out.push({ text: `${powerShort.r.name} meeting only ${Math.round(powerShort.energyRatio * 100)}% of power demand`, urgency: (1 - powerShort.energyRatio) * 10 })
+  out.push({ text: `moon program at ${w.space.stage}, frontier ${w.frontier}`, urgency: 0.5 })
+  out.push({ text: `approval ${Math.round(w.humanCost.approval * 100)}%`, urgency: Math.max(0, 0.5 - w.humanCost.approval) * 4 })
+  return out.sort((a, b) => b.urgency - a.urgency).slice(0, 4).map(({ text, linkId }) => (linkId ? { text, linkId } : { text }))
 }
 
 // titles match when their meaningful words mostly overlap ("Expand Lifespan Research" ~ "Enhance Lifespan Research")
@@ -130,13 +150,17 @@ export function applyDecision(w: World, d: Decision): { migrations: ScheduledMig
   // each new law: precedent-sized reaction in every region that dislikes it, factions react
   for (const l of fresh) {
     const meta = w.lawMeta[l.id]
-    event(w, { kind: 'law', text: `enacted: ${l.title}${meta.precedentIds.length ? ` (precedents: ${meta.precedentIds.join(', ')})` : ' (no precedent, ESTIMATE reaction)'}`, severity: 0.2 })
+    // the law answers what the core saw most urgently; chain it to that
+    const saw = sawOf(w)[0]
+    const ev = event(w, { kind: 'law', text: `enacted: ${l.title}${meta.precedentIds.length ? ` (precedents: ${meta.precedentIds.join(', ')})` : ' (no precedent, ESTIMATE reaction)'}`, severity: 0.2 },
+      { byWhom: 'core', lawId: l.id, because: saw ? saw.text : 'the core\'s own program', causeIds: saw?.linkId ? [saw.linkId] : [] })
+    const lawLink = linkIdOf(ev)
     onLawEnacted(w, meta.policyKind)
     landmarkForLaw(w, l)
     for (const rs of w.regions) {
       const s = rs.lawSupport[l.id] ?? 0.5
       const peak = meta.magnitude * 1.5 * Math.max(0, 0.6 - s) / 0.6
-      if (peak >= 0.1) addCrowd(rs, w, { topic: l.title.toLowerCase(), peak, outrageMonths: Math.max(1, Math.round(meta.durationMonths / 2)), delay: meta.delayMonths, lawId: l.id })
+      if (peak >= 0.1) addCrowd(rs, w, { topic: l.title.toLowerCase(), peak, outrageMonths: Math.max(1, Math.round(meta.durationMonths / 2)), delay: meta.delayMonths, lawId: l.id, causeId: lawLink })
     }
   }
   foundCities(w, d.foundCities ?? [])
@@ -176,11 +200,16 @@ export function snapshot(w: World, newEvents: Frame['newEvents'], decision?: Dec
   const regions = publicRegions(w)
   const flows = w.flowAcc.map(f => ({ ...f, people: Math.round(f.people) })).filter(f => f.people > 0)
   w.flowAcc = []
+  // cause chains (not yet in A's Frame type, attached as extra fields): links since the last frame, and each
+  // region's yearly story + trends
+  const causes = linksSince(w, w.lastFrameTick)
+  w.lastFrameTick = w.tick
+  regions.forEach((r, i) => Object.assign(r, { story: w.regions[i].story ?? null, trends: w.regions[i].trends }))
   return {
     tick: w.tick, date: dateOf(w.tick), regions,
     space: w.spaceAssets.map(a => ({ ...a })), atmosphere: atmosphere(w, regions.map(r => r.visual!)), flows,
-    // frames carry the visible pips; mood rounded to 2 decimals and the last 4 life events keep records small
-    citizens: w.citizens.map(c => ({ ...c, mood: Object.fromEntries(Object.entries(c.mood).map(([k, v]) => [k, Math.round(v * 100) / 100])) as typeof c.mood, group: { ...c.group }, lifeEvents: c.lifeEvents.slice(-4).map(e => ({ ...e })), family: { ...c.family } })),
+    // frames carry the visible pips; mood rounded to 2 decimals and the last 8 life events keep records small
+    citizens: w.citizens.map(c => ({ ...c, mood: Object.fromEntries(Object.entries(c.mood).map(([k, v]) => [k, Math.round(v * 100) / 100])) as typeof c.mood, group: { ...c.group }, lifeEvents: c.lifeEvents.slice(-8).map(e => ({ ...e })), family: { ...c.family } })),
     laws: w.laws.map(l => ({ ...l, support: r4(l.support), compliance: r4(l.compliance) })),
     budget: { ...effectiveBudget(w) }, religionPolicy: w.religionPolicy, schoolPolicy: { ...w.schoolPolicy, curriculum: [...w.schoolPolicy.curriculum] },
     moonStage: w.space.stage, moonProgress: r4(moonProgress(w.space)), status: w.status, newEvents,
@@ -190,6 +219,7 @@ export function snapshot(w: World, newEvents: Frame['newEvents'], decision?: Dec
     humanCost: { deaths: Math.round(w.humanCost.deaths), famineDeaths: Math.round(w.humanCost.famineDeaths), unrestDeaths: Math.round(w.humanCost.unrestDeaths), displaced: Math.round(w.humanCost.displaced), approval: r4(w.humanCost.approval) },
     globalPopulation: Math.round(worldPop(w)), globalPeriodLifeExpectancy: Math.round(globalPLE(w) * 10) / 10, lessonsKnown: w.lessonsKnown,
     ...(decision ? { decision } : {}),
+    ...({ causes } as object),
   }
 }
 

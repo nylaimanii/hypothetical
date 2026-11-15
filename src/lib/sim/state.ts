@@ -1,6 +1,7 @@
 // internal world state. the public Region/Frame shapes from types.ts are derived from this.
 import type { Behavior, Budget, Citizen, City, Company, CrowdState, Faction, Flow, Frontier, HumanCost, Law, Mood, Region, ReligionPolicy, SchoolPolicy, SpaceAsset, WorldEvent, WorldStatus } from '../types'
 import { LAND, initMix, initRail } from './visuals'
+import { onEvent, type CauseInput, type CauseLink, type Story, type Trend } from './causes'
 import seedJson from '../../../data/seed.json'
 import demoJson from '../../../data/demographics.json'
 import { ALLOC_GDP_WEIGHT, BASELINE_BUDGET, BASELINE_RELIGION, BASELINE_SCHOOL, GOMPERTZ_B, REVENUE_SHARE, START_RESERVE } from './constants'
@@ -16,7 +17,7 @@ export const EMOTIONS = ['joy', 'fear', 'anger', 'hope', 'grief', 'pride', 'envy
 export const BEHAVIORS: Behavior[] = ['working', 'protesting', 'striking', 'rioting', 'migrating', 'hoarding', 'panic_buying', 'celebrating', 'praying', 'gossiping', 'trend_following', 'conspiracy_posting', 'volunteering', 'moving_to_new_city', 'starting_family', 'idle']
 // ESTIMATE resting emotional baseline for a population in ordinary times
 export const MOOD_BASELINE: Mood = { joy: 0.45, fear: 0.2, anger: 0.15, hope: 0.4, grief: 0.08, pride: 0.25, envy: 0.15, boredom: 0.3, awe: 0.08, distrust: 0.25 }
-export type CrowdInternal = CrowdState & { peak: number; outrageMonths: number; lawId?: string; panic?: boolean; startTick: number }
+export type CrowdInternal = CrowdState & { peak: number; outrageMonths: number; lawId?: string; panic?: boolean; startTick: number; causeId?: string }
 export type CompanyState = Company & { health: number; failed?: boolean }
 export type WhyAcc = Record<string, Record<string, { delta: number; source?: string }>>
 export type Cause = 'cardio' | 'cancer' | 'neuro' | 'metabolic' | 'infectious' | 'injury' | 'other'
@@ -107,6 +108,12 @@ export type RegionState = {
   famineDeaths: number
   excessDeathsTick: number
   pop0: number
+  // cause chains
+  yearAcc: Record<string, Record<string, number>> // why-drivers summed over the current year
+  yearStart: Record<string, number> // stat values at the start of the year
+  trends: Trend[]
+  story?: Story
+  priceIdx: number
   // v3 visuals
   farmland: number
   forest: number
@@ -163,6 +170,9 @@ export type World = {
   lawsProposed: number
   lawsRepeated: number
   frameCursor: number
+  causes: CauseLink[]
+  lastFrameTick: number
+  causeSeq: number
   spaceAssets: SpaceAsset[]
   flowAcc: Flow[] // migrations since the last frame // index into events at the last emitted frame (part of the snapshot so branches resume exactly)
 }
@@ -209,7 +219,7 @@ export function initWorld(seed: number, twin: boolean): World {
       crowds: [], privateApproval: 0.5, falsificationGap: 0.1, flipped: false, lastWellbeing: 0,
       periodLE: 0, cohortLE: 0, leTrend: 0.2, diseaseBurden: 0, travelHours: TRAVEL_HOURS[r.id] ?? 6,
       causeMult: { cardio: 1, cancer: 1, neuro: 1, metabolic: 1, infectious: 1, injury: 1, other: 1 },
-      agingSlope: GOMPERTZ_B, oldAgeFloor: 1 / 20, pronatal: 0, strikeBoost: 0, newCityPop: 0, whyAcc: {}, famineDeaths: 0, excessDeathsTick: 0, pop0: r.population,
+      agingSlope: GOMPERTZ_B, oldAgeFloor: 1 / 20, pronatal: 0, strikeBoost: 0, newCityPop: 0, whyAcc: {}, famineDeaths: 0, excessDeathsTick: 0, pop0: r.population, yearAcc: {}, yearStart: {}, trends: [], priceIdx: 1,
       mixCap: initMix(r.id, r.energyTWh * START_RESERVE), farmland: LAND[r.id].farmland, forest: LAND[r.id].forest, railLinks: [], landmarks: [],
     }
   })
@@ -233,7 +243,7 @@ export function initWorld(seed: number, twin: boolean): World {
     status: 'alive', wellbeingSum: 0, wellbeingN: 0, revenueShare: REVENUE_SHARE, citizens: [], crewDeaths: 0, citizenSeq: 0, citizenMeta: {},
     requirements: initRequirements(), cities: [], cityScores: {}, companies: [], factions: initFactions(), frontier: 'none', frontierState: initFrontier(),
     humanCost: { deaths: 0, famineDeaths: 0, unrestDeaths: 0, displaced: 0, approval: 0.5 }, lessonsKnown: 0, researchFocus: [], lawMeta: {}, lawsuits: {},
-    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), lawsProposed: 0, lawsRepeated: 0, frameCursor: 0, spaceAssets: [], flowAcc: [],
+    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), lawsProposed: 0, lawsRepeated: 0, frameCursor: 0, spaceAssets: [], flowAcc: [], causes: [], causeSeq: 0, lastFrameTick: 0,
   }
   initRail(world)
   return world
@@ -260,6 +270,8 @@ export function why(rs: RegionState, stat: string, label: string, delta: number,
   const acc = (rs.whyAcc[stat] ??= {})
   const e = (acc[label] ??= { delta: 0, source })
   e.delta += delta
+  const y = (rs.yearAcc[stat] ??= {})
+  y[label] = (y[label] ?? 0) + delta
 }
 
 export function worldPop(w: World): number {
@@ -275,16 +287,21 @@ export function popWeighted(w: World, f: (r: RegionState) => number): number {
 export type EventInput = Omit<WorldEvent, 'tick' | 'significance'> & { significance?: number }
 
 // significance 0..1: severity scaled by the share of humanity affected, mission impact and rarity (see significanceOf)
-export function event(w: World, e: EventInput): WorldEvent {
+// cause: who did it and why. events above the noise floor also become CauseLinks (causes.ts)
+export function event(w: World, e: EventInput, cause?: CauseInput): WorldEvent {
   const ev: WorldEvent = { tick: w.tick, ...e, severity: clamp(e.severity), significance: 0 }
+  ;(ev as WorldEvent & { id: string }).id = `e${w.events.length}`
   ev.significance = Math.round(clamp(e.significance ?? significanceOf(w, ev)) * 1000) / 1000
   if (ev.significance >= HEADLINE_MIN && !ev.headline) {
     const year = START_YEAR + Math.floor((START_MONTH - 1 + w.tick) / 12)
     ev.headline = headlineFor(ev, w.regions.find(r => r.r.id === ev.regionId)?.r.name, year)
   }
   w.events.push(ev)
+  const l = onEvent(w, ev, cause)
+  if (l) (ev as WorldEvent & { linkId?: string }).linkId = l.id
   return ev
 }
+export const linkIdOf = (e?: WorldEvent) => (e as (WorldEvent & { linkId?: string }) | undefined)?.linkId
 
 export function significanceOf(w: World, e: WorldEvent): number {
   const total = Math.max(1, w.regions.reduce((a, r) => a + r.r.population, 0))

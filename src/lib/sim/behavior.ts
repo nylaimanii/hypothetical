@@ -14,6 +14,7 @@
 import type { Archetype, Behavior, Citizen, Emotion, GroupKey, Mood } from '../types'
 import { HEDONIC_DECAY, LOSS_AVERSION, PROTEST_TIPPING_SHARE, SURVIVAL_KCAL } from './constants'
 import { pick, pickWeighted } from './rng'
+import { link, ppl } from './causes'
 import { BEHAVIORS, EMOTIONS, MOOD_BASELINE, clamp, event, incomeIdx, popWeighted, regionPop, why, type CrowdInternal, type RegionState, type World } from './state'
 
 // ---------- archetypes ----------
@@ -116,13 +117,13 @@ const PANIC_TOPICS = [
   'a new coin design some people say looks smug', 'a weather balloon mistaken for a mars ship', 'a recipe for space potatoes', 'daylight saving time, again',
 ]
 
-export function addCrowd(rs: RegionState, w: World, c: { topic: string; peak: number; outrageMonths: number; delay?: number; lawId?: string; panic?: boolean }) {
+export function addCrowd(rs: RegionState, w: World, c: { topic: string; peak: number; outrageMonths: number; delay?: number; lawId?: string; panic?: boolean; causeId?: string }) {
   if (rs.crowds.some(x => x.topic === c.topic && x.phase !== 'bored')) return
   if (rs.crowds.length >= 4) {
     const drop = rs.crowds.slice().sort((a, b) => (a.phase === 'bored' ? -1 : 0) - (b.phase === 'bored' ? -1 : 0) || a.intensity - b.intensity)[0]
     rs.crowds = rs.crowds.filter(x => x !== drop)
   }
-  rs.crowds.push({ topic: c.topic, phase: 'unaware', intensity: 0, sinceTick: w.tick, peak: clamp(c.peak), outrageMonths: Math.max(1, Math.round(c.outrageMonths)), lawId: c.lawId, panic: c.panic, startTick: w.tick + (c.delay ?? 0) })
+  rs.crowds.push({ topic: c.topic, phase: 'unaware', intensity: 0, sinceTick: w.tick, peak: clamp(c.peak), outrageMonths: Math.max(1, Math.round(c.outrageMonths)), lawId: c.lawId, panic: c.panic, startTick: w.tick + (c.delay ?? 0), causeId: c.causeId })
 }
 
 function stepCrowds(w: World, rs: RegionState, spreaders: number) {
@@ -135,7 +136,15 @@ function stepCrowds(w: World, rs: RegionState, spreaders: number) {
         break
       case 'alarmed':
         c.intensity = Math.min(c.peak * 0.6, c.intensity + c.peak * 0.3 * speed)
-        if (age >= Math.max(1, Math.round(2 / speed))) { c.phase = 'outraged'; c.sinceTick = w.tick }
+        if (age >= Math.max(1, Math.round(2 / speed))) {
+          c.phase = 'outraged'; c.sinceTick = w.tick
+          // the crowd hits the streets: a protest link chained to whatever set it off
+          const cause = c.causeId ? w.causes.find(x => x.id === c.causeId) : undefined
+          // ESTIMATE: 0.05% to 1% of a region marches at the peak of a real grievance (the largest protests on record
+          // reach low millions per country), a fifth of that for a moral panic
+          const marchers = regionPop(rs) * (0.0005 + 0.01 * c.peak) * (c.panic ? 0.2 : 1)
+          link(w, { placeId: rs.r.id, what: `${ppl(marchers)} protested in ${rs.r.name} over ${c.topic}`, value: marchers, because: cause ? cause.what : c.panic ? 'a rumor that spread faster than the facts' : c.topic, byWhom: `crowd:${c.topic}`, lawId: c.lawId, causeIds: c.causeId ? [c.causeId] : [] })
+        }
         break
       case 'outraged':
         c.intensity = c.peak
@@ -157,7 +166,7 @@ function stepCrowds(w: World, rs: RegionState, spreaders: number) {
   if (x < p) {
     const topic = PANIC_TOPICS[Math.floor(y * PANIC_TOPICS.length) % PANIC_TOPICS.length]
     addCrowd(rs, w, { topic, peak: 0.3 + 0.4 * z, outrageMonths: 1 + Math.floor(z * 3), panic: true })
-    if (rs.crowds.some(c => c.topic === topic)) event(w, { regionId: rs.r.id, kind: 'revolt', text: `moral panic in ${rs.r.name} over ${topic}`, severity: 0.15 })
+    if (rs.crowds.some(c => c.topic === topic)) event(w, { regionId: rs.r.id, kind: 'revolt', text: `moral panic in ${rs.r.name} over ${topic}`, severity: 0.15 }, { byWhom: `crowd:${topic}`, because: 'a rumor amplified by gossips and influencers (moral panic, Cohen 1972)', causeIds: [] })
   }
 }
 
@@ -231,7 +240,9 @@ export function stepRegionBehavior(w: World, rs: RegionState, lawBacklash: numbe
   rs.privateApproval = privateApproval
   if (!rs.flipped && (b.protesting >= PROTEST_TIPPING_SHARE || (privateApproval < 0.3 && outrage > 0.5))) {
     rs.flipped = true
-    event(w, { regionId: r.id, kind: 'revolt', text: `in ${r.name} public approval collapses almost overnight: people now say out loud what they said in private`, severity: 0.5 })
+    const lastProtest = w.causes.slice().reverse().find(x => x.placeId === r.id && /protested/.test(x.what) && w.tick - x.tick <= 12)
+    event(w, { regionId: r.id, kind: 'revolt', text: `in ${r.name} public approval collapses almost overnight: people now say out loud what they said in private`, severity: 0.5 },
+      { byWhom: 'people', because: `${(b.protesting * 100).toFixed(1)}% of people protesting, past the 3.5% tipping point (Chenoweth), private approval ${Math.round(privateApproval * 100)}%`, causeIds: lastProtest ? [lastProtest.id] : [] })
   }
   if (rs.flipped && privateApproval > 0.55 && b.protesting < 0.01) rs.flipped = false
   const gapTarget = rs.flipped ? 0 : 0.25 * r.compliance
@@ -314,12 +325,12 @@ export function stepCitizens(w: World) {
 function noteBehavior(w: World, c: Citizen, rs: RegionState) {
   const topic = rs.crowds.find(x => x.phase === 'outraged' || x.phase === 'alarmed')?.topic
   const line: Partial<Record<Behavior, string>> = {
-    protesting: `joined a protest${topic ? ` about ${topic}` : ''}`,
-    striking: 'went on strike',
+    protesting: `joined a protest in ${rs.r.name}${topic ? ` about ${topic}` : ''}`,
+    striking: `went on strike in ${rs.r.name}${topic ? ` over ${topic}` : ''}`,
     rioting: 'got caught up in a riot',
     hoarding: 'started stockpiling',
     panic_buying: 'panic bought everything on one shelf',
-    moving_to_new_city: 'moved to a new city',
+    moving_to_new_city: `moved to ${w.cities.filter(x => x.regionId === rs.r.id && !x.offWorld).slice(-1)[0]?.name ?? 'a new city'}`,
     starting_family: c.family.kids < 6 ? 'had a baby' : undefined,
     volunteering: 'started volunteering',
     conspiracy_posting: 'started a channel about what the core is hiding',
@@ -331,7 +342,8 @@ function noteBehavior(w: World, c: Citizen, rs: RegionState) {
 }
 
 export function addLifeEvent(w: World, c: Citizen, text: string) {
-  c.lifeEvents = [...c.lifeEvents, { tick: w.tick, text }].slice(-8)
+  if (c.lifeEvents.some(e => e.text === text && w.tick - e.tick < 12)) return
+  c.lifeEvents = [...c.lifeEvents, { tick: w.tick, text }].slice(-10)
   const m = w.citizenMeta[c.id]
   if (m) m.affectedTick = w.tick
 }
@@ -347,32 +359,58 @@ export function dominantEmotion(m: Mood): Emotion {
 }
 
 // dry, satirical, original voice. targets behaviors and institutions, never identity.
+// the thought follows what the person is doing first (a protester thinks about why they march), then their mood:
+// cheerful lines only when they are actually doing well, so behavior and words never contradict.
 export function satiricalThought(w: World, c: Citizen, rs: RegionState, rng: () => number): string {
-  const crowd = rs.crowds.slice().sort((a, b) => b.intensity - a.intensity)[0]
+  const outraged = rs.crowds.filter(x => x.phase === 'outraged' || x.phase === 'alarmed').sort((a, b) => b.intensity - a.intensity)[0]
+  const crowd = outraged ?? rs.crowds.slice().sort((a, b) => b.intensity - a.intensity)[0]
   const topic = crowd?.topic
-  const law = w.laws.filter(l => !l.vetoed).slice(-1)[0]
+  const grievanceLaw = outraged?.lawId ? w.laws.find(l => l.id === outraged.lawId) : w.laws.filter(l => !l.vetoed && l.hatedBy.some(h => groupMatches(c.group, c.archetype, h))).slice(-1)[0]
+  const why = grievanceLaw ? `law ${grievanceLaw.id}, "${grievanceLaw.title}"` : topic ?? (rs.r.foodKcalPerCapita < 2300 ? 'the price of food' : 'how this place is run')
+  const v = valence(c.mood)
+  const kcal = Math.round(rs.r.foodKcalPerCapita)
+  const price = Math.round((rs.priceIdx - 1) * 100)
+  const by = (opts: string[]) => pick(rng, opts)
+  switch (c.behavior) {
+    case 'protesting': return by([`I am marching because of ${why}. If they wanted us home they should have asked first.`, `Third week in the square over ${why}. My feet hurt less than my rent.`, `They passed ${why} without asking anyone here. So we are asking loudly.`])
+    case 'striking': return by([`Off the line until ${why} is fixed. Funny how fast they notice us when nothing ships.`, `On strike over ${why}. The boss says it is not personal. Neither is the strike.`])
+    case 'rioting': return by([`Nobody listened to the marches about ${why}. Now they are listening.`, `I did not plan to throw anything. Then the trucks came.`])
+    case 'hoarding': return by([`Food prices are ${price >= 0 ? 'up' : 'down'} ${Math.abs(price)}% since 2026. My closet is now a pantry.`, 'Bought forty kilos of rice. The rice is fine. I am not.'])
+    case 'panic_buying': return by([`Everyone said the shelves would empty, so I emptied a shelf. Seems I was right.`, `I do not need nine bags of flour. I needed to not be the one without flour.`])
+    case 'praying': return v < 0.45 ? by([`I pray for rain, cheaper bread, and a government that answers. In that order.`, `When the core goes quiet, I talk to someone who listens.`]) : by(['Grateful this week. Still praying, just with less in the list.'])
+    case 'idle': return by([`No work since ${rs.growth < 0 ? 'the economy shrank' : 'the plant closed'}. I have read every job board twice.`, `Unemployed in ${rs.r.name}. My schedule is open. My fridge is too.`])
+    case 'moving_to_new_city': return by(['Packed the apartment into four boxes. The new city has jobs, they say. They always say.', 'Moving to the new city. If it is half as good as the brochure, it is twice as good as here.'])
+    case 'migrating': return 'Six months in transit and a form for every border. Still moving.'
+    case 'conspiracy_posting': return by([`They say ${why} is about what it says. Notice they never say what else it is about.`, 'Posted the real story tonight. Forty likes. The truth is getting popular.'])
+    case 'volunteering': return by([`Handing out food in ${rs.r.name}. ${kcal < 2300 ? 'The line is longer than last month.' : 'The line is shorter than last year. Progress.'}`, 'Volunteering at the clinic. The pay is nothing and the coffee is worse. I keep coming back.'])
+    case 'celebrating': return v >= 0.5 ? by(['We are celebrating. Nobody remembers exactly what. Good news of some kind.', w.frontier !== 'none' ? `People live on another world now. We had a party about it. The bus is still late.` : 'Street party tonight. First one in years.']) : 'Everyone is celebrating. I am at the party, mostly for the food.'
+    case 'starting_family': return 'A baby on the way. We counted the money twice and decided to stop counting.'
+    case 'gossiping': return topic ? `My neighbor's cousin says ${topic} is just the beginning. I have told six people already.` : 'Nothing happened today, which I have now told everyone.'
+    case 'trend_following': return topic ? `Everyone is talking about ${topic}, so now I have an opinion too.` : 'Changed my profile picture to match everyone else. Feels like participating.'
+  }
+  // working: the voice depends on how life is actually going
+  if (kcal < 2000) return by(['Dinner was a philosophical concept again.', `Food is ${price}% dearer than in 2026. I eat once a day and call it a diet.`])
+  if (v < 0.4) {
+    const pool = [`Work, home, worry about ${why}. Repeat.`, `Prices up ${Math.max(price, 0)}%, pay not. My job as a ${c.job} covers less every year.`]
+    if (c.archetype === 'loud_uncle' && topic) pool.push(`Nobody asked me about ${topic}. I will be telling everyone at dinner for exactly two weeks.`)
+    if (c.archetype === 'bureaucrat' && grievanceLaw) pool.push(`I have been told to enforce "${grievanceLaw.title}". I have formed a committee to decide which committee handles it.`)
+    if (c.archetype === 'conspiracy_guy') pool.push('The core has been suspiciously quiet. Which is exactly what a core would do.')
+    return by(pool)
+  }
+  if (crowd?.phase === 'bored' && topic) return `Remember when everyone was furious about ${topic}? Me neither.`
+  if (crowd?.phase === 'realizing_cost' && topic) return `Turns out fixing ${topic} costs money. Suddenly everyone has somewhere else to be.`
   const options: string[] = []
-  if (rs.r.foodKcalPerCapita < 2000) options.push('Dinner was a philosophical concept again.', 'The ration line has its own gossip network now. I am on the committee.')
-  if (c.behavior === 'panic_buying' || c.behavior === 'hoarding') options.push('Bought forty kilos of rice. The rice is fine. I am not.', 'My pantry is ready for the apocalypse. My apartment is not ready for my pantry.')
-  if (c.behavior === 'protesting' && topic) options.push(`Marched about ${topic}. Made a sign. The sign got more attention than the issue.`)
-  if (crowd?.phase === 'bored' && topic) options.push(`Remember when everyone was furious about ${topic}? Me neither.`)
-  if (crowd?.phase === 'realizing_cost' && topic) options.push(`Turns out fixing ${topic} costs money. Suddenly everyone has somewhere else to be.`)
   switch (c.archetype) {
-    case 'loud_uncle': if (topic) options.push(`Nobody asked me about ${topic}. I will be telling everyone at dinner for exactly two weeks.`); break
-    case 'conspiracy_guy': options.push(law ? `The core says "${law.title}" is about what it says. Interesting that it never says what else it is about.` : 'The core has been suspiciously quiet. Which is exactly what a core would do.'); break
-    case 'hustler': options.push(law ? `Every new law is a new market. I now sell "${law.title}" compliance stickers.` : 'Change is coming. I have already printed the merchandise.'); break
-    case 'bureaucrat': options.push(law ? `We were asked to implement "${law.title}". I have formed a committee to decide which committee handles it.` : 'Stamped four hundred forms today. Read none of them. A personal best.'); break
+    case 'hustler': options.push(grievanceLaw ? `Every new law is a new market. I now sell "${grievanceLaw.title}" compliance stickers.` : 'Change is coming. I have already printed the merchandise.'); break
     case 'sharp_kid': options.push(rs.r.education < rs.base.education ? 'They cut the school budget. In twenty years my class runs the planet. Good luck to everyone.' : 'If the math teacher is right, the mars thing works. If the history teacher is right, it will be late.'); break
     case 'elder': options.push('I have seen worse. I just do not remember it being this loud.', 'Every generation thinks it invented the end of the world.'); break
     case 'scientist': options.push('The data is clear. The data has never once been invited to a protest.', 'Peer review takes eight months. Outrage takes eight minutes.'); break
-    case 'influencer': if (topic) options.push(`Day three of being outraged about ${topic}. Engagement up. The topic is down.`); else options.push('Posted a sunset. Two thousand people agreed with it.'); break
-    case 'gossip': if (topic) options.push(`My neighbor's cousin says ${topic} is just the beginning. I have told six people already.`); break
+    case 'influencer': options.push(topic ? `Day three of posting about ${topic}. Engagement up. The topic is down.` : 'Posted a sunset. Two thousand people agreed with it.'); break
     case 'worrier': options.push('Made a plan for every possible disaster. Forgot to make lunch.'); break
-    case 'activist': options.push(law ? `"${law.title}" is a start. I will be angry about the rest of it on Saturday.` : 'Organizing a march. We are still voting on the color of the banner.'); break
-    case 'contrarian': if (topic) options.push(`Everyone is upset about ${topic}, so I have decided it is fine.`); break
     case 'true_believer': options.push('Governments change every decade. My routine has not changed in forty years.'); break
-    case 'quiet_worker': options.push(`Went to work. Came home. The news says history is happening. It looked like a Tuesday.`); break
+    case 'contrarian': if (topic) options.push(`Everyone is upset about ${topic}, so I have decided it is fine.`); break
+    default: options.push(v >= 0.55 ? `Work as a ${c.job} is steady and dinner is on the table. That is the whole review.` : 'Went to work. Came home. The news says history is happening. It looked like a Tuesday.')
   }
   if (w.frontier !== 'none' && rng() < 0.3) options.push('People are living on another world and my bus is still late.')
-  return pick(rng, options.length ? options : ['Another month. Nothing exploded. Locally.'])
+  return pick(rng, options)
 }

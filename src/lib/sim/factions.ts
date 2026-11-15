@@ -63,14 +63,18 @@ export function stepFactions(w: World) {
     const regions = w.regions.filter(r => f.regionIds.includes(r.r.id) && !r.seceded)
     if (!regions.length) continue
     const target = regions[Math.floor(y * regions.length) % regions.length]
+    // grievance: the most recent law that raised this faction's hostility, else its budget complaint
+    const grievance = [...w.laws].reverse().find(l => (KIND_HOSTILITY[l.policyKind]?.[f.kind] ?? 0) > 0)
+    const fc = { byWhom: `faction:${f.id}` as const, because: grievance ? `${f.name} (hostility ${f.hostility.toFixed(2)}) opposes "${grievance.title}" (law ${grievance.id})` : `${f.name} (hostility ${f.hostility.toFixed(2)}) wants ${f.wants}`, lawId: grievance?.id,
+      causeIds: grievance ? w.causes.filter(c => c.lawId === grievance.id && c.byWhom === 'core').slice(-1).map(c => c.id) : [] }
     switch (f.kind) {
       case 'labor':
         for (const r of regions) r.strikeBoost += 0.02 * f.power
-        event(w, { regionId: target.r.id, kind: 'revolt', text: `${f.name} calls a general strike`, severity: 0.4 * f.power })
+        event(w, { regionId: target.r.id, kind: 'revolt', text: `${f.name} calls a general strike`, severity: 0.4 * f.power }, fc)
         break
       case 'business': {
         const law = w.laws.filter(l => !l.vetoed && (l.hatedBy.includes('business') || l.hatedBy.includes('high income'))).slice(-1)[0]
-        if (law) { w.lawsuits[law.id] = w.tick + 6; event(w, { kind: 'law', text: `${f.name} sues to block "${law.title}", enforcement paused for six months`, severity: 0.25 }) }
+        if (law) { w.lawsuits[law.id] = w.tick + 6; event(w, { kind: 'law', text: `${f.name} sues to block "${law.title}", enforcement paused for six months`, severity: 0.25 }, fc) }
         break
       }
       case 'old_energy': {
@@ -78,29 +82,29 @@ export function stepFactions(w: World) {
         for (const pl of target.pipeline) pl.readyTick += 6
         const node = w.requirements.find(r => r.id === 'hvdc_global_grid' || r.id === 'grid_storage')
         if (node && node.progress < 1) node.progress = Math.max(0, node.progress - 0.02)
-        event(w, { regionId: target.r.id, kind: 'disaster', text: `${f.name} stalls new power projects in ${target.r.name} with permits, lawsuits and mysteriously cut cables`, severity: 0.3 })
+        event(w, { regionId: target.r.id, kind: 'disaster', text: `${f.name} stalls new power projects in ${target.r.name} with permits, lawsuits and mysteriously cut cables`, severity: 0.3 }, fc)
         break
       }
       case 'regional_nationalist':
         addCrowd(target, w, { topic: 'home rule', peak: 0.5 * f.power + 0.2, outrageMonths: 4 })
         target.shock += 0.04
-        event(w, { regionId: target.r.id, kind: 'revolt', text: `${f.name} fill the squares in ${target.r.name} demanding home rule`, severity: 0.35 })
+        event(w, { regionId: target.r.id, kind: 'revolt', text: `${f.name} fill the squares in ${target.r.name} demanding home rule`, severity: 0.35 }, fc)
         break
       case 'religious':
         addCrowd(target, w, { topic: 'what the schools are teaching', peak: 0.4 * f.power + 0.2, outrageMonths: 3 })
-        event(w, { regionId: target.r.id, kind: 'revolt', text: `${f.name} calls the faithful into the streets of ${target.r.name}`, severity: 0.3 })
+        event(w, { regionId: target.r.id, kind: 'revolt', text: `${f.name} calls the faithful into the streets of ${target.r.name}`, severity: 0.3 }, fc)
         break
       case 'military':
         if (f.hostility > 0.6) {
           w.warTension += 0.1
           for (const r of regions) { r.shock += 0.05; r.r.compliance = clamp(r.r.compliance - 0.03) }
-          event(w, { regionId: target.r.id, kind: 'war', text: `${f.name} officers in ${target.r.name} refuse orders, rumors of a coup`, severity: 0.5 })
+          event(w, { regionId: target.r.id, kind: 'war', text: `${f.name} officers in ${target.r.name} refuse orders, rumors of a coup`, severity: 0.5 }, fc)
         }
         break
       case 'science':
         if (f.hostility > 0.5) {
           for (const r of regions) r.r.techLevel = clamp(r.r.techLevel - 0.003)
-          event(w, { regionId: target.r.id, kind: 'migration', text: `${f.name}: labs in ${target.r.name} lose staff as researchers walk out over budget cuts`, severity: 0.2 })
+          event(w, { regionId: target.r.id, kind: 'migration', text: `${f.name}: labs in ${target.r.name} lose staff as researchers walk out over budget cuts`, severity: 0.2 }, fc)
         }
         break
     }

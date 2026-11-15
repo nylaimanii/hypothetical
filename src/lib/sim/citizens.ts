@@ -6,6 +6,8 @@ import type { Citizen, Law } from '../types'
 import { chat, llmEnabled } from '../agent/llm'
 import { hashString, mulberry32, normal, pick, pickWeighted, type Rng } from './rng'
 import { BAND_MID, DEMOGRAPHICS, clamp, incomeIdx, regionPop, type RegionState, type World } from './state'
+import { yearOf, ppl } from './causes'
+import { groupMatches } from './behavior'
 import { addLifeEvent, citizenGroup, pickArchetype, satiricalThought, stepCitizens, valence } from './behavior'
 
 export const PEOPLE_PER_PIP = 40e6
@@ -278,5 +280,64 @@ export async function refreshThoughts(w: World, useLlm: boolean) {
     }
   } catch {
     // templates already in place
+  }
+}
+
+// ---------- personal life events ----------
+// major cities per region (real places, for flavor until v4 moves pips into real city data)
+const CITIES: Record<string, string[]> = {
+  na: ['New York', 'Toronto', 'Chicago', 'Houston', 'Los Angeles', 'Montreal'], latam: ['Mexico City', 'Sao Paulo', 'Bogota', 'Lima', 'Buenos Aires', 'Santiago'],
+  europe: ['Warsaw', 'Berlin', 'Paris', 'Madrid', 'Milan', 'Kyiv'], rus_ca: ['Moscow', 'Almaty', 'Tashkent', 'Novosibirsk', 'Tbilisi', 'Baku'],
+  mideast: ['Istanbul', 'Tehran', 'Baghdad', 'Riyadh', 'Amman', 'Dubai'], nafrica: ['Cairo', 'Algiers', 'Casablanca', 'Khartoum', 'Tunis', 'Alexandria'],
+  ssa: ['Lagos', 'Kinshasa', 'Nairobi', 'Addis Ababa', 'Johannesburg', 'Accra'], sasia: ['Mumbai', 'Dhaka', 'Karachi', 'Delhi', 'Lahore', 'Kolkata'],
+  easia: ['Shanghai', 'Tokyo', 'Seoul', 'Beijing', 'Osaka', 'Chengdu'], seasia: ['Jakarta', 'Manila', 'Bangkok', 'Ho Chi Minh City', 'Kuala Lumpur', 'Yangon'],
+  oceania: ['Sydney', 'Melbourne', 'Auckland', 'Brisbane', 'Perth', 'Adelaide'], carib_pac: ['Port Moresby', 'Santo Domingo', 'Havana', 'Kingston', 'Port-au-Prince', 'Suva'],
+}
+export function cityOf(c: Citizen): string {
+  const list = CITIES[c.regionId] ?? ['the capital']
+  return list[Math.floor(unit(c.personalitySeed, `city:${c.regionId}`) * list.length) % list.length]
+}
+
+// once a year every pip may gain one personal event, drawn from the cause links that actually hit its region,
+// its job and its group. specific: their job, their city, what hit them, what they did, what changed.
+export function personalYear(w: World) {
+  const since = w.tick - 12
+  for (const c of w.citizens) {
+    if (c.age < 10) continue
+    const rs = w.regions.find(r => r.r.id === c.regionId)!
+    const city = cityOf(c)
+    const links = w.causes.filter(l => l.tick >= since && l.placeId === c.regionId)
+    const r = rngFor(c, w)
+    const cands: { score: number; text: string }[] = []
+    const priceUp = links.find(l => /^food prices/.test(l.what) && l.value > 0.08)
+    const drought = links.find(l => /drought|harvest/.test(l.what))
+    const protest = links.filter(l => /protested/.test(l.what)).sort((a, b) => b.value - a.value)[0]
+    const pandemic = w.causes.find(l => l.tick >= since && /pandemic/.test(l.what))
+    const unrestUp = links.find(l => /^unrest/.test(l.what) && l.value > 0.03)
+    const econ = links.find(l => /^the economy/.test(l.what))
+    const year = yearOf(w.tick - 1)
+    if (drought && /farmer/.test(c.job)) cands.push({ score: 5, text: `lost ${Math.round(20 + 40 * r())}% of the harvest outside ${city} in the ${year} drought and borrowed to plant again` })
+    if (priceUp) cands.push({ score: 3 + priceUp.value * 10, text: `paid ${Math.round(priceUp.value * 100)}% more for groceries in ${city}${drought ? ` after the ${year} drought` : ''}, and ${c.family.kids ? 'cut meals for the adults so the kids eat' : 'started skipping lunch'}` })
+    for (const l of w.laws.filter(x => !x.vetoed && x.enactedTick >= since)) {
+      if (l.hatedBy.some(h => groupMatches(c.group, c.archetype, h))) cands.push({ score: 4, text: `lost out under law ${l.id}, "${l.title}"${c.behavior === 'protesting' ? `, and joined the marches in ${city}` : `, and ${c.archetype === 'hustler' ? 'found a way to profit anyway' : 'complained about it to anyone who would listen'}`}` })
+      else if (l.lovedBy.some(h => groupMatches(c.group, c.archetype, h))) cands.push({ score: 3, text: `got help from law ${l.id}, "${l.title}", which ${/food|farm/.test(l.title.toLowerCase()) ? 'put cheaper food on the table' : /health|clinic|care/.test(l.title.toLowerCase()) ? 'paid for a doctor visit' : 'made the job as a ' + c.job + ' a little easier'}` })
+    }
+    if (protest && (c.behavior === 'protesting' || c.archetype === 'activist')) cands.push({ score: 6, text: `marched with ${ppl(protest.value)} others across ${rs.r.name}, in ${city}, over ${protest.what.split(' over ').slice(1).join(' over ') || 'the new laws'}` })
+    if (pandemic) cands.push({ score: 3 + (c.age > 60 ? 2 : 0), text: `caught the ${year} fever in ${city}${c.age > 60 ? ' and spent three weeks in the hospital' : ' and was out of work for two weeks'}` })
+    if (unrestUp && (c.archetype === 'worrier' || c.archetype === 'elder')) cands.push({ score: 3, text: `stopped going out after dark in ${city} as unrest climbed to ${rs.r.unrest.toFixed(2)}` })
+    if (econ && c.job !== 'retired' && c.job !== 'student' && c.job !== 'child') cands.push({ score: 2, text: econ.value > 0 ? `got a ${Math.max(1, Math.round(econ.value * 60))}% raise as a ${c.job} in ${city} while the economy grew ${Math.round(econ.value * 100)}%` : `had hours cut ${Math.max(5, Math.round(-econ.value * 200))}% at the ${c.job} job in ${city} as the economy shrank` })
+    const unlocked = w.requirements.filter(q => q.unlockedTick !== undefined && q.unlockedTick >= since && q.track === 'longevity')
+    if (unlocked.length && c.age > 55) cands.push({ score: 4, text: `got the new ${unlocked[0].name} treatment at a clinic in ${city}` })
+    const landmark = rs.landmarks.find(lm => lm.tick >= since)
+    if (landmark) cands.push({ score: 1.5, text: `watched the ${landmark.kind.replace(/_/g, ' ')} "${landmark.label}" go up near ${city}` })
+    // a quiet year, said specifically, and never twice in a row
+    const lastQuiet = c.lifeEvents.slice(-2).some(e => e.text.startsWith('a quiet year'))
+    if (!cands.length && !lastQuiet && r() < 0.5) {
+      const rent = Math.round(2 + 6 * clamp(rs.r.population / Math.max(rs.pop0, 1) - 1 + 0.3 * r()))
+      cands.push({ score: 1, text: c.job === 'student' ? `a quiet year: moved up a grade at school in ${city}` : `a quiet year: kept the ${c.job} job in ${city} while rent rose ${rent}%` })
+    }
+    const best = cands.sort((a, b) => b.score - a.score)[0]
+    // about 6 events per decade: always for strong causes, often for mild ones
+    if (best && (best.score >= 3 || r() < 0.55)) addLifeEvent(w, c, best.text)
   }
 }

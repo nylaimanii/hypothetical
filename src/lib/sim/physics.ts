@@ -110,6 +110,7 @@ export function stepFood(w: World, fx: Record<string, LawEffects>, sectors: Reco
   w.regions.forEach((rs, i) => {
     // hoarding and panic buying pull food off the shelves for everyone else
     const kcal = avail[i] / Math.max(pops[i], 1) * hoardingFactor(rs)
+    rs.priceIdx = Math.pow(rs.foodBase / Math.max(rs.pop0, 1) / Math.max(kcal, 300), 1.5) * (1 + rs.behavior.hoarding + 2 * rs.behavior.panic_buying)
     why(rs, 'foodKcalPerCapita', 'harvest and yields', prod[i] / Math.max(pops[i], 1) - rs.r.foodKcalPerCapita)
     if (avail[i] !== prod[i]) why(rs, 'foodKcalPerCapita', avail[i] > prod[i] ? 'world food pool (received)' : 'world food pool (given)', (avail[i] - prod[i]) / Math.max(pops[i], 1))
     if (hoardingFactor(rs) < 0.99) why(rs, 'foodKcalPerCapita', 'hoarding and panic buying', kcal - avail[i] / Math.max(pops[i], 1))
