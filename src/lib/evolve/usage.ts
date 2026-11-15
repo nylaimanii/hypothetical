@@ -1,6 +1,5 @@
-// llm usage + cost tracking. groq-sdk captures globalThis.fetch when a client is built, so this module
-// wraps fetch at import time (core.ts imports it before the sim) and attributes each groq call to the
-// world running in the current async context. totals per day live in data/reports/usage-<date>.json.
+// llm usage + cost tracking. this module wraps fetch at import time (scripts import it before the sim) and
+// attributes each llm chat call (ollama or groq) to the world running in the current async context. totals per day live in data/reports/usage-<date>.json.
 import { AsyncLocalStorage } from 'node:async_hooks'
 import path from 'node:path'
 import { dirs, readJson, writeJson } from './store'
@@ -17,6 +16,8 @@ export type WorldUsage = {
   tokens: number
   // where the token count came from: runWorld result, counted from groq responses, or none
   tokenSource: 'runWorld' | 'groq-responses' | 'none'
+  // local ollama costs nothing per call; kept so a paid provider can fill it in later
+  costUsd: number
   at: string
 }
 // calls = successful llm calls. rejected = groq said no (429 rate limits, quota), not counted as calls
@@ -36,9 +37,10 @@ function bumpDay(fn: (d: DayUsage) => void) {
   } catch {}
 }
 
+// llm chat calls: ollama's openai-compatible endpoint or groq
 const isGroq = (input: unknown) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request | undefined)?.url
-  return !!url && url.includes('api.groq.com')
+  return !!url && (url.includes('api.groq.com') || url.endsWith('/chat/completions'))
 }
 
 let installed = false
@@ -77,6 +79,7 @@ export async function trackWorld<T>(runId: string, generation: number, fn: () =>
       llmCalls: reported?.llmCalls ?? ctx.calls,
       tokens: reportedTokens ?? ctx.tokens,
       tokenSource: reportedTokens !== undefined ? 'runWorld' : ctx.tokens ? 'groq-responses' : 'none',
+      costUsd: 0,
       at: new Date().toISOString(),
     }
     bumpDay(d => {
@@ -96,4 +99,26 @@ export async function trackWorld<T>(runId: string, generation: number, fn: () =>
     finish(classify({ ok: false, err }))
     throw err
   }
+}
+
+// average minutes per finished world (today, else yesterday) and how many more fit before 7am
+export function paceStats(concurrency = 1, now = new Date()): { avgMinutesPerWorld: number; estWorldsByMorning: number } | null {
+  const yesterday = new Date(now.getTime() - 864e5).toISOString().slice(0, 10)
+  const today = readDay().worlds
+  const done = (today.length ? today : readDay(yesterday).worlds).filter(w => w.outcome === 'finished')
+  if (!done.length) return null
+  const avgMs = done.reduce((a, w) => a + w.wallMs, 0) / done.length
+  const morning = new Date(now)
+  morning.setHours(7, 0, 0, 0)
+  if (morning <= now) morning.setDate(morning.getDate() + 1)
+  return {
+    avgMinutesPerWorld: Math.round((avgMs / 60000) * 10) / 10,
+    estWorldsByMorning: Math.floor(((morning.getTime() - now.getTime()) / avgMs) * Math.max(1, concurrency)),
+  }
+}
+
+export function paceLine(concurrency = 1, now = new Date()): string {
+  const p = paceStats(concurrency, now)
+  if (!p) return 'pace: no finished worlds yet'
+  return `pace: ${p.avgMinutesPerWorld} min per world, about ${p.estWorldsByMorning} more by 7am, cost $0 (ollama)`
 }

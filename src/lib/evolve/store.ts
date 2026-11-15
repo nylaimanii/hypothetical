@@ -100,6 +100,13 @@ export function writeShowcase(record: RunRecord): boolean {
   return true
 }
 
+export function removeShowcase(runId: string) {
+  if (!SAFE_ID.test(runId)) return
+  fs.rmSync(path.join(dirs.showcase, `${runId}.json.gz`), { force: true })
+  fs.rmSync(path.join(dirs.showcase, `${runId}.json`), { force: true })
+  writeJson(showcaseIndexFile(), listShowcase().filter(s => s.runId !== runId))
+}
+
 // summaries of every local run, so agents and compare never parse the big records
 const runIndexFile = () => path.join(process.cwd(), 'data', 'runs', 'index.json')
 export type IndexedRun = RunSummary & { seed: number }

@@ -2,7 +2,7 @@
 import { control } from '../evolve/evolve'
 import { loadRecord, readLeaderboard } from '../evolve/store'
 import { askCore, CORE_REAL } from '../evolve/core'
-import { readDay } from '../evolve/usage'
+import { paceLine, readDay } from '../evolve/usage'
 import { topAgents } from '../evolve/agents'
 import { send, telegramEnv, tg } from './telegram'
 
@@ -27,9 +27,10 @@ async function reply(cmd: string, rest: string): Promise<string | null> {
     case '/status': {
       const best = readLeaderboard()[0]
       const day = readDay()
-      const limited = control.limitPausedUntil > Date.now() ? `, limit pause till ${new Date(control.limitPausedUntil).toTimeString().slice(0, 5)}` : ''
+      const pace = paceLine(control.concurrency)
       return [
-        `gen ${control.generation}: ${control.worldsDone}/${control.worldsTotal} worlds done${control.paused ? ', PAUSED' : ''}${limited}`,
+        `gen ${control.generation}: ${control.worldsDone}/${control.worldsTotal} worlds done${control.paused ? ', PAUSED' : ''}`,
+        pace,
         `today: ${day.calls} llm calls${day.tokens ? `, ${day.tokens} tokens` : ''}${day.rejected ? `, ${day.rejected} rejected by groq` : ''}, ${day.worldsFinished} worlds finished, ${day.worldsInterrupted} interrupted`,
         best ? `best all time: ${best.name} (gen ${best.generation}) score ${best.score}` : '',
       ].filter(Boolean).join('\n')

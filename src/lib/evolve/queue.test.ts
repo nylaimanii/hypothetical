@@ -33,13 +33,12 @@ test('transient vs real errors', () => {
   assert.ok(!isTransient(new Error('cannot read properties of undefined')))
 })
 
-test('a world that throws 429 twice then succeeds is retried after 30s and 2m, no pause', async () => {
+test('a world that fails transiently twice then succeeds is retried after 30s and 2m', async () => {
   const clock = fakeClock()
   const t0 = clock.t
   let calls = 0
   const attempts: number[] = []
   const done: number[] = []
-  let paused = false
   await runQueue(['w1'], {
     concurrency: 1, clock,
     run: async () => {
@@ -48,32 +47,26 @@ test('a world that throws 429 twice then succeeds is retried after 30s and 2m, n
       done.push(clock.t)
     },
     onInterrupted: () => {},
-    onLimitPause: () => { paused = true },
   })
   assert.equal(calls, 3)
   assert.equal(done.length, 1)
-  assert.equal(paused, false)
   // first try at 0, second after the 30s backoff, third 2m after that
   assert.ok(attempts[1] >= 30_000 && attempts[1] < 31_000, `second attempt at ${attempts[1]}`)
   assert.ok(attempts[2] - attempts[1] >= 2 * MIN && attempts[2] - attempts[1] < 2 * MIN + 1000)
 })
 
-test('3 interruptions in a row pause the queue once, then it resumes by itself', async () => {
+test('ollama down: one pause message, a check every 60s, one resume message, then the queue continues', async () => {
+  const { llmGate } = await import('./ollama')
   const clock = fakeClock()
-  const pauses: number[] = []
-  let calls = 0
+  let checks = 0
+  const sent: string[] = []
   const finished: string[] = []
-  await runQueue(['a', 'b', 'c', 'd'], {
-    concurrency: 1, clock,
-    run: async t => {
-      if (++calls <= 3) throw rateLimit()
-      finished.push(t)
-    },
-    onLimitPause: at => { pauses.push(at - clock.now()) },
-  })
-  assert.equal(pauses.length, 1)
-  assert.ok(pauses[0] >= 10 * MIN, 'pause lasts at least 10 minutes')
-  assert.deepEqual([...finished].sort(), ['a', 'b', 'c', 'd'])
+  const gate = llmGate({ up: async () => ++checks > 4, clock, notify: async t => { sent.push(t) }, log: () => {} })
+  const t0 = clock.t
+  await runQueue(['a', 'b'], { concurrency: 1, clock, beforeEach: gate, run: async t => { finished.push(t) } })
+  assert.deepEqual(sent, ['paused: ollama not running', 'resumed: ollama is back'])
+  assert.equal(clock.t - t0, 3 * 60_000, 'three 60s waits before ollama answered')
+  assert.deepEqual(finished, ['a', 'b'])
 })
 
 test('a real error is not swallowed', async () => {
@@ -88,6 +81,8 @@ function inTempDir(fn: (dir: string) => Promise<void>) {
     delete process.env.TELEGRAM_BOT_TOKEN
     delete process.env.GMAIL_USER
     delete process.env.GROQ_API_KEY
+    // tests never touch the gpu: mutations use the offline fallback
+    process.env.LLM_PROVIDER = 'offline'
     try { await fn(dir) } finally { process.chdir(cwd); fs.rmSync(dir, { recursive: true, force: true }) }
   }
 }
@@ -106,7 +101,7 @@ test('evolve: interrupted worlds are retried, never scored or reported as deaths
     })
   }
   const lines: string[] = []
-  await evolve({ gens: 1, concurrency: 1, runWorld: fake, clock: fakeClock(), log: l => lines.push(l) })
+  await evolve({ gens: 1, concurrency: 1, runWorld: fake, clock: fakeClock(), log: l => lines.push(l), llmUp: async () => true })
 
   const gen = JSON.parse(fs.readFileSync(path.join(dir, 'data/generations/gen-1.json'), 'utf8'))
   assert.equal(gen.status, 'done')
@@ -120,11 +115,38 @@ test('evolve: interrupted worlds are retried, never scored or reported as deaths
   assert.equal(gen.population.reduce((a: number, c: { interrupted?: number }) => a + (c.interrupted ?? 0), 0), 2)
   assert.equal(control.worldsInterrupted, 2)
   assert.equal(lines.filter(l => l.includes('interrupted')).length, 2)
-  assert.ok(!lines.some(l => l.startsWith('paused')))
   const day = readDay()
   assert.equal(day.worldsInterrupted, 2)
   assert.equal(day.worldsFinished, 14)
   assert.ok(fs.existsSync(path.join(dir, 'data/leaderboard.json')))
+  // mission control file exists only while evolve runs
+  assert.ok(!fs.existsSync(path.join(dir, 'data/evolve-now.json')), 'evolve-now is removed when evolve exits')
+}))
+
+test('evolve-now: written during a world with the live frame, queue and stats; 404 shape when stale', inTempDir(async dir => {
+  const { evolve } = await import('./evolve')
+  const { placeholderSummary } = await import('./store')
+  const { readNow } = await import('./now')
+  let seen = null as import('./now').EvolveNow | null
+  const fake = async (o: RunOptions & { agentId?: string }): Promise<RunSummary> => {
+    // tick 13: not on a 12-tick boundary, so evolve does not keep this partial frame
+    o.onFrame?.({ tick: 13, date: '2027-12', status: 'alive' } as never)
+    if (!seen) seen = readNow()
+    return placeholderSummary({ runId: o.runId, generation: o.generation, status: 'complete', endDate: '2126-11', ticks: 1200, score: 1, constitution: o.constitution, peakPopulation: 8e9, moonStage: 'none', agentId: o.agentId })
+  }
+  await evolve({ gens: 1, concurrency: 1, runWorld: fake, clock: fakeClock(), log: () => {}, llmUp: async () => true })
+  assert.ok(seen, 'evolve-now was readable during the first world')
+  const now = seen as import('./now').EvolveNow
+  assert.equal(now.generation, 1)
+  assert.equal(now.runId, 'g1-long-now-s1002')
+  assert.equal(now.agentId, 'long-now')
+  assert.equal(now.worldIndex, 1)
+  assert.equal(now.worldsInGen, 14)
+  assert.equal(now.queue.length, 13)
+  assert.equal(now.latestFrame?.tick, 13)
+  assert.ok('worldsLost' in now.stats && 'estWorldsByMorning' in now.stats)
+  assert.equal(readNow(), null, 'no evolution running after it exits')
+  void dir
 }))
 
 test('evolve: deaths write lessons, repeats are counted, the charter survives breeding', inTempDir(async dir => {
@@ -145,7 +167,7 @@ test('evolve: deaths write lessons, repeats are counted, the charter survives br
       agentId: (o as RunOptions & { agentId?: string }).agentId,
     })
   }
-  await evolve({ gens: 2, concurrency: 1, runWorld: fake, clock: fakeClock(), log: () => {} })
+  await evolve({ gens: 2, concurrency: 1, runWorld: fake, clock: fakeClock(), log: () => {}, llmUp: async () => true })
   const lessons = JSON.parse(fs.readFileSync(path.join(dir, 'data/lessons.json'), 'utf8'))
   assert.equal(lessons.length, 1, 'same rule is merged, not duplicated')
   assert.ok(lessons[0].timesRelevant > 1)
@@ -159,7 +181,8 @@ test('evolve: deaths write lessons, repeats are counted, the charter survives br
   assert.ok(charter.constitution.startsWith('your mission is the long-term survival'))
   assert.ok(gen2.population.some((c: { name: string }) => / ii$/.test(c.name)), 'mutations are named <parent> ii')
   assert.ok(gen2.population.some((c: { name: string }) => c.name.includes(' × ')), 'crossovers are named a × b')
-  assert.ok(fs.readdirSync(path.join(dir, 'data/showcase')).some(f => f.endsWith('.json.gz')), 'best world of each generation is showcased')
+  // these fake worlds made no llm calls, so none of them may reach the showcase
+  assert.ok(!fs.existsSync(path.join(dir, 'data/showcase')) || !fs.readdirSync(path.join(dir, 'data/showcase')).some(f => f.endsWith('.json.gz')), 'offline worlds are never showcased')
 
   // agents registry: seven seeds plus their children, one champion, retired agents left out of gen 2
   const agents = JSON.parse(fs.readFileSync(path.join(dir, 'data/agents.json'), 'utf8'))
@@ -175,5 +198,5 @@ test('evolve: deaths write lessons, repeats are counted, the charter survives br
   const horizon = hall.entries.find((e: { title: string }) => e.title === 'first world to reach 2126')
   assert.ok(horizon, 'milestone recorded once')
   assert.equal(hall.entries.filter((e: { title: string }) => e.title === 'first world to reach 2126').length, 1)
-  assert.ok(fs.existsSync(path.join(dir, `data/showcase/${horizon.runId}.json.gz`)))
+  assert.ok(!fs.existsSync(path.join(dir, `data/showcase/${horizon.runId}.json.gz`)), 'hall worlds from offline runs stay out of the showcase')
 }))

@@ -1,5 +1,5 @@
-// npm run evolve -- [--gens 10] [--concurrency 2] [--pop 7]
-// without --gens it keeps going until a world achieves the goal
+// npm run evolve -- [--gens 10] [--concurrency 1] [--pop 7]
+// without --gens it keeps going until a world achieves the goal. concurrency defaults to 1 (one gpu)
 // env first, then the fetch counter, so both are in place before the sim modules load
 import '../src/lib/evolve/env'
 import '../src/lib/evolve/usage'
@@ -10,7 +10,7 @@ import { arg } from './args'
 async function main() {
   const gensArg = arg('gens')
   const gens = gensArg ? Number(gensArg) : undefined
-  const concurrency = Number(arg('concurrency', '2'))
+  const concurrency = Number(arg('concurrency', '1'))
   const popSize = Number(arg('pop', '7'))
   const stopCommands = startCommands()
   process.on('SIGINT', () => {

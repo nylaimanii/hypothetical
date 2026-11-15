@@ -1,5 +1,6 @@
 // telegram notifications. missing env logs once and every call becomes a no-op. never throws.
 import type { HallEntry, Lesson, RunRecord, RunSummary } from '../types'
+import { readAgents } from '../evolve/agents'
 
 let warned = false
 export function telegramEnv(): { token: string; chatId: string } | null {
@@ -76,10 +77,14 @@ export async function notifyGeneration(line: string) {
   await send(line)
 }
 
-// hall of history entries get their own message, e.g. "🏆 first mars city ever: halcyon ii, 2071"
-export async function notifyHall(e: HallEntry, agentName: string) {
-  const year = 2026 + Math.floor((e.tick + 10) / 12)
-  const icon = e.kind === 'catastrophe' ? '💀' : e.kind === 'milestone' ? '🌍' : '🏆'
-  const title = e.kind === 'record' ? `new record, ${e.title}` : e.title
-  await send(`${icon} ${title}: ${agentName}, ${year}\n${e.text}`)
+// one message per generation for all its new hall of history entries, e.g. "🏆 first mars city ever: halcyon ii, 2071"
+export async function notifyHallBatch(generation: number, entries: HallEntry[]) {
+  if (!entries.length) return
+  const names = new Map(readAgents().map(a => [a.id, a.name]))
+  const lines = entries.map(e => {
+    const year = 2026 + Math.floor((e.tick + 10) / 12)
+    const icon = e.kind === 'catastrophe' ? '💀' : e.kind === 'milestone' ? '🌍' : '🏆'
+    return `${icon} ${e.kind === 'record' ? `new record, ${e.title}` : e.title}: ${names.get(e.agentId) ?? e.agentId}, ${year}`
+  })
+  await send([`hall of history, gen ${generation}:`, ...lines].join('\n'))
 }

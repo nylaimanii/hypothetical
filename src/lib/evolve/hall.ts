@@ -2,7 +2,7 @@
 // each entry links a runId and the tick it happened at. records only re-enter the hall when beaten by a clear margin.
 import path from 'node:path'
 import type { Frame, Frontier, HallEntry, RunRecord } from '../types'
-import { FRONTIER_ORDER, frontierRank } from './agents'
+import { FRONTIER_ORDER } from './agents'
 import { readJson, writeJson } from './store'
 
 type HallFile = { entries: HallEntry[]; records: Record<string, { value: number; runId: string }> }
@@ -30,6 +30,17 @@ function firstTick(frames: Frame[], pred: (f: Frame) => boolean): number | null 
   return frames.find(pred)?.tick ?? null
 }
 
+// frames are saved every 12 ticks, but each carries every event since the previous frame with its exact tick.
+// a frontier is dated by the first major launch or breakthrough in the frame where it first appears.
+function frontierTick(frames: Frame[], f: Frontier): number | null {
+  const i = frames.findIndex(fr => fr.frontier === f)
+  if (i < 0) return null
+  const ev = frames[i].newEvents
+    .filter(e => (e.kind === 'launch' || e.kind === 'breakthrough') && (e.significance ?? e.severity) >= 0.8 && !/fail/i.test(e.text))
+    .sort((a, b) => a.tick - b.tick)[0]
+  return ev?.tick ?? frames[i].tick
+}
+
 // scans one finished world and returns the hall entries it earned (already saved to data/hall.json)
 export function checkHall(record: RunRecord, agentName: string): HallEntry[] {
   const hall = readHall()
@@ -51,11 +62,13 @@ export function checkHall(record: RunRecord, agentName: string): HallEntry[] {
   }
 
   // firsts: every frontier stage, the first mars city, the first eradicated disease, lifespans of 150 and 200
+  // only frontiers the world actually reached: the stages are not a strict ladder (a world can go from a mars
+  // settlement straight to asteroid mining without a self-sustaining mars)
   for (const f of FRONTIER_ORDER.slice(1)) {
     const key = `first-${f}`
-    if (has(key) || frontierRank(s.frontier) < frontierRank(f)) continue
-    const t = firstTick(frames, fr => frontierRank(fr.frontier) >= frontierRank(f)) ?? s.ticks
-    add(key, 'first', FRONTIER_TITLES[f]!, t, `${agentName} got there in ${yearOf(t)}.`)
+    if (has(key)) continue
+    const t = frontierTick(frames, f)
+    if (t !== null) add(key, 'first', FRONTIER_TITLES[f]!, t, `${agentName} got there in ${yearOf(t)}.`)
   }
   const last = frames[frames.length - 1]
   const marsCity = last?.cities.filter(c => c.offWorld === 'mars').sort((a, b) => a.foundedTick - b.foundedTick)[0]
@@ -77,7 +90,7 @@ export function checkHall(record: RunRecord, agentName: string): HallEntry[] {
   if (peak) record_('record-population', peak.globalPopulation, (v, o) => v > o * 1.02, 'highest population', peak.tick, `${agentName} reached ${pop(peak.globalPopulation)} people in ${yearOf(peak.tick)}.`)
   const longest = frames.reduce<Frame | null>((m, f) => (!m || f.globalPeriodLifeExpectancy > m.globalPeriodLifeExpectancy ? f : m), null)
   if (longest && longest.globalPeriodLifeExpectancy > 0) record_('record-lifespan', longest.globalPeriodLifeExpectancy, (v, o) => v >= o + 1, 'longest lifespan', longest.tick, `${agentName} reached a period life expectancy of ${longest.globalPeriodLifeExpectancy.toFixed(1)} years in ${yearOf(longest.tick)}.`)
-  const moonAt = firstTick(frames, f => frontierRank(f.frontier) >= frontierRank('moon_landing'))
+  const moonAt = frontierTick(frames, 'moon_landing')
   if (moonAt !== null) record_('record-fastest-moon', -moonAt, (v, o) => v >= o + 12, 'fastest moon landing', moonAt, `${agentName} landed on the moon in ${yearOf(moonAt)}, ${Math.round(moonAt / 12)} years in.`)
 
   // catastrophes: the deepest fall from a running peak, and the deadliest famine

@@ -21,7 +21,7 @@ competing constitutions, and the constitutions evolve between runs.
 npm install
 npm run seed                    # data folders, starting constitutions, starting world data
 npm run dev                     # the site, http://localhost:3000
-npm run evolve -- --gens 10 --concurrency 2
+npm run evolve -- --gens 10 --concurrency 1   # one gpu: keep it at 1
 npm run run-one -- --seed 1 --constitution technocrat
 npm run live -- --runId mylive --seed 7 --constitution-file path/to/constitution.txt
 ```
@@ -30,8 +30,10 @@ Secrets go in `.env.local` only and are never committed. Variables, by name:
 
 | name | used for |
 | --- | --- |
-| `GROQ_API_KEY` | the governor and constitution mutation (llama 3.3 70b on groq) |
-| `GROQ_MODEL` | optional, overrides the mutation model |
+| `LLM_PROVIDER` | `ollama` (default), `groq`, or `offline` (tests only) |
+| `LLM_MODEL` | optional, defaults to `gpt-oss:20b` on ollama |
+| `OLLAMA_URL` | optional, the local ollama endpoint (default `http://localhost:11434/v1`) |
+| `GROQ_API_KEY` | only for `LLM_PROVIDER=groq` |
 | `TELEGRAM_BOT_TOKEN` | telegram notifications and commands |
 | `TELEGRAM_CHAT_ID` | the only chat the bot talks to |
 | `GMAIL_USER` | the gmail account that sends reports |
@@ -46,12 +48,14 @@ If any of these is missing, that feature logs once and is skipped. Nothing crash
 - Generation 1 starts with seven constitutions. Six take different philosophies to the same mission: technocratic, federal, utilitarian, market liberal, communitarian and space-first. The seventh is the long now charter, which is protected: it competes with its original text every generation and is never mutated in place, though mutations of it can enter as separate constitutions.
 - A generation runs every constitution on the same 2 seeds and scores it by its average.
 - The top 2 constitutions carry over unchanged. The rest of the population is refilled with:
-  - **mutations**: groq rewrites a parent, given what killed it, its biggest events and the known lessons. It fixes what failed and keeps what worked.
+  - **mutations**: the LLM rewrites a parent, given what killed it, its biggest events and the known lessons. It fixes what failed and keeps what worked.
   - **crossovers**: section by section splices of two parents (values, religion, school, migration, priorities).
 - Output:
   - `data/generations/gen-<n>.json` for each generation
   - `data/leaderboard.json` with the top 20 of all time
-  - showcase worlds in `data/showcase/` (gzipped, with an `index.json`): the best world of every generation and any goal-achieving world. This folder is committed so the deployed site can replay real worlds.
+  - showcase worlds in `data/showcase/` (gzipped, with an `index.json`), committed so the deployed site can replay them:
+    - at most 20 worlds: goal worlds, hall of history worlds, and the best world of each lineage
+    - only from real LLM runs, never worlds the governor ran on its offline fallback
 - **The learning loop:**
   - Every destroyed world adds lessons (mistake, consequence, rule) to `data/lessons.json`.
   - A lesson that matches an existing rule bumps that rule's `timesRelevant` count instead of being duplicated.
@@ -65,17 +69,20 @@ If any of these is missing, that feature logs once and is skipped. Nothing crash
   - Each agent tracks its worlds, deaths, scores, best frontier and best lifespan.
   - The champion is the active agent with the best average. Agents dropped from evolution are retired.
 - **Fairness:** every active agent runs the same 2 seeds each generation, so compare mode always has like-for-like worlds.
-- **Hall of history:** `data/hall.json` records firsts (moon, a Mars city, an eradicated disease, 150 and 200 year lifespans), records (population, lifespan, fastest moon), catastrophes (biggest collapse, deadliest famine) and milestones. Each entry links to its world and tick, and every hall world is showcased.
+- **Hall of history:** `data/hall.json` records firsts (moon, a Mars city, an eradicated disease, 150 and 200 year lifespans), records (population, lifespan, fastest moon), catastrophes (biggest collapse, deadliest famine) and milestones. Each entry links to its world and the exact tick of the event behind it.
 - Evolution keeps going, generation after generation, until a world achieves the goal. Then it finishes that generation and stops. Use `--gens n` to stop sooner.
 - Evolution is resumable: rerunning `npm run evolve` continues the unfinished generation.
-- Rate limits are not deaths. A world that fails on a 429, a timeout or a network error is marked interrupted. It is not scored, and it is retried after 30s, then 2m, then 10m, then at the next hour. If 3 worlds in a row are interrupted, the whole generation pauses, sends one telegram message, and resumes on its own.
-- LLM calls and tokens per world are logged to `data/reports/usage-<date>.json`.
+- An unreachable LLM is never a death:
+  - **Ollama down before a world starts:** the generation pauses, sends one telegram ("paused: ollama not running"), checks every 60s, and resumes on its own.
+  - **Ollama dies mid-world** (so the governor fell back to offline decisions): the world is marked interrupted, is not scored, and runs again once ollama is back.
+  - **Other transient errors:** retried after 30s, 2m, 10m, then at the next hour.
+- LLM calls, tokens, wall time and cost ($0 on ollama) per world are logged to `data/reports/usage-<date>.json`. `/status` shows the average minutes per world and how many more fit before 7am.
 
 ## telegram
 
 - **Every destroyed world:** world number, generation, date and cause; what it got wrong and the lesson it added; how far it got (frontier, period life expectancy, population); and its human cost.
 - **End of each generation:** the champion, the best score, lessons known, and the repeat-mistake rate.
-- **Every new hall of history entry:** its own message, e.g. "🏆 first mars city ever: halcyon ii, 2071".
+- **New hall of history entries:** one message per generation, one line each, e.g. "🏆 first mars city ever: halcyon ii, 2071".
 - **Goal achieved:** a big celebration.
 - **Commands while evolve runs** (answered only in `TELEGRAM_CHAT_ID`):
 
@@ -113,10 +120,12 @@ PDFs styled like the site go out over gmail and are always saved to `data/report
 | `GET /api/learning` | one row per generation: best score, lessons known, repeat-mistake rate |
 | `GET /api/agents` | `Agent[]` |
 | `GET /api/agents/[id]` | `{ agent, runs }` |
-| `GET /api/compare?agents=a,b,c,d` | `{ seed, runs, divergences, pending, note? }`: each agent's best world on their most shared seed, plus divergences for every pair. Missing worlds are started in the background (local only) |
+| `GET /api/compare?agents=a,b,c,d` | `{ seed, runs, divergences, pending, note? }`: each agent's best world on their most shared seed, slim (`SlimRun`: summary, one stat row per year, decision rows), plus divergences for every pair. Missing worlds are started in the background (local only) |
+| `GET /api/evolve/now` | mission control: the running generation, current world and its latest frame, the queue, the last 5 worlds, new lessons, stats (worlds lost, lessons known, best score, champion, minutes per world, worlds by morning). 404 when no evolution is running |
+| `GET /api/runs/[id]/frames?from=&to=` | `FramesResponse` `{ runId, from, to, frames }`: full frames in an inclusive tick range, for lazy loading |
 | `GET /api/hall` | `HallEntry[]` |
 | `POST /api/branch` `{ runId, tick, agentId }` | `{ runId }`, a new live world from that moment, governed by that agent |
-| `GET /api/runs/[id]` | `RunRecord` |
+| `GET /api/runs/[id]` | `RunRecord`; with `?slim=1` a `SlimRun` (no frames, yearly rows and decision rows) |
 | `POST /api/live/start` `{ constitution?, seed? }` | `{ runId }`, spawns a live world at 1 second per month |
 | `GET /api/live/[id]` | the live `RunRecord` so far |
 | `POST /api/override` `{ runId, override }` | `{ ok: true }`, the governor sees it on the next tick |

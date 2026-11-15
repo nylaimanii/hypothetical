@@ -1,24 +1,11 @@
-// mutation (groq 70b rewrite) and crossover (section splice) of constitutions.
-import Groq from 'groq-sdk'
+// mutation (llm rewrite through B's client: local ollama by default) and crossover (section splice).
 import type { Lesson, RunSummary } from '../types'
 import type { Candidate } from './store'
 import { wordCount } from './seeds'
+import { chat as llmChat, llmEnabled } from './core'
 
-// llama 3.3 70b is the spec'd model; accounts without it fall through to the next one
-const MODELS = process.env.GROQ_MODEL ? [process.env.GROQ_MODEL] : ['llama-3.3-70b-versatile', 'openai/gpt-oss-120b']
-const missingModels = new Set<string>()
 const SECTIONS = ['Values', 'Religion', 'School', 'Migration', 'Priorities']
 
-let client: Groq | null | undefined
-function groq(): Groq | null {
-  if (client === undefined) {
-    client = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null
-    if (!client) console.log('[evolve] GROQ_API_KEY missing, using offline mutation fallback')
-  }
-  return client
-}
-
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 export const noEmDash = (s: string) => s.replace(/\s*[\u2014\u2013]\s*/g, ', ')
 
 function trimWords(text: string, max = 250) {
@@ -32,35 +19,15 @@ function trimWords(text: string, max = 250) {
   return out.trim()
 }
 
-// groq free tier limits are tight: back off on 429 and retry a few times
+// returns null when no llm is configured or the call fails; the caller then uses the offline mutation
 async function chat(prompt: string): Promise<string | null> {
-  const g = groq()
-  if (!g) return null
-  for (const model of MODELS.filter(m => !missingModels.has(m))) {
-    for (let attempt = 0; attempt < 5; attempt++) {
-      try {
-        const res = await g.chat.completions.create({
-          model,
-          temperature: 0.8,
-          response_format: { type: 'json_object' },
-          messages: [{ role: 'user', content: prompt }],
-        })
-        return res.choices[0]?.message?.content ?? null
-      } catch (e) {
-        const err = e as { status?: number; headers?: Record<string, string>; message?: string }
-        if (err.status === 404 || /model_not_found|does not exist/.test(String(err.message))) { missingModels.add(model); break }
-        if (err.status === 429 || (err.status ?? 0) >= 500) {
-          const retry = Number(err.headers?.['retry-after']) || 2 ** attempt * 4
-          console.log(`[evolve] groq ${err.status}, retrying in ${retry}s`)
-          await sleep(retry * 1000)
-          continue
-        }
-        console.log(`[evolve] groq error: ${err.message}`)
-        return null
-      }
-    }
+  if (!llmEnabled()) return null
+  try {
+    return await llmChat({ system: 'You revise constitutions for a simulated world government. Reply with JSON only.', user: prompt, json: true, temperature: 0.8, maxTokens: 4096 })
+  } catch (e) {
+    console.log(`[evolve] mutation llm error: ${(e as Error).message}`)
+    return null
   }
-  return null
 }
 
 function deathSummary(runs: RunSummary[]) {

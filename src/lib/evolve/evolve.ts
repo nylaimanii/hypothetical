@@ -9,11 +9,14 @@ import { LONG_NOW_TEXT, SEEDS } from './seeds'
 import { crossover, mutate } from './mutate'
 import { crossoverName, mutationName, slug } from './names'
 import {
-  dirs, indexRun, isWin, leaderboardFile, placeholderSummary, readJson, readLeaderboard, writeJson, writeShowcase,
+  dirs, indexRun, isWin, leaderboardFile, placeholderSummary, readJson, readLeaderboard, readRunIndex, writeJson,
   type Candidate, type GenerationFile, type LeaderboardEntry,
 } from './store'
 import { lessonsForPrompt, matchesKnownLesson, mergeLessons, readLearning, readLessons, writeLearning } from './lessons'
-import { notifyGeneration, notifyGoal, notifyHall, notifyWorldDied, send } from '../notify/telegram'
+import { notifyGeneration, notifyGoal, notifyHallBatch, notifyWorldDied, send } from '../notify/telegram'
+import { LlmDownError, llmGate, ollamaUp } from './ollama'
+import { considerShowcase, isRealLlmRun, llmShare } from './showcase'
+import { clearNow, writeNow } from './now'
 import { isTransient, realClock, runQueue, type Clock } from './queue'
 import { trackWorld } from './usage'
 import { recordAgentRun, registerPopulation, settleGeneration } from './agents'
@@ -30,6 +33,8 @@ export type EvolveOptions = {
   runWorld?: typeof runWorld
   extractLessons?: typeof extractLessons
   clock?: Clock
+  // is the llm server reachable (default: ollama)
+  llmUp?: () => Promise<boolean>
 }
 
 // shared with telegram commands
@@ -40,7 +45,9 @@ export const control = {
   worldsDone: 0,
   worldsTotal: 0,
   worldsInterrupted: 0,
-  limitPausedUntil: 0,
+  concurrency: 1,
+  // the last 5 finished worlds, newest first, for mission control
+  recent: [] as RunSummary[],
   stopRequested: false,
   goalReached: false,
 }
@@ -138,7 +145,8 @@ function crashedSummary(runId: string, gen: number, agentId: string, constitutio
 }
 
 type RunWorld = typeof runWorld
-type Deps = { run: RunWorld; extract: typeof extractLessons; log: (l: string) => void }
+type Deps = { run: RunWorld; extract: typeof extractLessons; log: (l: string) => void; llmUp: () => Promise<boolean> }
+let warnedFallback = false
 
 // per-death learning: lessons from the run (B extracts them on death), merged into data/lessons.json
 async function learnFromDeath(g: GenerationFile, record: RunRecord, deps: Deps): Promise<{ added: Lesson[]; repeat: Lesson | null }> {
@@ -164,11 +172,30 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, deps: Deps)
   let summary: RunSummary
   let record: RunRecord
   try {
-    summary = await trackWorld(runId, g.generation, () => deps.run({
-      runId, generation: g.generation, seed, constitution: c.constitution, frameEvery: 12, agentId: c.id,
-      onFrame: f => { if (f.tick % 12 === 0 || f.status !== 'alive') frames.push(f) },
-    }), r => (r.ok ? 'finished' : isTransient(r.err) ? 'interrupted' : 'crashed'))
-    record = recordFor(runId, seed, g.generation, c.constitution, frames, summary)
+    let rec: RunRecord | null = null
+    summary = await trackWorld(runId, g.generation, async () => {
+      const s = await deps.run({
+        runId, generation: g.generation, seed, constitution: c.constitution, frameEvery: 12, agentId: c.id,
+        onFrame: f => {
+          if (f.tick % 12 === 0 || f.status !== 'alive') frames.push(f)
+          publishNow(g, { runId, agentId: c.id }, f)
+        },
+      })
+      rec = recordFor(runId, seed, g.generation, c.constitution, frames, s)
+      // the governor falls back to offline decisions when the llm fails. if that happened because ollama went
+      // down mid-world, the world is not a real run: interrupt it and run it again once ollama is back
+      if (!isRealLlmRun(rec)) {
+        if (!(await deps.llmUp())) throw new LlmDownError('ollama went down during the world')
+        const { decisions, fallback } = llmShare(rec)
+        if (!warnedFallback) {
+          warnedFallback = true
+          const msg = `warning: ${runId} ran ${fallback}/${decisions} decisions on the offline fallback while ollama was up. is the model pulled?`
+          deps.log(msg); await send(msg)
+        }
+      }
+      return s
+    }, r => (r.ok ? 'finished' : isTransient(r.err) ? 'interrupted' : 'crashed'))
+    record = rec!
   } catch (e) {
     // rate limits, timeouts and network errors are not deaths: hand back to the queue unscored
     if (isTransient(e)) throw e
@@ -183,6 +210,7 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, deps: Deps)
   learning.worldsRun++
   writeLearning(learning)
   control.worldsDone++
+  control.recent = [summary, ...control.recent.filter(r => r.runId !== summary.runId)].slice(0, 5)
   deps.log(`gen ${g.generation} #${learning.worldsRun} ${runId.padEnd(30)} ${summary.status.padEnd(13)} ${summary.endDate}  score ${summary.score}  frontier ${summary.frontier}${summary.causeOfDeath ? `  (${summary.causeOfDeath})` : ''}`)
 
   // a runner crash is a bug, not a death worth a lesson or a telegram
@@ -190,19 +218,19 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, deps: Deps)
     const { added, repeat } = await learnFromDeath(g, record, deps)
     await notifyWorldDied(summary, record, { generation: g.generation, worldNo: learning.worldsRun, agentName: c.name, added, repeat })
   }
-  // hall of history: firsts, records, catastrophes, milestones. every hall world is showcased
+  // hall of history: firsts, records, catastrophes, milestones. sent as one telegram per generation
   if (!summary.causeOfDeath?.startsWith('runner error')) {
     const entries = checkHall(record, c.name)
     if (entries.length) {
-      writeShowcase(record)
       g.stats = g.stats ?? { deaths: 0, repeatDeaths: 0, newLessons: [] }
       g.stats.newHall = [...(g.stats.newHall ?? []), ...entries]
-      for (const e of entries) { deps.log(`  hall of history: ${e.title} (${c.name})`); await notifyHall(e, c.name) }
+      for (const e of entries) deps.log(`  hall of history: ${e.title} (${c.name})`)
     }
+    // showcase: hall worlds, goal worlds and the best of each lineage, real llm runs only, max 20
+    considerShowcase(record, entries.length > 0)
   }
   if (isWin(summary)) {
     control.goalReached = true
-    writeShowcase(record)
     await notifyGoal(summary, record, { generation: g.generation, agentName: c.name })
     await sendGoalReport(record, c.name)
   }
@@ -211,6 +239,18 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, deps: Deps)
 
 // v2 scores are fractions, so keep 4 significant decimals instead of rounding them away
 const round4 = (x: number) => Math.round(x * 1e4) / 1e4
+// mission control snapshot (data/evolve-now.json), throttled to every 2s unless forced
+function publishNow(g: GenerationFile, current: { runId: string; agentId: string } | null, frame: Frame | null, force = false) {
+  const finished = new Set(g.population.flatMap(c => (c.runs ?? []).map(r => r.runId)))
+  writeNow({
+    generation: g.generation, agentId: current?.agentId ?? null, runId: current?.runId ?? null,
+    worldIndex: Math.min(control.worldsDone + 1, control.worldsTotal), worldsInGen: control.worldsTotal,
+    latestFrame: frame,
+    queue: g.population.flatMap(c => g.seeds.map(s => ({ runId: runIdFor(g, c, s), agentId: c.id, seed: s }))).filter(q => !finished.has(q.runId) && q.runId !== current?.runId),
+    recent: control.recent, newLessons: g.stats?.newLessons ?? [], concurrency: control.concurrency,
+  }, force)
+}
+
 const hhmm = (t: number) => new Date(t).toTimeString().slice(0, 5)
 
 function updateLeaderboard(g: GenerationFile): LeaderboardEntry[] {
@@ -252,6 +292,7 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
       c.runs = [...(c.runs ?? []), summary].sort((a, b) => a.runId.localeCompare(b.runId))
       if (c.runs.length === g.seeds.length) c.score = round4(c.runs.reduce((a, r) => a + r.score, 0) / c.runs.length)
       writeJson(file, g)
+      publishNow(g, null, record.frames[record.frames.length - 1] ?? null, true)
     },
     onInterrupted: ({ c, s }, err, attempt, retryAt) => {
       control.worldsInterrupted++
@@ -259,12 +300,7 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
       writeJson(file, g)
       log(`gen ${g.generation} ${runIdFor(g, c, s).padEnd(30)} interrupted (${(err as Error).message}), attempt ${attempt}, retry at ${hhmm(retryAt)}`)
     },
-    onLimitPause: async resumeAt => {
-      control.limitPausedUntil = resumeAt
-      const msg = `paused: groq limits, resuming at ${hhmm(resumeAt)}`
-      log(msg)
-      await send(msg)
-    },
+    beforeEach: llmGate({ up: deps.llmUp, clock, notify: send, log }),
   })
   if (control.stopRequested) return
 
@@ -282,9 +318,7 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
   const repeatRate = stats.deaths ? stats.repeatDeaths / stats.deaths : 0
   const goals = allRuns.filter(isWin).length
 
-  // the best world of every generation goes to the showcase, so the deployed site always has something real
   const bestRecord = (bestRun && (records.get(bestRun.runId) ?? readJson<RunRecord>(path.join(dirs.runs, `${bestRun.runId}.json`)))) || null
-  if (bestRecord) writeShowcase(bestRecord)
 
   const champion = settleGeneration(g.population.map(c => c.id))
   const learning = readLearning()
@@ -297,16 +331,19 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
 
   const line = `gen ${g.generation} done: champion ${champion?.name ?? best.name} | best this gen ${best.name} avg ${best.score} (top world ${round4(bestRun?.score ?? 0)}) | lessons known ${lessonsKnown} | repeat-mistake rate ${Math.round(repeatRate * 100)}% (${stats.repeatDeaths}/${stats.deaths} deaths)${goals ? ` | ${goals} goal achieved` : ''}`
   log(line)
+  if (g.stats?.newHall?.length) await notifyHallBatch(g.generation, g.stats.newHall)
   await notifyGeneration(line)
   await sendDigest({ generation: g, leaderboard, bestRecord, allRuns, learning: learning.rows, lessonsKnown })
 }
 
 export async function evolve(opts: EvolveOptions) {
-  const deps: Deps = { run: opts.runWorld ?? runWorld, extract: opts.extractLessons ?? extractLessons, log: opts.log ?? console.log }
+  const deps: Deps = { run: opts.runWorld ?? runWorld, extract: opts.extractLessons ?? extractLessons, log: opts.log ?? console.log, llmUp: opts.llmUp ?? ollamaUp }
+  control.concurrency = opts.concurrency
   const popSize = Math.max(3, opts.popSize ?? SEEDS.length)
   const gens = opts.gens ?? Infinity
   control.running = true
   control.goalReached = false
+  control.recent = readRunIndex().filter(r => r.generation > 0).slice(-5).reverse()
   try {
     let last = lastGeneration()
     let current: GenerationFile
@@ -328,5 +365,6 @@ export async function evolve(opts: EvolveOptions) {
     }
   } finally {
     control.running = false
+    clearNow()
   }
 }

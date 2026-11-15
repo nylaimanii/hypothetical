@@ -1,16 +1,18 @@
 import { connection } from 'next/server'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { Divergence, RunRecord } from '@/lib/types'
+import type { CompareResponse, Divergence, RunRecord } from '@/lib/types'
 import { readAgents } from '@/lib/evolve/agents'
 import { findDivergences } from '@/lib/evolve/core'
 import { pendingFile } from '@/lib/evolve/live'
 import { dirs, isReadOnly, listShowcase, loadRecord, readRunIndex, readShowcase, SAFE_ID, type IndexedRun } from '@/lib/evolve/store'
 import { spawnRunner } from '@/lib/evolve/spawn'
+import { slimRun } from '@/lib/evolve/slim'
 
 // GET /api/compare?agents=a,b,c,d
 // for each agent, its best world on the seed most of them share. agents missing a world on that seed get one
 // started in the background (local only), listed in `pending`. divergences come from the sim, for every pair.
+// runs are slim (summary, yearly stat rows, decisions); full frames load from /api/runs/[id]/frames
 export async function GET(req: Request) {
   await connection()
   const ids = [...new Set((new URL(req.url).searchParams.get('agents') ?? '').split(',').map(s => s.trim()).filter(s => SAFE_ID.test(s)))].slice(0, 4)
@@ -54,5 +56,6 @@ export async function GET(req: Request) {
   const note = pending.length
     ? `running ${pending.length} missing world${pending.length > 1 ? 's' : ''} on seed ${seed} in the background (${pending.join(', ')}). ask again in a few minutes`
     : runs.length < ids.length ? `${ids.length - runs.length} agent${ids.length - runs.length > 1 ? 's have' : ' has'} no world on seed ${seed}${ro ? ' in the showcase' : ''}` : undefined
-  return Response.json({ seed, runs, divergences, pending, ...(note ? { note } : {}) })
+  const body: CompareResponse = { seed, runs: runs.map(slimRun), divergences, pending, ...(note ? { note } : {}) }
+  return Response.json(body)
 }
