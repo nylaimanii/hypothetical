@@ -7,6 +7,7 @@ import {
 } from './constants'
 import { allocShares, clamp, effectiveBudget, event, incomeIdx, regionPop, sum, why, type RegionState, type World } from './state'
 import { behaviorDrag, hoardingFactor } from './behavior'
+import { addFlow, buildShares, settleMix } from './visuals'
 import { reqProgress } from './requirements'
 import type { LawEffects } from './society'
 
@@ -49,9 +50,11 @@ export function stepEnergy(w: World, fx: Record<string, LawEffects>, sectors: Re
     // energy laws, energy companies and storage/fission/fusion progress cut the cost per GW (ESTIMATE, max ~45%)
     const costMult = 1 - 0.1 * (fx[rs.r.id]?.energy ?? 0) - 0.15 * (sectors.energy ?? 0) - 0.08 * reqProgress(w, 'grid_storage') - 0.07 * reqProgress(w, 'advanced_fission') - 0.05 * reqProgress(w, 'fusion_power')
     const gw = capex / (CAPEX_USD_PER_GW * costMult)
-    if (gw > 0) rs.pipeline.push({ readyTick: w.tick + BUILD_MONTHS, twh: gw * TWH_PER_GW_YEAR })
+    // each tranche of new capacity is tagged with the source mix it was funded under
+    if (gw > 0) rs.pipeline.push({ readyTick: w.tick + BUILD_MONTHS, twh: gw * TWH_PER_GW_YEAR, mix: buildShares(w, rs) })
     const ready = rs.pipeline.filter(p => p.readyTick <= w.tick)
     rs.capacityTWh += sum(ready.map(p => p.twh))
+    settleMix(w, rs, ready)
     rs.pipeline = rs.pipeline.filter(p => p.readyTick > w.tick)
     // demand grows with income per person; consumption can never exceed capacity
     const gdppc = rs.r.gdpUsd / Math.max(pop, 1)
@@ -179,6 +182,7 @@ export function scheduleMigrations(w: World, list: Migration[], monthlyRevenue: 
     from.migrationShock += 3 * actual / pop + 0.02
     to.migrationShock += 2 * actual / regionPop(to) + 0.01
     event(w, { regionId: m.from, kind: 'migration', text: `relocation from ${from.r.name} to ${to.r.name}: ${fmt(actual)} of ${fmt(requested)} ordered are moving`, severity: clamp(actual / pop * 20) })
+    addFlow(w, { from: m.from, to: m.to, people: actual, reason: m.reason || 'ordered relocation', forced: true })
     out.push({ from: m.from, to: m.to, requested, actual, cost })
   }
   return out

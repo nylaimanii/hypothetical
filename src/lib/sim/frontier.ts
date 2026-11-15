@@ -5,6 +5,7 @@ import type { City, Frontier } from '../types'
 import { DOSE_LIMIT_SV, HOHMANN_MONTHS, MARS_DV, isMarsWindow, lifeSupportClosure, missionDoseSv, reqDone, reqProgress } from './requirements'
 import { SPACE_ABSORB_USD_YEAR, achievableDv, globalTech } from './space'
 import { clamp, event, type World } from './state'
+import { onFrontier, onLaunchFailure } from './visuals'
 
 export const FRONTIERS: Frontier[] = ['none', 'moon_landing', 'moon_base', 'mars_crewed', 'mars_settlement', 'mars_self_sustaining', 'asteroid_mining', 'outer_system']
 export const frontierIndex = (f: Frontier) => FRONTIERS.indexOf(f)
@@ -24,6 +25,7 @@ function achieve(w: World, f: Frontier, text: string) {
   // the event carries the exact tick the milestone happened (w.tick, the month it was reached) and a
   // parseable marker, so history can be built from events rather than from coarse frame ticks
   event(w, { kind: 'breakthrough', text: `${text} [frontier: ${f}]`, severity: 1 })
+  onFrontier(w, f)
   for (const r of w.regions) { r.prideShock += 0.25; r.aweShock += 0.35 }
 }
 
@@ -69,6 +71,7 @@ export function stepFrontier(w: World, spaceUsd: number, researchUsd: number, la
       w.humanCost.deaths += m.people
       for (const r of w.regions) { r.shock += 0.08; r.griefShock += 0.3 }
       event(w, { kind: 'launch', text: `mars landing failed, all ${m.people} aboard killed`, severity: 0.9 })
+      onLaunchFailure(w, 'mars', 'lost mars lander')
     } else if (m.kind === 'mars_crewed') {
       fs.marsPop = m.people
       offWorldCity(w, 'jezero station', 'mars', m.people, 'flat delta floor, ancient water, easy landing ellipse')
@@ -99,6 +102,7 @@ export function stepFrontier(w: World, spaceUsd: number, researchUsd: number, la
           w.humanCost.deaths += 6
           for (const r of w.regions) { r.shock += 0.1; r.griefShock += 0.3 }
           event(w, { kind: 'launch', text: 'mars ship launch failed, crew of 6 killed', severity: 0.9 })
+          onLaunchFailure(w, 'earth_orbit', 'lost mars ship')
         } else {
           fs.mission = { kind: 'mars_crewed', arriveTick: w.tick + HOHMANN_MONTHS, people: 6 }
           event(w, { kind: 'launch', text: 'crew of 6 departs for mars, arrival in about 9 months', severity: 0.6 })

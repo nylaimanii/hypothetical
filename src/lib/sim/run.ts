@@ -16,6 +16,7 @@ import { applyEvent } from './events'
 import { fmt } from './physics'
 import { applyDecision, baselineFrame, lawPrecedents, snapshot, stepWorld } from './step'
 import { SNAPSHOT_EVERY, restoreWorld, snapshotWorld } from './snapshot'
+import { epitaphFor } from './visuals'
 import { event, initWorld, regionPop, worldPop, type World } from './state'
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -150,7 +151,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
     ctx.due = t => srcDecisions.has(t)
     while (w.tick < target && w.status === 'alive') {
       await tickBody(w, ctx, async x => srcDecisions.get(x.tick), { llmThoughts: false })
-      if (srcFrameTicks.has(w.tick)) { for (const rs of w.regions) rs.whyAcc = {}; w.frameCursor = w.events.length }
+      if (srcFrameTicks.has(w.tick)) { for (const rs of w.regions) rs.whyAcc = {}; w.frameCursor = w.events.length; w.flowAcc = [] }
       stepWorld(w)
       updateMoods(w)
     }
@@ -218,6 +219,7 @@ function record(opts: RunOpts, w: World, twin: World, frames: Frame[], baseline:
     citiesFounded: w.cities.length, diseasesEradicated: [...w.diseasesEradicated],
     humanCost: { deaths: Math.round(w.humanCost.deaths), famineDeaths: Math.round(w.humanCost.famineDeaths), unrestDeaths: Math.round(w.humanCost.unrestDeaths), displaced: Math.round(w.humanCost.displaced), approval: Math.round(w.humanCost.approval * 1e4) / 1e4 },
     lessonsLearned, lessonsApplied: w.lessonsApplied.size, usage: { ...usage }, agentId,
+    ...(w.status === 'destroyed' ? { epitaph: epitaphFor(w, frames) } : {}),
     ...(w.causeOfDeath ? { causeOfDeath: w.causeOfDeath } : {}),
   }
   return {

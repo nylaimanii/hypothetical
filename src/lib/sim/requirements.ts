@@ -5,6 +5,7 @@
 // speculative nodes roll a seeded chance to stall for decades or fail outright when they open.
 import type { Company, Requirement } from '../types'
 import { clamp, event, type World } from './state'
+import { onRequirementUnlocked } from './visuals'
 
 const W = 'https://en.wikipedia.org/wiki/'
 
@@ -129,6 +130,7 @@ export function stepRequirements(w: World, researchUsd: number, focus: string[],
     r.progress = clamp(Math.min(r.progress + dp, Math.max(capBySpend, before)))
     if (before < 1 && r.progress >= 1) {
       r.unlockedTick = w.tick
+      onRequirementUnlocked(w, r.id)
       event(w, { kind: 'breakthrough', text: `breakthrough: ${r.name} [requirement: ${r.id}]`, severity: r.tier === 'speculative' ? 0.8 : 0.5 })
     }
   })

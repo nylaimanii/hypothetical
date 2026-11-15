@@ -11,6 +11,7 @@
 //   values below are in 2026 dollars (~1.2x 2020).
 import type { MoonStage } from '../types'
 import { clamp, event, popWeighted, type World } from './state'
+import { onLaunchFailure } from './visuals'
 
 export const STAGES: MoonStage[] = ['none', 'orbital', 'heavy_lift', 'life_support', 'lander', 'crewed_landing']
 
@@ -104,6 +105,7 @@ export function stepSpace(w: World, spaceUsd: number, researchUsd: number): bool
       s.cooldownUntil = w.tick + 24
       for (const r of w.regions) r.shock += 0.15
       event(w, { kind: 'launch', text: `crewed lunar landing failed, all ${crew} crew killed`, severity: 0.9 })
+      onLaunchFailure(w, 'moon', 'lost lunar lander')
     } else {
       s.stageSpend *= 0.8
       s.cooldownUntil = w.tick + 6

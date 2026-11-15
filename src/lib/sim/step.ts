@@ -14,6 +14,7 @@ import { lawMeta, publicPrecedents } from './precedents'
 import { publicRequirements, reqProgress, stepRequirements } from './requirements'
 import { religionBacklash, stepLaws, stepSociety } from './society'
 import { moonProgress, stepSpace } from './space'
+import { atmosphere, emotionsOf, landmarkForLaw, regionVisual, stepVisuals } from './visuals'
 import { clamp, effectiveBudget, event, normalizeBudget, popWeighted, regionPop, sum, worldPop, type World } from './state'
 
 export const MAX_LAWS_PER_DECISION = 5
@@ -50,6 +51,7 @@ export function stepWorld(w: World) {
   stepCompanies(w)
   stepCities(w)
   stepTravel(w, sectors.transit)
+  stepVisuals(w, sectors.transit)
   stepRequirements(w, research * TREE_SHARE, w.researchFocus, popWeighted(w, r => r.r.education), sectors)
   for (const [id, name] of ERADICATION) if (reqProgress(w, id) >= 1 && !w.diseasesEradicated.includes(name)) {
     w.diseasesEradicated.push(name)
@@ -111,6 +113,7 @@ export function applyDecision(w: World, d: Decision): { migrations: ScheduledMig
     const meta = w.lawMeta[l.id]
     event(w, { kind: 'law', text: `enacted: ${l.title}${meta.precedentIds.length ? ` (precedents: ${meta.precedentIds.join(', ')})` : ' (no precedent, ESTIMATE reaction)'}`, severity: 0.2 })
     onLawEnacted(w, meta.policyKind)
+    landmarkForLaw(w, l)
     for (const rs of w.regions) {
       const s = rs.lawSupport[l.id] ?? 0.5
       const peak = meta.magnitude * 1.5 * Math.max(0, 0.6 - s) / 0.6
@@ -146,12 +149,17 @@ export function publicRegions(w: World): Region[] {
     share65plus: r4(rs.r.share65plus), education: r4(rs.r.education), faith: r4(rs.r.faith), unrest: r4(rs.r.unrest),
     techLevel: r4(rs.r.techLevel), compliance: r4(rs.r.compliance), approval: r4(rs.r.approval), fertility: Math.round(rs.r.fertility * 1000) / 1000,
     crowds: rs.r.crowds.map(c => ({ ...c })), whys: takeWhys(rs), provenance: rs.r.provenance,
+    visual: regionVisual(w, rs), ...emotionsOf(w, rs),
   }))
 }
 
 export function snapshot(w: World, newEvents: Frame['newEvents'], decision?: Decision): Frame {
+  const regions = publicRegions(w)
+  const flows = w.flowAcc.map(f => ({ ...f, people: Math.round(f.people) })).filter(f => f.people > 0)
+  w.flowAcc = []
   return {
-    tick: w.tick, date: dateOf(w.tick), regions: publicRegions(w),
+    tick: w.tick, date: dateOf(w.tick), regions,
+    space: w.spaceAssets.map(a => ({ ...a })), atmosphere: atmosphere(w, regions.map(r => r.visual!)), flows,
     // frames carry the visible pips; mood rounded to 2 decimals and the last 4 life events keep records small
     citizens: w.citizens.map(c => ({ ...c, mood: Object.fromEntries(Object.entries(c.mood).map(([k, v]) => [k, Math.round(v * 100) / 100])) as typeof c.mood, group: { ...c.group }, lifeEvents: c.lifeEvents.slice(-4).map(e => ({ ...e })), family: { ...c.family } })),
     laws: w.laws.map(l => ({ ...l, support: r4(l.support), compliance: r4(l.compliance) })),

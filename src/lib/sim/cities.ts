@@ -4,6 +4,7 @@ import type { City, Company, Decision } from '../types'
 import { reqProgress } from './requirements'
 import { clamp, event, incomeIdx, regionPop, why, type CompanyState, type World } from './state'
 import { has } from './frontier'
+import { addFlow, addLandmark } from './visuals'
 
 // ESTIMATE water stress by region, 0 = plenty, 1 = extreme (WRI Aqueduct 4.0 country baseline water stress,
 // population-weighted by eye). https://www.wri.org/aqueduct
@@ -35,6 +36,7 @@ export function foundCities(w: World, list: Decision['foundCities']) {
     const city: City = { id: `city-${w.tick}-${w.cities.length}`, name: c.name.slice(0, 60), regionId: c.regionId, lat, lon, foundedTick: w.tick, population: 0, reason: c.reason.slice(0, 200), ...(c.offWorld ? { offWorld: c.offWorld } : {}) }
     const score = c.offWorld ? 0.5 : scoreSite(w, city)
     w.cities.push(city)
+    if (!city.offWorld) { const home = w.regions.find(r => r.r.id === city.regionId); if (home) addLandmark(home, 'city', city.name, w.tick) }
     w.cityScores[city.id] = score
     event(w, { regionId: c.regionId, kind: 'migration', text: `new city ${city.name} chartered in ${w.regions.find(r => r.r.id === c.regionId)!.r.name} (site score ${score.toFixed(2)})`, severity: 0.2 })
   }
@@ -50,7 +52,9 @@ export function stepCities(w: World) {
     for (const c of cities) {
       const s = w.cityScores[c.id] ?? 0.3
       const cap = 25e6 * s // ESTIMATE: a great site can grow into a megacity, a poor one stays a town
+      const before = c.population
       c.population = Math.round(Math.min(cap, c.population + movers * s / total * (1 - c.population / Math.max(cap, 1))))
+      addFlow(w, { from: rs.r.id, to: rs.r.id, toCityId: c.id, people: c.population - before, reason: `chose to move to ${c.name}`, forced: false })
     }
     rs.newCityPop = cities.reduce((a, c) => a + c.population, 0)
   }

@@ -1,5 +1,6 @@
 // internal world state. the public Region/Frame shapes from types.ts are derived from this.
-import type { Behavior, Budget, Citizen, City, Company, CrowdState, Faction, Frontier, HumanCost, Law, Mood, Region, ReligionPolicy, SchoolPolicy, WorldEvent, WorldStatus } from '../types'
+import type { Behavior, Budget, Citizen, City, Company, CrowdState, Faction, Flow, Frontier, HumanCost, Law, Mood, Region, ReligionPolicy, SchoolPolicy, SpaceAsset, WorldEvent, WorldStatus } from '../types'
+import { LAND, initMix, initRail } from './visuals'
 import seedJson from '../../../data/seed.json'
 import demoJson from '../../../data/demographics.json'
 import { ALLOC_GDP_WEIGHT, BASELINE_BUDGET, BASELINE_RELIGION, BASELINE_SCHOOL, GOMPERTZ_B, REVENUE_SHARE, START_RESERVE } from './constants'
@@ -39,6 +40,7 @@ export const DEMOGRAPHICS = (demoJson as unknown as { regions: Record<string, De
 export const SEED_REGIONS = (seedJson as unknown as { regions: Region[] }).regions
 
 export type Transit = { from: string; to: string; people: number; bands: number[]; arriveTick: number }
+export type MixCap = { solar: number; wind: number; nuclear: number; fossil: number; hydro: number }
 
 export type RegionState = {
   r: Region
@@ -48,7 +50,8 @@ export type RegionState = {
   infantMort: number
   // energy
   capacityTWh: number
-  pipeline: { readyTick: number; twh: number }[]
+  pipeline: { readyTick: number; twh: number; mix?: MixCap }[]
+  mixCap: MixCap // capacity by source, sums to capacityTWh
   kwhpcBase: number
   gdppc0: number
   energyRatio: number
@@ -104,6 +107,11 @@ export type RegionState = {
   famineDeaths: number
   excessDeathsTick: number
   pop0: number
+  // v3 visuals
+  farmland: number
+  forest: number
+  railLinks: string[]
+  landmarks: { kind: string; label: string; tick: number; lawId?: string }[]
 }
 
 export type World = {
@@ -152,7 +160,9 @@ export type World = {
   peakPLE: number
   diseasesEradicated: string[]
   lessonsApplied: Set<string>
-  frameCursor: number // index into events at the last emitted frame (part of the snapshot so branches resume exactly)
+  frameCursor: number
+  spaceAssets: SpaceAsset[]
+  flowAcc: Flow[] // migrations since the last frame // index into events at the last emitted frame (part of the snapshot so branches resume exactly)
 }
 
 export const clamp = (x: number, lo = 0, hi = 1) => (x < lo ? lo : x > hi ? hi : x)
@@ -198,6 +208,7 @@ export function initWorld(seed: number, twin: boolean): World {
       periodLE: 0, cohortLE: 0, leTrend: 0.2, diseaseBurden: 0, travelHours: TRAVEL_HOURS[r.id] ?? 6,
       causeMult: { cardio: 1, cancer: 1, neuro: 1, metabolic: 1, infectious: 1, injury: 1, other: 1 },
       agingSlope: GOMPERTZ_B, oldAgeFloor: 1 / 20, pronatal: 0, strikeBoost: 0, newCityPop: 0, whyAcc: {}, famineDeaths: 0, excessDeathsTick: 0, pop0: r.population,
+      mixCap: initMix(r.id, r.energyTWh * START_RESERVE), farmland: LAND[r.id].farmland, forest: LAND[r.id].forest, railLinks: [], landmarks: [],
     }
   })
   // per-capita spending at the 2026 budget, the reference point for "more or less than today"
@@ -208,7 +219,7 @@ export function initWorld(seed: number, twin: boolean): World {
     rs.pc0 = { welfare: pc('welfare'), education: pc('education'), security: pc('security'), food: pc('food') }
   })
   const pop = sum(regions.map(r => r.r.population))
-  return {
+  const world: World = {
     seed, twin, tick: 0, regions, laws: [],
     budget: { ...BASELINE_BUDGET }, religionPolicy: BASELINE_RELIGION, schoolPolicy: { ...BASELINE_SCHOOL, curriculum: [...BASELINE_SCHOOL.curriculum] },
     space: initSpace(), events: [], transit: [], migrationCostMonthly: [],
@@ -220,8 +231,10 @@ export function initWorld(seed: number, twin: boolean): World {
     status: 'alive', wellbeingSum: 0, wellbeingN: 0, revenueShare: REVENUE_SHARE, citizens: [], crewDeaths: 0, citizenSeq: 0, citizenMeta: {},
     requirements: initRequirements(), cities: [], cityScores: {}, companies: [], factions: initFactions(), frontier: 'none', frontierState: initFrontier(),
     humanCost: { deaths: 0, famineDeaths: 0, unrestDeaths: 0, displaced: 0, approval: 0.5 }, lessonsKnown: 0, researchFocus: [], lawMeta: {}, lawsuits: {},
-    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), frameCursor: 0,
+    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), frameCursor: 0, spaceAssets: [], flowAcc: [],
   }
+  initRail(world)
+  return world
 }
 
 // ESTIMATE: hours by fastest common public transport from a region's main hub to the nearest other region's hub
