@@ -171,13 +171,14 @@ export function applyDecision(w: World, d: Decision): { migrations: ScheduledMig
 }
 
 const r4 = (x: number) => Math.round(x * 1e4) / 1e4
+const q05 = (x: number) => Math.round(x * 20) / 20
 
 // top drivers per stat since the last frame, then reset
 function takeWhys(rs: World['regions'][number]): Why[] {
   const out: Why[] = []
   for (const [stat, acc] of Object.entries(rs.whyAcc)) {
     const drivers = Object.entries(acc).map(([label, v]) => ({ label, delta: Math.round(v.delta * 1e4) / 1e4, ...(v.source ? { source: v.source } : {}) }))
-      .filter(d => d.delta !== 0).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 5)
+      .filter((d, _i, all) => d.delta !== 0 && Math.abs(d.delta) >= 0.01 * all.reduce((t, x) => t + Math.abs(x.delta), 0)).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 3)
     const value = (rs.r as unknown as Record<string, number>)[stat]
     if (drivers.length) out.push({ stat, value: typeof value === 'number' ? r4(value) : 0, drivers })
   }
@@ -212,9 +213,9 @@ export function snapshot(w: World, newEvents: Frame['newEvents'], decision?: Dec
   return {
     tick: w.tick, date: dateOf(w.tick), regions,
     space: w.spaceAssets.map(a => ({ ...a })), atmosphere: atmosphere(w, regions.map(r => r.visual!)), flows,
-    // frames carry the visible pips; mood rounded to 2 decimals and the last 4 life events keep records small
+    // frames carry the visible pips; mood and opinion quantized to 0.05 (so tiny drifts are not deltas) and the last 4 life events keep records small
     // (every pip's full history is written once per run to data/runs/<runId>.lives.json)
-    citizens: w.citizens.map(c => ({ ...c, mood: Object.fromEntries(Object.entries(c.mood).map(([k, v]) => [k, Math.round(v * 100) / 100])) as typeof c.mood, group: { ...c.group }, lifeEvents: c.lifeEvents.filter(e => w.tick - e.tick <= 120).slice(-4).map(e => ({ ...e })), family: { ...c.family } })),
+    citizens: w.citizens.map(c => ({ ...c, mood: Object.fromEntries(Object.entries(c.mood).map(([k, v]) => [k, q05(v)])) as typeof c.mood, opinionOfCore: q05(c.opinionOfCore), group: { ...c.group }, lifeEvents: c.lifeEvents.slice(-4).map(e => ({ ...e })), family: { ...c.family } })),
     laws: w.laws.map(l => ({ ...l, support: r4(l.support), compliance: r4(l.compliance) })),
     budget: { ...effectiveBudget(w) }, religionPolicy: w.religionPolicy, schoolPolicy: { ...w.schoolPolicy, curriculum: [...w.schoolPolicy.curriculum] },
     moonStage: w.space.stage, moonProgress: r4(moonProgress(w.space)), status: w.status, newEvents,

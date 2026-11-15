@@ -249,7 +249,7 @@ export function emotionsOf(w: World, rs: RegionState): { emotionMix: Mood; emoti
   const pips = w.citizens.filter(c => c.regionId === rs.r.id)
   const avg = (list: typeof pips): Mood => {
     const m = {} as Mood
-    for (const e of EMOTIONS) m[e] = list.length ? Math.round(list.reduce((a, c) => a + c.mood[e], 0) / list.length * 100) / 100 : Math.round(rs.mood[e] * 100) / 100
+    for (const e of EMOTIONS) m[e] = Math.round((list.length ? list.reduce((a, c) => a + c.mood[e], 0) / list.length : rs.mood[e]) * 20) / 20
     return m
   }
   const groups = new Map<string, typeof pips>()

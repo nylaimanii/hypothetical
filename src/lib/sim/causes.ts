@@ -147,12 +147,12 @@ export function stepYear(w: World) {
         const sharePct = Math.round(Math.abs(top[1]) / Math.max(share, 1e-12) * 100)
         const because = `${plain(top[0])}${sharePct >= 15 ? ` (${sharePct}% of the movement)` : ''}${prior ? `, after ${prior.what}` : ''}`
         link(w, { placeId: rs.r.id, what, value: change, because, byWhom: meta.byWhom, causeIds: idOf(prior), stat: s.stat })
-        trends.push({ stat: s.stat, direction: change > 0 ? 'rising' : 'declining', change, text: `${s.label} ${change > 0 ? 'rising' : 'falling'} ${s.rel ? pct(change) : `${change >= 0 ? '+' : ''}${change.toFixed(2)}`}: mostly ${plain(top[0])}${prior ? ` after ${prior.what}` : ''}` })
+        trends.push({ stat: s.stat, direction: change > 0 ? 'rising' : 'declining', change: Math.round(change * 1e4) / 1e4, text: `${s.label} ${change > 0 ? 'rising' : 'falling'} ${s.rel ? pct(change) : `${change >= 0 ? '+' : ''}${change.toFixed(2)}`}: mostly ${plain(top[0])}${prior ? ` after ${prior.what}` : ''}` })
       } else {
         // stable: say what is holding it steady (the two biggest drivers pulling opposite ways)
         const up = acc.filter(x => x[1] > 0)[0], down = acc.filter(x => x[1] < 0)[0]
         const hold = up && down ? `${plain(up[0])} (${fmtD(up[1], s)}) is offsetting ${plain(down[0])} (${fmtD(down[1], s)})` : up ? `only ${plain(up[0])} is moving it, and only a little` : down ? `only ${plain(down[0])} is moving it, and only a little` : 'nothing pushed it this year'
-        trends.push({ stat: s.stat, direction: 'stable', change, text: `${s.label} steady at ${s.fmt(now)}: ${hold}` })
+        trends.push({ stat: s.stat, direction: 'stable', change: Math.round(change * 1e4) / 1e4, text: `${s.label} steady at ${s.fmt(now)}: ${hold}` })
       }
       prev[s.stat] = now
     }

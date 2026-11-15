@@ -83,7 +83,7 @@ const p2 = (x: number) => x.toFixed(2).replace(/^0\./, '.').replace(/^-0\./, '-.
 const usd = (x: number) => (x >= 1e12 ? `$${(x / 1e12).toFixed(1)}T` : x >= 1e9 ? `$${(x / 1e9).toFixed(0)}B` : `$${(x / 1e6).toFixed(0)}M`)
 const ppl = (x: number) => (x >= 1e9 ? `${(x / 1e9).toFixed(2)}B` : x >= 1e6 ? `${(x / 1e6).toFixed(0)}M` : `${Math.round(x)}`)
 
-export function briefText(w: World, b: Brief): string {
+function briefLines(w: World, b: Brief, cut: number): string[] {
   const L: string[] = []
   const wd = b.world
   L.push(`date ${b.date} (tick ${b.tick}), ${b.monthsLeft} months to the 2126 horizon. revenue ${usd(wd.yearlyRevenueUsd)}/yr.`)
@@ -99,18 +99,34 @@ export function briefText(w: World, b: Brief): string {
   L.push(`moon program: ${m.stage}${m.nextStageNeeds ? `, next ${m.nextStage} needs tech ${m.nextStageNeeds.techLevel} (world ${p2(wd.techLevel)}), ${usd(m.nextStageNeeds.stageSpendUsd)} (spent ${usd(m.nextStageNeeds.spentSoFarUsd)}), ${m.nextStageNeeds.minMonths} months (${m.nextStageNeeds.monthsSoFar} so far)` : ''}. useful space spend max ${usd(m.maxUsefulSpaceSpendUsdPerYear)}/yr before the landing. launch failures ${m.launchFailures}, crew killed ${m.crewKilled}.`)
   const f = b.frontier
   L.push(`frontier: ${f.reached} (achieved: ${f.achieved.join(', ') || 'none'}). fund ${usd(f.fundUsd)}, mars pop ${f.marsPopulation}, next mars window in ${f.nextMarsWindowInMonths} months, crew dose ${f.crewDoseSv} Sv (limit ${f.doseLimitSv}), life support closure ${(f.lifeSupportClosure * 100).toFixed(1)}%.`)
-  const open = b.requirements.slice().sort((x, y) => y.progress - x.progress).slice(0, 14)
+  const open = b.requirements.slice().sort((x, y) => y.progress - x.progress).slice(0, cut >= 2 ? 6 : 14)
   L.push(`open requirements (id tier progress): ${open.map(r => `${r.id} ${r.tier[0]} ${p2(r.progress)}${r.stalled ? ' STALLED' : ''}`).join('; ')}`)
   L.push(`done: ${b.requirementsDone.join(', ') || 'none'}`)
   if (b.cities.length) L.push(`cities: ${b.cities.map(c => `${c.name} (${c.offWorld ?? c.region}, ${ppl(c.population)})`).join('; ')}`)
   if (b.companies.length) L.push(`companies: ${b.companies.map(c => `${c.name} ${c.sector} ${c.region} ${ppl(c.workers)}`).join('; ')}`)
   L.push(`factions power/hostility: ${b.factions.map(x => `${x.id} ${p2(x.power)}/${p2(x.hostility)}`).join(', ')}`)
   L.push('ACTIVE LAWS, already in force, do not re-enact (id | title | kind | support | compliance):')
-  for (const l of b.laws) L.push(`${l.id} | ${l.title} | ${l.policyKind} | ${p2(l.support)} | ${p2(l.compliance)}${l.vetoed ? ' | VETOED' : ''}`)
-  const ev = w.events.filter(e => e.tick >= w.tick - 12 && e.significance >= 0.4 && e.kind !== 'law').slice(-12)
+  for (const l of cut >= 3 ? b.laws.slice(-8) : b.laws) L.push(`${l.id} | ${l.title} | ${l.policyKind} | ${p2(l.support)} | ${p2(l.compliance)}${l.vetoed ? ' | VETOED' : ''}`)
+  const ev = w.events.filter(e => e.tick >= w.tick - 12 && e.significance >= (cut >= 1 ? 0.6 : 0.4) && e.kind !== 'law').slice(cut >= 1 ? -5 : -12)
   L.push(`events, last 12 months, significance >= .4: ${ev.length ? '' : 'none'}`)
   for (const e of ev) L.push(`${dateOf(e.tick)} ${e.kind}${e.regionId ? ` ${e.regionId}` : ''}: ${e.text}`)
   L.push(`overrides since last decision: ${b.overridesSinceLastDecision.length ? JSON.stringify(b.overridesSinceLastDecision) : 'none'}`)
-  if (b.lastRationale) L.push(`your last rationale: ${b.lastRationale.slice(0, 500)}`)
-  return L.join('\n')
+  if (b.lastRationale && cut < 4) L.push(`your last rationale: ${b.lastRationale.slice(0, 500)}`)
+  return L
+}
+
+// hard cap: ~2,000 tokens. ESTIMATE ~3.6 characters per token for this mixed text/number brief (llama/qwen
+// tokenizers). if over, compress step by step: older events, open requirements, oldest laws, last rationale.
+export const BRIEF_TOKEN_CAP = 2000
+export const estimateTokens = (s: string) => Math.ceil(s.length / 3.6)
+export const briefStats = { calls: 0, maxTokens: 0, totalTokens: 0, compressed: 0 }
+export function briefText(w: World, b: Brief): string {
+  let text = ''
+  for (let cut = 0; cut <= 4; cut++) {
+    text = briefLines(w, b, cut).join('\n')
+    if (estimateTokens(text) <= BRIEF_TOKEN_CAP) { if (cut) briefStats.compressed++; break }
+  }
+  const t = estimateTokens(text)
+  briefStats.calls++; briefStats.totalTokens += t; briefStats.maxTokens = Math.max(briefStats.maxTokens, t)
+  return text
 }

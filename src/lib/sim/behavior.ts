@@ -415,5 +415,6 @@ export function satiricalThought(w: World, c: Citizen, rs: RegionState, rng: () 
     default: options.push(v >= 0.55 ? `Work as a ${c.job} is steady and dinner is on the table. That is the whole review.` : 'Went to work. Came home. The news says history is happening. It looked like a Tuesday.')
   }
   if (w.frontier !== 'none' && rng() < 0.3) options.push('People are living on another world and my bus is still late.')
+  if (!options.length) options.push(v >= 0.55 ? `Work as a ${c.job} is steady. That is the whole review.` : `Another month as a ${c.job} in ${rs.r.name}. Nothing exploded. Locally.`)
   return pick(rng, options)
 }

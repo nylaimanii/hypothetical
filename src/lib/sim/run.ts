@@ -7,6 +7,7 @@ import path from 'node:path'
 import type { BaselineFrame, Decision, Frame, Lesson, Override, RunOptions, RunRecord, RunSummary, Snapshot, WorldEvent } from '../types'
 import { decide, type GovernorMemory } from '../agent/governor'
 import { acquireOllamaLock, assertLlmReady, withUsage, type Usage } from '../agent/llm'
+import { BRIEF_TOKEN_CAP, briefStats } from '../agent/brief'
 import { BASELINE_BUDGET, BASELINE_RELIGION, BASELINE_SCHOOL, dateOf, decisionDue } from './constants'
 import { extractLessons, loadLessons } from '../agent/lessons'
 import { globalPLE } from './end'
@@ -17,6 +18,7 @@ import { fmt } from './physics'
 import { applyDecision, baselineFrame, lawPrecedents, sawOf, snapshot, stepWorld } from './step'
 import { SNAPSHOT_EVERY, restoreWorld, snapshotWorld } from './snapshot'
 import { epitaphFor } from './visuals'
+import { KEYFRAME_EVERY, makeDelta } from './citizens-replay'
 import { event, initWorld, popWeighted, regionPop, worldPop, type World } from './state'
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -88,8 +90,9 @@ export async function runWorld(opts: RunOpts): Promise<RunSummary> {
   const t0 = Date.now()
   let summary: RunSummary
   lawStats = { proposed: 0, repeated: 0 }
+  Object.assign(briefStats, { calls: 0, maxTokens: 0, totalTokens: 0, compressed: 0 })
   try { summary = await withUsage(usage, () => runInner(opts, usage)) } finally { release() }
-  console.log(`[usage] ${opts.runId}: ${usage.llmCalls} llm calls, ${usage.tokens} tokens, ${((Date.now() - t0) / 1000).toFixed(1)}s wall, repeated laws ${lawStats.repeated}/${lawStats.proposed}`)
+  console.log(`[usage] ${opts.runId}: ${usage.llmCalls} llm calls, ${usage.tokens} tokens, ${((Date.now() - t0) / 1000).toFixed(1)}s wall, repeated laws ${lawStats.repeated}/${lawStats.proposed}, brief max ${briefStats.maxTokens} avg ${briefStats.calls ? Math.round(briefStats.totalTokens / briefStats.calls) : 0} tokens (cap ${BRIEF_TOKEN_CAP}, compressed ${briefStats.compressed}x)`)
   return summary
 }
 
@@ -229,10 +232,27 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   while (twin.tick < w.tick && twin.status === 'alive') stepTwin()
 
   const rec = (done: boolean) => record(opts, w, twin, frames, baseline, !done, usage, lessonsLearned, knownLessons, ctx.snapshots, branchedFrom)
+  let roster: Map<string, import('../types').Citizen> | undefined
+  let rosterTick = 0
+  let keyReqText = new Map<string, string>()
   const emit = (decision?: Decision) => {
     const fresh = w.events.slice(w.frameCursor)
     w.frameCursor = w.events.length
     const f = snapshot(w, fresh, decision)
+    // citizens: full roster on keyframes (first frame, every 5 years, the last frame), deltas in between
+    const key = !roster || w.tick % KEYFRAME_EVERY === 0 || w.status !== 'alive' || process.env.HYP_FULL_CITIZENS === '1'
+    const full = f.citizens
+    if (key) { Object.assign(f, { citizenKeyframe: true }); keyReqText = new Map(f.requirements.map(q => [q.id, q.realWorld2026])) }
+    else {
+      Object.assign(f, { citizenDelta: makeDelta(roster!, full, rosterTick) })
+      f.citizens = []
+      // static requirement fields (name, track, prereqs, tier, cost, 2026 text, url) ride on keyframes only;
+      // requirementsAt() restores them. in-between frames carry id, progress and unlock tick
+      // (the 2026 text is kept when it differs from the keyframe's, e.g. a node stalled since then)
+      f.requirements = f.requirements.map(q => ({ id: q.id, progress: q.progress, ...(q.unlockedTick !== undefined ? { unlockedTick: q.unlockedTick } : {}), ...(keyReqText.get(q.id) !== q.realWorld2026 ? { realWorld2026: q.realWorld2026 } : {}) }) as typeof q)
+    }
+    roster = new Map(full.map(c => [c.id, c]))
+    rosterTick = w.tick
     frames.push(f)
     opts.onFrame?.(f)
     if (live) writeJsonAtomic(path.join(process.cwd(), 'data', 'live', `${opts.runId}.json`), rec(w.status !== 'alive'))

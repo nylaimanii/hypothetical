@@ -89,10 +89,11 @@ export async function decide(w: World, constitution: string, overrides: Override
   const brief = buildBrief(w, overrides, mem.last?.rationale)
   const ids = overrides.map(o => o.id)
   const lessons = relevantLessons(mem.lessons, situation(w), 5)
+  // the text brief is built (and its size measured against the cap) on every decision, llm or not
+  const text = briefText(w, brief)
   if (!llmEnabled()) return finish(offlineDecision(brief, overrides, mem.vetoedTitles), w)
 
   const system = systemPrompt(constitution, lessons)
-  const text = briefText(w, brief)
   let user = text
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
