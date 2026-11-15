@@ -1,11 +1,13 @@
 'use client'
-import { useMemo, useState } from 'react'
-import type { Budget } from '@/lib/types'
+import { useEffect, useMemo, useState } from 'react'
+import type { Budget, Frontier } from '@/lib/types'
 import { mockRuns } from '@/lib/mock/run'
+import { LEARNING_CURVE } from '@/lib/mock/v2'
 import { useCurrentFrame, useStore } from '../state/store'
-import { Bar, Num, Section, fmt } from './bits'
+import { Bar, Num, Section, Sparkline, fmt } from './bits'
 import { api, Offline } from './api'
 import { DirectorToggle, SoundControls } from './Extras'
+import { formatDay, formatTime, tickToDate } from '../world/time'
 
 export function StatusPill({ status }: { status: string }) {
   const danger = status === 'destroyed'
@@ -14,22 +16,56 @@ export function StatusPill({ status }: { status: string }) {
   )
 }
 
+const FRONTIER_LABEL: Record<Frontier, string> = {
+  none: 'earth only', moon_landing: 'moon landing', moon_base: 'moon base', mars_crewed: 'crew on mars', mars_settlement: 'mars settlement',
+  mars_self_sustaining: 'self sustaining mars', asteroid_mining: 'asteroid mining', outer_system: 'outer system',
+}
+export const frontierLabel = (f: Frontier) => FRONTIER_LABEL[f] ?? f
+
+// the clock interpolates between monthly frames, so it reads the playhead directly
+function Clock() {
+  const playhead = useStore((s) => s.playhead)
+  const d = tickToDate(playhead)
+  return <Num className="text-[15px] tracking-tight xl:text-[17px]">{formatDay(d)} <span className="text-ink/40">·</span> {formatTime(d)}</Num>
+}
+
 export function TopLeft() {
-  const { frame, record } = useCurrentFrame()
+  const { frame } = useCurrentFrame()
   const source = useStore((s) => s.source)
   return (
-    <div className="panel pointer-events-auto shrink-0 whitespace-nowrap px-3 py-2 xl:px-4 xl:py-3">
-      <div className="flex items-center gap-2 xl:gap-3">
-        <Num className="text-xl tracking-tight xl:text-2xl">{frame.date}</Num>
+    <div className="panel pointer-events-auto shrink-0 whitespace-nowrap px-3 py-2 xl:px-4 xl:py-2.5">
+      <Clock />
+      <div className="mt-1 flex items-center gap-2">
         <StatusPill status={frame.status} />
         {source === 'mock' && <span className="rounded border border-dashed border-ink/40 px-1.5 font-mono text-[10px] tracking-[0.2em] text-ink/60">MOCK</span>}
         {source === 'live' && <span className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.2em]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ink" />live</span>}
       </div>
-      <div className="mt-1 flex gap-3 text-[10px] text-ink/55 xl:text-[11px]">
-        <span>run <Num className="text-ink/80">{record.runId}</Num></span>
-        <span>gen <Num className="text-ink/80">{record.generation}</Num></span>
-        <span>tick <Num className="text-ink/80">{frame.tick}</Num></span>
-      </div>
+    </div>
+  )
+}
+
+// always visible: the mission and its human cost, side by side
+export function MissionBar() {
+  const { frame, record, mode } = useCurrentFrame()
+  const select = useStore((s) => s.select)
+  const setPanel = useStore((s) => s.setPanel)
+  const n = Number(record.runId.match(/(\d+)$/)?.[1] ?? record.generation)
+  const cost = frame.humanCost
+  const item = (label: string, value: React.ReactNode, onClick?: () => void, danger = false) => (
+    <button onClick={onClick} disabled={!onClick} className={`flex flex-col items-start px-2.5 text-left ${onClick ? 'hover:bg-ink/5' : 'cursor-default'} rounded-xl py-0.5`}>
+      <span className="text-[9.5px] uppercase tracking-[0.14em] text-ink/45">{label}</span>
+      <span className={`whitespace-nowrap text-[13px] ${danger ? 'text-ember' : ''}`}>{value}</span>
+    </button>
+  )
+  return (
+    <div className="panel pointer-events-auto flex shrink-0 items-center divide-x divide-ink/10 whitespace-nowrap px-1.5 py-1.5">
+      {item('people', <Num>{fmt.people(frame.globalPopulation)}</Num>)}
+      {item('life exp.', <Num>{frame.globalPeriodLifeExpectancy.toFixed(1)}y</Num>, () => setPanel('longevity'))}
+      {item('frontier', frontierLabel(frame.frontier), () => setPanel('offworld'))}
+      {mode === 'ai' && cost.deaths > 0 && item('deaths', <Num>{fmt.people(cost.deaths)}</Num>, undefined, true)}
+      {mode === 'ai' && cost.displaced > 0 && item('displaced', <Num>{fmt.people(cost.displaced)}</Num>)}
+      {item('approval', <Num>{fmt.pct(cost.approval)}</Num>)}
+      {item(`world #${n}`, <span>lessons <Num>{frame.lessonsKnown}</Num></span>, () => select({ kind: 'core' }))}
     </div>
   )
 }
@@ -40,9 +76,9 @@ export function ModeToggle() {
   const { record } = useCurrentFrame()
   if (!record.baseline.length) return null
   return (
-    <div className="panel pointer-events-auto flex shrink-0 whitespace-nowrap p-1 text-[12px] xl:text-[13px]">
+    <div className="flex shrink-0 whitespace-nowrap rounded-full border border-ink/15 p-0.5 text-[12px]">
       {(['ai', 'baseline'] as const).map((m) => (
-        <button key={m} onClick={() => setMode(m)} className={`whitespace-nowrap rounded-full px-3 py-1.5 transition xl:px-4 ${mode === m ? 'bg-ink text-bone' : 'text-ink/70 hover:bg-ink/5'}`}>
+        <button key={m} onClick={() => setMode(m)} className={`whitespace-nowrap rounded-full px-3 py-1 transition ${mode === m ? 'bg-ink text-bone' : 'text-ink/70 hover:bg-ink/5'}`}>
           {m === 'ai' ? 'with ai' : 'without ai'}
         </button>
       ))}
@@ -50,23 +86,55 @@ export function ModeToggle() {
   )
 }
 
+const Gear = () => (
+  <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden><circle cx="8" cy="8" r="2.4" fill="none" stroke="currentColor" strokeWidth="1.6" />{[0, 45, 90, 135, 180, 225, 270, 315].map((a) => <rect key={a} x="7.1" y="1" width="1.8" height="3" rx="0.6" fill="currentColor" transform={`rotate(${a} 8 8)`} />)}</svg>
+)
+
 export function TopRight({ onLive }: { onLive: () => void }) {
-  const quality = useStore((s) => s.quality)
-  const setQuality = useStore((s) => s.setQuality)
   const drawerOpen = useStore((s) => s.drawerOpen)
   const setDrawer = useStore((s) => s.setDrawer)
   const liveRunId = useStore((s) => s.liveRunId)
+  const panel = useStore((s) => s.panel)
+  const setPanel = useStore((s) => s.setPanel)
+  const advanced = useStore((s) => s.advancedOpen)
+  const setAdvanced = useStore((s) => s.setAdvanced)
+  const btn = (on: boolean) => `panel h-9 whitespace-nowrap px-3 text-[12px] xl:text-[13px] ${on ? 'bg-ink! text-bone' : 'hover:bg-bone'}`
   return (
-    <div className="pointer-events-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap xl:gap-2">
-      <div className="panel flex p-1 font-mono text-[10px] uppercase tracking-[0.14em]">
-        {(['high', 'fast'] as const).map((q) => (
-          <button key={q} onClick={() => setQuality(q)} className={`whitespace-nowrap rounded-full px-2 py-1 xl:px-2.5 ${quality === q ? 'bg-ink text-bone' : 'text-ink/60 hover:bg-ink/5'}`}>{q}</button>
-        ))}
-      </div>
+    <div className="pointer-events-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+      <button onClick={() => setPanel(panel === 'offworld' ? null : 'offworld')} className={btn(panel === 'offworld')}>off-world</button>
+      <button onClick={() => setPanel(panel === 'longevity' ? null : 'longevity')} className={btn(panel === 'longevity')}>200 years</button>
       <DirectorToggle />
       <SoundControls />
-      <button onClick={onLive} className={`panel whitespace-nowrap px-3 py-2 text-[12px] xl:px-4 xl:text-[13px] ${liveRunId ? 'bg-ink! text-bone' : 'hover:bg-bone'}`}>{liveRunId ? 'live on' : 'play live'}</button>
-      <button onClick={() => setDrawer(!drawerOpen)} className={`panel whitespace-nowrap px-3 py-2 text-[12px] xl:px-4 xl:text-[13px] ${drawerOpen ? 'bg-ink! text-bone' : 'hover:bg-bone'}`}>world rules</button>
+      <button onClick={onLive} className={btn(!!liveRunId)}>{liveRunId ? 'live on' : 'play live'}</button>
+      <button onClick={() => setDrawer(!drawerOpen)} className={btn(drawerOpen)}>rules</button>
+      <button onClick={() => setAdvanced(!advanced)} aria-label="advanced settings" title="advanced settings" className={`${btn(advanced)} flex w-9 items-center justify-center px-0`}><Gear /></button>
+    </div>
+  )
+}
+
+// advanced settings: render quality and the hidden no-ai twin
+export function AdvancedDrawer() {
+  const open = useStore((s) => s.advancedOpen)
+  const quality = useStore((s) => s.quality)
+  const setQuality = useStore((s) => s.setQuality)
+  const showTwin = useStore((s) => s.showTwin)
+  const setShowTwin = useStore((s) => s.setShowTwin)
+  if (!open) return null
+  return (
+    <div className="panel pointer-events-auto w-72 p-4 text-[12.5px]">
+      <div className="font-display text-[17px]">advanced</div>
+      <div className="mt-3 flex items-center justify-between">
+        <span>render quality</span>
+        <div className="flex rounded-full border border-ink/15 p-0.5 font-mono text-[10px] uppercase tracking-[0.14em]">
+          {(['high', 'fast'] as const).map((q) => <button key={q} onClick={() => setQuality(q)} className={`rounded-full px-2.5 py-1 ${quality === q ? 'bg-ink text-bone' : 'text-ink/60'}`}>{q}</button>)}
+        </div>
+      </div>
+      <label className="mt-3 flex items-center justify-between gap-3">
+        <span>show the no-ai twin</span>
+        <input type="checkbox" checked={showTwin} onChange={(e) => setShowTwin(e.target.checked)} className="h-4 w-4 accent-[var(--ink)]" />
+      </label>
+      {showTwin && <div className="mt-2 flex justify-end"><ModeToggle /></div>}
+      {showTwin && <p className="mt-2 text-[11px] leading-snug text-ink/50">the same seed with 2026 policies frozen. shown here for comparison only</p>}
     </div>
   )
 }
@@ -79,6 +147,9 @@ export function Leaderboard() {
   const setNotice = useStore((s) => s.setNotice)
   const [open, setOpen] = useState(true)
   const sorted = useMemo(() => [...runs].sort((a, b) => b.score - a.score).slice(0, 12), [runs])
+  const [curve, setCurve] = useState<{ generation: number; bestScore: number }[]>(LEARNING_CURVE)
+  const [curveMock, setCurveMock] = useState(true)
+  useEffect(() => { api.learning().then((c) => { if (Array.isArray(c) && c.length > 1) { setCurve(c); setCurveMock(false) } }).catch(() => {}) }, [])
   if (!sorted.length) return null
   const load = async (id: string) => {
     const mock = mockRuns().find((r) => r.runId === id)
@@ -94,6 +165,12 @@ export function Leaderboard() {
           <span className="text-ink/40">{open ? '−' : '+'}</span>
         </span>
       </button>
+      {open && curve.length > 1 && (
+        <div className="px-4 pb-2">
+          <div className="flex items-baseline justify-between text-[10px] text-ink/50"><span>best score by generation{curveMock ? ' · mock' : ''}</span><Num>gen {curve.at(-1)!.generation}</Num></div>
+          <Sparkline values={curve.map((p) => p.bestScore)} w={220} h={34} />
+        </div>
+      )}
       {open && (
         <ul className="scroll-thin min-h-0 max-h-[40vh] overflow-y-auto pb-2">
           {sorted.map((r, i) => (

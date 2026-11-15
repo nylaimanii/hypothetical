@@ -82,7 +82,12 @@ export default function Director() {
   useEffect(() => {
     if (lastIdx.current === idx) return
     lastIdx.current = idx
-    if (mode === 'ai' && frame.decision) offer({ kind: 'decision', severity: 0.4, text: frame.decision.rationale, score: shotScore('decision', 0.4), at: performance.now() / 1000 })
+    if (mode !== 'ai') return
+    if (frame.decision) offer({ kind: 'decision', severity: 0.4, text: frame.decision.rationale, score: shotScore('decision', 0.4), at: performance.now() / 1000 })
+    // a crowd boiling over is worth a shot
+    for (const r of frame.regions) for (const c of r.crowds ?? []) {
+      if (c.phase === 'outraged' && c.sinceTick === frame.tick) offer({ kind: 'crowd', regionId: r.id, severity: c.intensity, text: `outraged over ${c.topic}`, score: shotScore('crowd', c.intensity), at: performance.now() / 1000 })
+    }
   }, [idx, frame, mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // explicit requests (event feed clicks) always fly

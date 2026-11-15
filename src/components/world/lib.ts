@@ -196,6 +196,7 @@ export const sceneRefs = {
   moonPos: new THREE.Vector3(30, 4, 0),
   focus: new THREE.Vector3(0, 0, R),
   camDist: 50,
+  sunDir: new THREE.Vector3(1, 0.3, 0.5).normalize(), // written by the key light
 }
 
 export const LAYERS = ['government', 'economy', 'tech', 'religion', 'media', 'family', 'biology', 'physics'] as const

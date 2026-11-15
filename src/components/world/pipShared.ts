@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import type { RapierRigidBody } from '@react-three/rapier'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
-import type { Citizen } from '@/lib/types'
+import type { Behavior, Citizen, Emotion } from '@/lib/types'
 import { PIP } from './lib'
 
 // ---- proportions, in pip units (adult about 1.1 tall, scaled to PIP world units) ----
@@ -40,6 +40,14 @@ export type Agent = {
   famine: boolean
   angry: boolean
   migrant?: { from: THREE.Vector3; to: THREE.Vector3; k: number; n: number }
+  behavior: Behavior
+  emo: Emotion // dominant emotion
+  emoLevel: number
+  val: number // mood valence 0..1
+  drifting?: boolean // protesting while the crowd has gone bored: wandering off
+  line?: { k: number; n: number } // place in a marching line
+  goal?: THREE.Vector3 // unit vector of a new city they are walking to
+  parentKey?: string // a small kid pip following a parent
 }
 
 export type RagdollBodies = { torso: RapierRigidBody; head: RapierRigidBody; armL: RapierRigidBody; armR: RapierRigidBody; legL: RapierRigidBody; legR: RapierRigidBody }

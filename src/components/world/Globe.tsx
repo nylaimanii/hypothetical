@@ -19,6 +19,8 @@ import Director from './Director'
 import { soundState } from '../sound/engine'
 import { Labels, MigrationLines } from './Overlays'
 import { pipRegistry, usePhys } from './pipShared'
+import { sunDirection, tickToDate } from './time'
+import CityLights from './CityLights'
 import { useCurrentFrame, useStore } from '../state/store'
 
 function Sky() {
@@ -41,25 +43,39 @@ function Sky() {
   return null
 }
 
+// the key light is the sun. paused: the real sun for that date and time, so night falls where it should.
+// playing: a month passes every third of a second, so the real sun would strobe. the light then eases to a
+// readable softbox beside the camera that keeps only the season's tilt
 function KeyLight({ high }: { high: boolean }) {
   const light = useRef<THREE.DirectionalLight>(null)
+  const fill = useRef<THREE.DirectionalLight>(null)
   const camera = useThree((s) => s.camera)
-  useFrame(() => {
+  const real = useMemo(() => new THREE.Vector3(), [])
+  useFrame((_, dt) => {
     const l = light.current
     if (!l) return
-    // softbox rides with the camera, up and to the left
-    const dir = camera.position.clone().normalize()
-    const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), dir).normalize()
-    const up = new THREE.Vector3().crossVectors(dir, right)
-    l.position.copy(dir.multiplyScalar(30)).addScaledVector(up, 14).addScaledVector(right, -12)
+    const s = useStore.getState()
+    sunDirection(tickToDate(s.playhead), real)
+    let target = real
+    if (s.playing) {
+      const dir = camera.position.clone().normalize()
+      const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), dir).normalize()
+      const up = new THREE.Vector3().crossVectors(dir, right)
+      target = dir.multiplyScalar(30).addScaledVector(up, 14 + real.y * 10).addScaledVector(right, -12).normalize()
+    }
+    sceneRefs.sunDir.lerp(target, 1 - Math.exp(-dt * 2.5)).normalize()
+    l.position.copy(sceneRefs.sunDir).multiplyScalar(30)
     l.target.position.set(0, 0, 0)
     l.target.updateMatrixWorld()
+    // a faint fill from the viewer keeps the night side readable without lighting it
+    if (fill.current) { fill.current.position.copy(camera.position); fill.current.target.updateMatrixWorld() }
   })
   return (
     <>
-      <ambientLight intensity={0.3} color={C.bone} />
-      <hemisphereLight args={['#E9E4F2', '#E8DCC6', 0.4]} />
-      <directionalLight ref={light} intensity={1.7} color="#FFF6EA" castShadow={high}
+      <ambientLight intensity={0.16} color="#C9CCE0" />
+      <hemisphereLight args={['#E9E4F2', '#E8DCC6', 0.28]} />
+      <directionalLight ref={fill} intensity={0.32} color="#B8C2E0" />
+      <directionalLight ref={light} intensity={2.1} color="#FFF4E2" castShadow={high}
         shadow-mapSize={[2048, 2048]} shadow-bias={-0.0004} shadow-normalBias={0.025}
         shadow-camera-left={-14} shadow-camera-right={14} shadow-camera-top={14} shadow-camera-bottom={-14} shadow-camera-near={1} shadow-camera-far={70} />
     </>
@@ -219,6 +235,7 @@ export default function Globe() {
         </Environment>
         <Suspense fallback={null}>
           <Planet frame={frame} />
+          <CityLights frame={frame} />
           <Core frame={frame} prev={prev} idx={idx} />
           <Moon frame={frame} />
           <Symbols frame={frame} spaceport={spaceport} />

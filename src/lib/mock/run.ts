@@ -5,6 +5,7 @@ import type {
   ReligionPolicy, RunRecord, RunSummary, SchoolPolicy, WorldEvent, WorldState, WorldStatus,
 } from '@/lib/types'
 import { moodFrom, valence } from './mood'
+import { enrichRun } from './enrich'
 
 function mulberry32(seed: number) {
   let a = seed >>> 0
@@ -336,7 +337,7 @@ export function makeMockRun(runId: string, seed: number, fate: MockFate, generat
 
 let cache: RunRecord[] | null = null
 export function mockRuns(): RunRecord[] {
-  if (!cache) cache = [makeMockRun('mock-g3-0007', 7, 'moon', 3), makeMockRun('mock-g2-0031', 31, 'destroyed', 2)]
+  if (!cache) cache = [enrichRun(makeMockRun('mock-g3-0007', 7, 'moon', 3), 'moon'), enrichRun(makeMockRun('mock-g2-0031', 31, 'destroyed', 2), 'destroyed')]
   return cache
 }
 export const mockRun = () => mockRuns()[0]

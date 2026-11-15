@@ -1,7 +1,7 @@
 import type { Frame, Region, RunRecord, WorldEvent } from '@/lib/types'
 
-export type FeedKind = WorldEvent['kind'] | 'decision'
-export type FeedItem = { key: string; tick: number; date: string; kind: FeedKind; regionId?: string; severity: number; text: string; danger: boolean }
+export type FeedKind = WorldEvent['kind'] | 'decision' | 'crowd'
+export type FeedItem = { key: string; tick: number; date: string; kind: FeedKind; regionId?: string; severity: number; text: string; danger: boolean; index?: number }
 
 const KILLERS: FeedKind[] = ['war', 'pandemic']
 
@@ -18,9 +18,13 @@ export function feedFor(rec: RunRecord, idx: number): FeedItem[] {
   const out: FeedItem[] = []
   for (const f of rec.frames.slice(0, idx + 1)) {
     if (f.decision) out.push({ key: `${f.tick}-d`, tick: f.tick, date: f.date, kind: 'decision', severity: 0.4, text: f.decision.rationale, danger: false })
+    for (const r of f.regions) for (const c of r.crowds ?? []) {
+      if (c.sinceTick !== f.tick || (c.phase !== 'outraged' && c.phase !== 'bored')) continue
+      out.push({ key: `${f.tick}-c-${r.id}-${c.topic}`, tick: f.tick, date: f.date, kind: 'crowd', regionId: r.id, severity: c.intensity, text: c.phase === 'outraged' ? `outraged over ${c.topic}` : `lost interest in ${c.topic}`, danger: false })
+    }
     f.newEvents.forEach((e, i) => {
       if (e.kind === 'law') return
-      out.push({ key: `${f.tick}-${i}`, tick: f.tick, date: f.date, kind: e.kind, regionId: e.regionId, severity: e.severity, text: e.text, danger: isDanger(e.kind, e.severity, e.text) })
+      out.push({ key: `${f.tick}-${i}`, tick: f.tick, date: f.date, kind: e.kind, regionId: e.regionId, severity: e.severity, text: e.text, danger: isDanger(e.kind, e.severity, e.text), index: i })
     })
   }
   return out.reverse()
@@ -28,7 +32,7 @@ export function feedFor(rec: RunRecord, idx: number): FeedItem[] {
 
 // how much the director wants to look at something
 const WEIGHT: Partial<Record<FeedKind, number>> = {
-  launch: 1.25, revolt: 1.1, war: 1.1, famine: 1, disaster: 0.95, pandemic: 0.9, migration: 0.75, injected: 1.3, breakthrough: 0.5, decision: 0.6,
+  launch: 1.25, crowd: 1.15, revolt: 1.1, war: 1.1, famine: 1, disaster: 0.95, pandemic: 0.9, migration: 0.75, injected: 1.3, breakthrough: 0.5, decision: 0.6,
 }
 export const shotScore = (kind: FeedKind, severity: number) => (WEIGHT[kind] ?? 0) * (0.5 + severity)
 
@@ -45,12 +49,15 @@ export function captionFor(kind: FeedKind, text: string, severity: number, regio
     detail = `${pct(r.unrest)} unrest. ${text}`
   } else if (kind === 'launch') {
     detail = `${text}. moon program ${pct(frame.moonProgress)}`
+  } else if (kind === 'crowd' && r) {
+    const c = r.crowds.find((x) => text.includes(x.topic))
+    detail = c ? `${c.phase === 'outraged' ? 'outrage' : c.phase} over ${c.topic} at ${pct(c.intensity)}. approval ${pct(r.approval)}` : text
   } else if (kind === 'decision') {
     const d = frame.decision
     const laws = d?.laws.length ?? 0
     detail = `${laws} new law${laws === 1 ? '' : 's'}, space budget ${pct(frame.budget.space)}`
   }
-  const head = kind === 'decision' ? `${frame.date} · the core decides` : [frame.date, r?.name ?? 'world', kind].join(' · ')
+  const head = kind === 'decision' ? `${frame.date} · the core decides` : [frame.date, r?.name ?? 'world', kind === 'crowd' ? 'the crowd' : kind].join(' · ')
   const line = `${head}. ${detail}`
   const parts: { t: string; mono?: boolean }[] = []
   for (const tok of line.split(/(\d[\d.,:-]*[%mbkt]?)/)) if (tok) parts.push({ t: tok, mono: /^\d/.test(tok) })

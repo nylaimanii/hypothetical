@@ -79,5 +79,6 @@ export type RunSummary = {
   moonStage: MoonStage; topEvents: WorldEvent[]; baselineStatus: WorldStatus; baselineEndDate: string
   frontier: Frontier; peakPeriodLifeExpectancy: number; finalPopulation: number; citiesFounded: number; diseasesEradicated: string[]; humanCost: HumanCost; lessonsLearned: Lesson[]; lessonsApplied: number; usage?: Usage
 }
-export type RunRecord = { runId: string; generation: number; seed: number; constitution: string; frames: Frame[]; baseline: BaselineFrame[]; summary: RunSummary; live?: boolean }
+// precedents: the library this run's laws cite. lessons: what the governor knew at the start of this run
+export type RunRecord = { runId: string; generation: number; seed: number; constitution: string; frames: Frame[]; baseline: BaselineFrame[]; summary: RunSummary; live?: boolean; precedents?: Precedent[]; lessons?: Lesson[] }
 export type RunOptions = { runId: string; generation: number; seed: number; constitution: string; onFrame?: (f: Frame) => void; overrideDir?: string; live?: { msPerTick: number }; frameEvery?: number }

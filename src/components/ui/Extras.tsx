@@ -38,6 +38,7 @@ export function EventFeed() {
   const { record, idx, mode } = useCurrentFrame()
   const setPlayhead = useStore((s) => s.setPlayhead)
   const requestShot = useStore((s) => s.requestShot)
+  const select = useStore((s) => s.select)
   const items = useMemo(() => (mode === 'ai' ? feedFor(record, idx).slice(0, 80) : []), [record, idx, mode])
   const regions = record.frames[idx]?.regions ?? []
   if (!items.length) return null
@@ -46,7 +47,11 @@ export function EventFeed() {
       {items.map((it) => {
         const region = regions.find((r) => r.id === it.regionId)?.name
         return (
-          <button key={it.key} onClick={() => { setPlayhead(it.tick); requestShot(it.kind === 'decision' || !it.regionId ? { target: 'core', force: true } : { target: 'region', regionId: it.regionId, force: true }) }}
+          <button key={it.key} onClick={() => {
+            setPlayhead(it.tick)
+            requestShot(it.kind === 'decision' || !it.regionId ? { target: 'core', force: true } : { target: 'region', regionId: it.regionId, force: true })
+            select(it.kind === 'decision' ? { kind: 'core' } : it.kind === 'crowd' && it.regionId ? { kind: 'region', id: it.regionId } : it.index !== undefined ? { kind: 'event', tick: it.tick, index: it.index } : null)
+          }}
             className={`feed-in rounded-xl border-l-2 bg-bone/80 px-2.5 py-1.5 text-left shadow-sm backdrop-blur hover:bg-bone ${it.danger ? 'border-ember' : 'border-ink/25'}`}>
             <div className="flex items-baseline justify-between gap-2 whitespace-nowrap text-[10px]">
               <span className={it.danger ? 'text-ember' : 'text-ink/60'}>{KIND_LABEL[it.kind] ?? it.kind}</span>
@@ -70,7 +75,7 @@ export function DirectorToggle() {
     <button onClick={() => setDirector(!on)} title={on ? (paused ? 'director paused while you steer' : 'director mode on') : 'director mode off'} aria-pressed={on}
       className={`panel flex h-9 items-center gap-1.5 whitespace-nowrap px-3 text-[12px] xl:text-[13px] ${on ? 'bg-ink! text-bone' : 'text-ink/70 hover:bg-bone'} ${paused ? 'opacity-60' : ''}`}>
       <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden><rect x="1.5" y="4" width="9" height="8" rx="2" fill="none" stroke="currentColor" strokeWidth="1.6" /><path d="M10.5 7l4-2.2v6.4l-4-2.2z" fill="currentColor" /></svg>
-      director
+      <span className="hidden 2xl:inline">director</span>
     </button>
   )
 }

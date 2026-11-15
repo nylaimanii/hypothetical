@@ -12,6 +12,11 @@ export type Selection =
   | { kind: 'law'; id: string }
   | { kind: 'core' }
   | { kind: 'moon' }
+  | { kind: 'city'; id: string }
+  | { kind: 'company'; id: string }
+  | { kind: 'requirement'; id: string }
+  | { kind: 'faction'; id: string }
+  | { kind: 'event'; tick: number; index: number }
   | null
 
 export type Zoom = 'far' | 'mid' | 'close'
@@ -52,6 +57,9 @@ type State = {
   soundOn: boolean
   volume: number
   introOpen: boolean
+  showTwin: boolean // advanced setting: the no-ai twin is hidden by default
+  advancedOpen: boolean
+  panel: 'offworld' | 'longevity' | null
   setRecord: (r: RunRecord, source: Source) => void
   replaceRecord: (r: RunRecord) => void
   setRuns: (runs: RunSummary[], src: 'mock' | 'api') => void
@@ -77,6 +85,9 @@ type State = {
   setSound: (on: boolean) => void
   setVolume: (v: number) => void
   setIntro: (open: boolean) => void
+  setShowTwin: (on: boolean) => void
+  setAdvanced: (open: boolean) => void
+  setPanel: (p: 'offworld' | 'longevity' | null) => void
 }
 
 let juiceId = 1
@@ -110,6 +121,9 @@ export const useStore = create<State>((set) => ({
   soundOn: false,
   volume: 0.6,
   introOpen: false,
+  showTwin: false,
+  advancedOpen: false,
+  panel: null,
   setRecord: (record, source) => set((s) => ({ record, source, playhead: source === 'live' ? (record.frames.at(-1)?.tick ?? 0) : 0, selection: null, overrides: s.record.runId === record.runId ? s.overrides : [] })),
   replaceRecord: (record) => set({ record }),
   setRuns: (runs, runsSource) => set({ runs, runsSource }),
@@ -139,6 +153,9 @@ export const useStore = create<State>((set) => ({
   setSound: (soundOn) => set({ soundOn }),
   setVolume: (volume) => set({ volume }),
   setIntro: (introOpen) => set({ introOpen }),
+  setShowTwin: (showTwin) => set((s) => ({ showTwin, mode: showTwin ? s.mode : 'ai' })),
+  setAdvanced: (advancedOpen) => set({ advancedOpen }),
+  setPanel: (panel) => set({ panel }),
 }))
 
 export function frameIndexAt(frames: Frame[], tick: number) {

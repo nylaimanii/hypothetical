@@ -17,6 +17,7 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   runs: () => call<RunSummary[]>('/api/runs'),
+  learning: () => call<{ generation: number; bestScore: number; lessonsKnown?: number }[]>('/api/learning'),
   run: (id: string) => call<RunRecord>(`/api/runs/${encodeURIComponent(id)}`),
   ask: (runId: string, question: string) => call<{ answer: string }>('/api/ask', { method: 'POST', body: JSON.stringify({ runId, question }) }),
   liveStart: (body: { constitution?: string; seed?: number } = {}) => call<{ runId: string }>('/api/live/start', { method: 'POST', body: JSON.stringify(body) }),

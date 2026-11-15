@@ -3,12 +3,13 @@ import { useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { TICKS_PER_SECOND, useStore } from '../state/store'
 import { api, Offline } from './api'
-import Inspector from './Inspector'
+import Dossier from './Dossier'
 import { SideDrawer, useNarrow } from './Side'
 import { Caption, EventFeed, Intro, useIntroGate, useSound } from './Extras'
 import Timeline from './Timeline'
 import LivePanel from './LivePanel'
-import { Leaderboard, ModeToggle, RulesDrawer, TopLeft, TopRight } from './Chrome'
+import { AdvancedDrawer, Leaderboard, MissionBar, RulesDrawer, TopLeft, TopRight } from './Chrome'
+import Roadmap from './Roadmap'
 
 // dev shows an fps meter in the bottom right corner of the middle row; panels leave it room
 const DEV = process.env.NODE_ENV === 'development'
@@ -95,11 +96,13 @@ export default function App() {
   const liveRunId = useStore((s) => s.liveRunId)
   const drawerOpen = useStore((s) => s.drawerOpen)
   const selection = useStore((s) => s.selection)
+  const panel = useStore((s) => s.panel)
+  const advancedOpen = useStore((s) => s.advancedOpen)
   const narrow = useNarrow()
   const [leftOpen, setLeftOpen] = useState(false)
   const [rightOpen, setRightOpen] = useState(false)
   // narrow layout: picking something or opening the rules slides the right drawer in, clearing both closes it
-  const wantsRight = Boolean(selection) || drawerOpen
+  const wantsRight = Boolean(selection) || drawerOpen || advancedOpen
   const [prevWants, setPrevWants] = useState(wantsRight)
   if (prevWants !== wantsRight) { setPrevWants(wantsRight); setRightOpen(wantsRight) }
   const [prevLive, setPrevLive] = useState(liveRunId)
@@ -127,8 +130,8 @@ export default function App() {
       <div className="pointer-events-none absolute inset-0 z-10 flex flex-col p-3 xl:p-4">
         <div className="relative flex flex-wrap items-start justify-between gap-2">
           <TopLeft />
-          <div className="order-last flex w-full flex-col items-center gap-2 lg:absolute lg:left-1/2 lg:top-0 lg:order-none lg:w-auto lg:-translate-x-1/2">
-            <ModeToggle />
+          <div className="order-last flex w-full min-w-0 flex-col items-center gap-2 xl:order-none xl:w-auto xl:flex-1">
+            <MissionBar />
             <Notice />
           </div>
           <TopRight onLive={startLive} />
@@ -142,7 +145,8 @@ export default function App() {
               </SideDrawer>
               <div className={`absolute right-0 top-12 flex min-h-0 ${DEV ? 'bottom-14' : 'bottom-0'}`}><EventFeed /></div>
               <SideDrawer side="right" label="details" open={rightOpen} onToggle={() => setRightOpen(!rightOpen)} reserveBottom={DEV}>
-                <Inspector />
+                <AdvancedDrawer />
+                <Dossier />
                 {drawerOpen && <RulesDrawer />}
               </SideDrawer>
             </>
@@ -154,12 +158,18 @@ export default function App() {
               </div>
               <div className={`flex min-h-0 items-stretch gap-3 ${DEV ? 'mb-14' : ''}`}>
                 <div className="scroll-thin flex min-h-0 flex-col items-end gap-3 overflow-y-auto">
-                  <Inspector />
+                  <AdvancedDrawer />
+                  <Dossier />
                   {drawerOpen && <RulesDrawer />}
                 </div>
                 <EventFeed />
               </div>
             </>
+          )}
+          {panel && (
+            <div className={`pointer-events-none absolute left-0 top-0 z-20 flex ${DEV ? 'bottom-14' : 'bottom-0'} ${narrow ? 'right-0' : selection ? 'right-[38rem]' : 'right-[14.5rem]'}`}>
+              <Roadmap />
+            </div>
           )}
           <div className="pointer-events-none absolute bottom-2 left-1/2 z-0 -translate-x-1/2"><Caption /></div>
         </div>
