@@ -292,3 +292,39 @@ test('sim versions: a new version archives the old results and carries lessons f
   assert.equal(readVersion()?.current, 'v2')
   assert.equal(readVersion()?.history[0].version, 'v1')
 }))
+
+test('retention: hall worlds stay plain, mediocre worlds are gzipped then deleted after 3 days, slims stay', inTempDir(async dir => {
+  const { sweep, readSlim } = await import('./retention')
+  const { placeholderSummary, readRunRecord } = await import('./store')
+  const runs = path.join(dir, 'data/runs')
+  fs.mkdirSync(runs, { recursive: true })
+  const now = Date.now()
+  const rec = (runId: string, score: number) => {
+    const summary = placeholderSummary({ runId, generation: 1, status: 'complete', endDate: '2076-11', ticks: 600, score, constitution: 'x', peakPopulation: 8e9, moonStage: 'none', agentId: 'meridian' })
+    return { runId, generation: 1, seed: 1002, constitution: 'x', agentId: 'meridian', snapshots: [], baseline: [], summary,
+      frames: [{ tick: 0, date: '2026-11', regions: [], citizens: [], laws: [], budget: {}, religionPolicy: 'free', schoolPolicy: { purpose: 'p', curriculum: [], yearsRequired: 10 }, moonStage: 'none', moonProgress: 0, status: 'alive', newEvents: [], globalPopulation: 8e9, globalPeriodLifeExpectancy: 73 }] }
+  }
+  const ids = { hall: 'g1-hall-s1', old: 'g1-old-s1', recent: 'g1-recent-s1', active: 'g1-active-s1' }
+  const index = Object.values(ids).map((id, i) => ({ ...rec(id, i === 0 ? 0.9 : 0.1).summary, seed: 1, simVersion: 'v1' }))
+  // 25 better worlds, so the mediocre ones are outside the version's top 20
+  for (let i = 0; i < 25; i++) index.push({ ...rec(`g1-top${i}-s1`, 0.5 + i / 100).summary, seed: 1, simVersion: 'v1' })
+  fs.writeFileSync(path.join(runs, 'index.json'), JSON.stringify(index))
+  for (const id of Object.values(ids)) fs.writeFileSync(path.join(runs, `${id}.json`), JSON.stringify(rec(id, 0.1)))
+  fs.writeFileSync(path.join(runs, 'b-test-run.json'), '{"not":"evolve"}')
+  fs.writeFileSync(path.join(dir, 'data/hall.json'), JSON.stringify({ entries: [{ id: 'first:x', runId: ids.hall }], records: {} }))
+  const ago = (ms: number) => new Date(now - ms)
+  fs.utimesSync(path.join(runs, `${ids.old}.json`), ago(4 * 864e5), ago(4 * 864e5))
+  fs.utimesSync(path.join(runs, `${ids.recent}.json`), ago(7 * 3600e3), ago(7 * 3600e3))
+  fs.utimesSync(path.join(runs, `${ids.hall}.json`), ago(5 * 864e5), ago(5 * 864e5))
+  fs.utimesSync(path.join(runs, `${ids.active}.json`), ago(5 * 864e5), ago(5 * 864e5))
+  const res = sweep(new Set([ids.active]), now)
+  const exists = (f: string) => fs.existsSync(path.join(runs, f))
+  assert.ok(exists(`${ids.hall}.json`), 'hall world keeps its plain record')
+  assert.ok(!exists(`${ids.recent}.json`) && exists(`${ids.recent}.json.gz`), 'recent mediocre world is gzipped, not deleted')
+  assert.ok(readRunRecord(ids.recent), 'gzipped records still read')
+  assert.ok(!exists(`${ids.old}.json`) && !exists(`${ids.old}.json.gz`), 'old mediocre world loses its full record')
+  assert.ok(readSlim(ids.old), 'but its slim payload stays')
+  assert.ok(exists(`${ids.active}.json`), 'the generation in progress is never touched')
+  assert.ok(exists('b-test-run.json'), "other agents' records are never touched")
+  assert.equal(res.deleted, 1)
+}))

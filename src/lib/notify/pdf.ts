@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import PDFDocument from 'pdfkit'
 import type { CrowdState, RunRecord, RunSummary, Step, WorldEvent } from '../types'
-import { dirs, isWin, readJson, type GenerationFile, type LeaderboardEntry } from '../evolve/store'
+import { isWin, readRunRecord, type GenerationFile, type LeaderboardEntry } from '../evolve/store'
 import type { LearningRow } from '../evolve/lessons'
 import type { StepsFile } from '../evolve/steps'
 import { learningReport, worldReport, type LearningReport, type Ref, type ReportSection, type WorldReport } from '../evolve/report'
@@ -357,7 +357,7 @@ export async function digestPdf({ generation: g, leaderboard, bestRecord, allRun
     h2(doc, 'the dead')
     for (const d of deaths) {
       h3(doc, `${d.runId}, died ${d.endDate}`, C.ember)
-      const rec = readJson<RunRecord>(path.join(dirs.runs, `${d.runId}.json`))
+      const rec = readRunRecord(d.runId)
       if (rec) renderReport(doc, worldReport(rec), ['ending', 'cost'])
       else { para(doc, `“${epitaphOf(d, d.agentId).line}”`, C.ember); if (d.causeOfDeath) para(doc, d.causeOfDeath, C.ember) }
     }

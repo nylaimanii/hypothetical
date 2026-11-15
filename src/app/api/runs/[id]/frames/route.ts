@@ -1,7 +1,6 @@
 import { connection } from 'next/server'
-import path from 'node:path'
-import type { FramesResponse, RunRecord } from '@/lib/types'
-import { dirs, isReadOnly, readJson, readShowcase, SAFE_ID } from '@/lib/evolve/store'
+import type { FramesResponse } from '@/lib/types'
+import { isReadOnly, readRunRecord, readShowcase, SAFE_ID } from '@/lib/evolve/store'
 
 // GET /api/runs/[id]/frames?from=&to= : the frames with from <= tick <= to (both optional), for lazy loading
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -11,7 +10,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const q = new URL(req.url).searchParams
   const from = Number(q.get('from') ?? 0), to = Number(q.get('to') ?? Infinity)
   if (!Number.isFinite(from) || Number.isNaN(to) || to < from) return Response.json({ error: 'from and to must be ticks, from <= to' }, { status: 400 })
-  const rec = (isReadOnly() ? null : readJson<RunRecord>(path.join(dirs.runs, `${id}.json`))) ?? readShowcase(id)
+  const rec = (isReadOnly() ? null : readRunRecord(id)) ?? readShowcase(id)
   if (!rec) return Response.json({ error: 'not found' }, { status: 404 })
   const last = rec.frames.length ? Math.max(...rec.frames.map(f => f.tick)) : 0
   const body: FramesResponse = { runId: rec.runId, from, to: Number.isFinite(to) ? to : last, frames: rec.frames.filter(f => f.tick >= from && f.tick <= to) }

@@ -130,9 +130,17 @@ export function indexRun(summary: RunSummary, seed: number, simVersion?: string,
   writeJson(runIndexFile(), all)
 }
 
+// a run's full record from data/runs, plain or gzipped by retention (see retention.ts)
+export function readRunRecord(id: string): RunRecord | null {
+  if (!SAFE_ID.test(id)) return null
+  const plain = readJson<RunRecord>(path.join(dirs.runs, `${id}.json`))
+  if (plain) return plain
+  try { return JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(dirs.runs, `${id}.json.gz`))).toString('utf8')) as RunRecord } catch { return null }
+}
+
 export function loadRecord(id: string): RunRecord | null {
   if (!SAFE_ID.test(id)) return null
-  return readJson<RunRecord>(path.join(dirs.runs, `${id}.json`)) ?? readShowcase(id) ?? readJson<RunRecord>(path.join(dirs.live, `${id}.json`))
+  return readRunRecord(id) ?? readShowcase(id) ?? readJson<RunRecord>(path.join(dirs.live, `${id}.json`))
 }
 
 // deployed (vercel) or READ_ONLY=1: only committed showcase worlds are served, runner routes are off

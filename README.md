@@ -25,6 +25,7 @@ npm run evolve -- --gens 10 --concurrency 1   # one gpu: keep it at 1
 # overnight, without the mac sleeping, from a clean worktree of the pushed origin/main:
 nohup caffeinate -i scripts/run-evolve.sh --gens 50 --concurrency 1 > data/evolve.log 2>&1 &
 npm run run-one -- --seed 1 --constitution technocrat
+npm run retention              # one disk retention pass now (evolve runs it hourly)
 npm run reality-check          # the no-ai twin vs real published data, writes data/reality-check.json
 npm run live -- --runId mylive --seed 7 --constitution-file path/to/constitution.txt
 ```
@@ -92,6 +93,16 @@ If any of these is missing, that feature logs once and is skipped. Nothing crash
   - **Ollama dies mid-world** (so the governor fell back to offline decisions): the world is marked interrupted, is not scored, and runs again once ollama is back.
   - **Other transient errors:** retried after 30s, 2m, 10m, then at the next hour.
 - LLM calls, tokens, wall time and cost ($0 on ollama) per world are logged to `data/reports/usage-<date>.json`. `/status` shows the average minutes per world and how many more fit before 7am.
+
+## disk retention
+
+Full records are about 34MB, and evolution makes about 130 a day, so retention runs every hour:
+
+- **Slim payloads:** every world keeps one forever, in `data/runs/slim/`.
+- **Full records kept:** only for the hall of history, each sim version's top 20 (per horizon), showcase worlds, and anything a petition, what-if, life, follow list or live branch points at. Those stay plain JSON so the sim can branch from them.
+- **Everything else:** gzipped after 6 hours, and deleted once it is 3 days old. Its slim payload stays.
+- **Scope:** only worlds evolve itself indexed are touched.
+- **Disk report:** in `/status` and the hourly heartbeat, with a telegram warning when free disk drops under 50GB.
 
 ## reality check
 

@@ -4,6 +4,7 @@ import { loadRecord, readLeaderboard } from '../evolve/store'
 import { askCore, CORE_REAL } from '../evolve/core'
 import { paceLine, readDay } from '../evolve/usage'
 import { topAgents } from '../evolve/agents'
+import { diskLine } from '../evolve/retention'
 import { send, telegramEnv, tg } from './telegram'
 
 type Update = { update_id: number; message?: { chat: { id: number }; text?: string } }
@@ -31,6 +32,7 @@ async function reply(cmd: string, rest: string): Promise<string | null> {
       return [
         `gen ${control.generation}: ${control.worldsDone}/${control.worldsTotal} worlds done${control.paused ? ', PAUSED' : ''}`,
         pace,
+        diskLine(),
         `today: ${day.calls} llm calls${day.tokens ? `, ${day.tokens} tokens` : ''}${day.rejected ? `, ${day.rejected} rejected by groq` : ''}, ${day.worldsFinished} worlds finished, ${day.worldsInterrupted} interrupted`,
         best ? `best all time: ${best.name} (gen ${best.generation}) score ${best.score}` : '',
       ].filter(Boolean).join('\n')

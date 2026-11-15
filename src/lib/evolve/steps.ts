@@ -9,7 +9,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Budget, RunRecord, Step } from '../types'
-import { dirs, readJson, readRunIndex, writeJson } from './store'
+import { dirs, readJson, readRunIndex, readRunRecord, writeJson } from './store'
 import { isRealLlmRun } from './showcase'
 import { currentVersion, versionedPath } from './version'
 
@@ -71,7 +71,7 @@ function backfill(all: Record<string, RunFeatures>): Record<string, RunFeatures>
   const v = currentVersion()
   for (const r of readRunIndex()) {
     if (all[r.runId] || (r.simVersion && r.simVersion !== v) || (r.status === 'alive' && r.ticks < 600)) continue
-    const rec = readJson<RunRecord>(path.join(dirs.runs, `${r.runId}.json`))
+    const rec = readRunRecord(r.runId)
     if (rec && isRealLlmRun(rec)) { all[r.runId] = featuresOf(rec); changed = true }
   }
   if (changed) writeJson(featuresFile(), all)

@@ -26,6 +26,7 @@ import { isTransient, realClock, runQueue, type Clock } from './queue'
 import { trackWorld } from './usage'
 import { lineageRoots, recordAgentRun, registerPopulation, settleGeneration } from './agents'
 import { indexFeatures, recomputeSteps } from './steps'
+import { diskReport, gb, sweep, writeSlim } from './retention'
 import { enterVersion, inRunner, runningSimVersion, simVersionOnDisk, upstreamSimVersion, verifyLessons } from './version'
 import { realityCheckDue, runRealityCheck } from './reality'
 import { agentRanges, EXTRA_SEEDS, markUncertaintyDone, milestoneYears, readUncertainty, versionTopAgents } from './uncertainty'
@@ -57,6 +58,8 @@ export const control = {
   worldsTotal: 0,
   worldsInterrupted: 0,
   concurrency: 1,
+  // run ids of the generation in progress: retention never touches them
+  activeRunIds: new Set<string>(),
   // when the last world finished (or evolve started), for the stall warning
   lastWorldAt: 0,
   // the last 5 finished worlds, newest first, for mission control
@@ -237,6 +240,8 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, stage: Stag
   // applying a lesson and surviving confirms it on this sim version
   if (summary.status !== 'destroyed') verifyLessons([...new Set(record.frames.flatMap(f => f.decision?.lessonsApplied ?? []))], control.simVersion)
   recordAgentRun(summary, stage === 'screen' ? 'screen' : 'full')
+  // every world keeps a slim payload forever (retention may retire its full record later)
+  try { writeSlim(record) } catch (e) { deps.log(`  could not write slim for ${runId}: ${(e as Error).message}`) }
   // feature row for the steps recipe (real llm runs only)
   try { indexFeatures(record) } catch (e) { deps.log(`  steps: could not index ${runId}: ${(e as Error).message}`) }
   const learning = readLearning()
@@ -388,6 +393,7 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
   writeJson(file, g)
   const records = new Map<string, RunRecord>()
   control.generation = g.generation
+  control.activeRunIds = new Set(pendingWorlds(g).map(q => q.runId).concat(g.population.flatMap(c => (c.runs ?? []).map(r => r.runId))))
   control.worldsTotal = g.population.length * g.seeds.length + Math.min(FINALISTS, g.population.length)
   control.worldsDone = control.worldsTotal - pendingWorlds(g).length - (g.finalists ? 0 : Math.min(FINALISTS, g.population.length))
 
@@ -474,6 +480,7 @@ function startWatchdogs(log: (l: string) => void, logFile?: string) {
   let stallWarned = 0
   let lastHourly = startedAt
   let restartSent = false
+  let lowDiskWarned = false
   const tick = async () => {
     try {
       heartbeatNow()
@@ -493,9 +500,15 @@ function startWatchdogs(log: (l: string) => void, logFile?: string) {
       }
       if (now - lastHourly >= 60 * MIN) {
         lastHourly = now
+        // retention: gzip mediocre full records, delete them after 3 days (slim payloads stay forever)
+        const swept = sweep(control.activeRunIds)
+        if (swept.gzipped || swept.deleted) log(`retention: ${swept.gzipped} gzipped, ${swept.deleted} deleted, ${swept.restored} restored, ${gb(swept.freedBytes)} freed`)
+        const disk = diskReport()
         const pace = paceStats(control.concurrency)
         const agents = readAgents()
-        await send(`alive · gen ${control.generation} · world ${Math.min(control.worldsDone + 1, control.worldsTotal)}/${control.worldsTotal} · ${pace ? `${pace.avgMinutesPerWorld} min per world` : 'no world finished yet'} · ${agents.reduce((n, a) => n + a.deaths, 0)} deaths so far · best score ${Math.max(0, ...agents.map(a => a.bestScore))}`)
+        await send(`alive · gen ${control.generation} · world ${Math.min(control.worldsDone + 1, control.worldsTotal)}/${control.worldsTotal} · ${pace ? `${pace.avgMinutesPerWorld} min per world` : 'no world finished yet'} · ${agents.reduce((n, a) => n + a.deaths, 0)} deaths so far · best score ${Math.max(0, ...agents.map(a => a.bestScore))} · data ${gb(disk.dataBytes)}, ${gb(disk.freeBytes)} free`)
+        if (disk.low && !lowDiskWarned) { lowDiskWarned = true; await send(`warning: only ${gb(disk.freeBytes)} free disk (under 50GB). data/ uses ${gb(disk.dataBytes)}`) }
+        if (!disk.low) lowDiskWarned = false
       }
       // a stall: nothing finished for 90 min (one warning per stall; a finished world resets it)
       if (!control.paused && now - control.lastWorldAt >= 90 * MIN && stallWarned !== control.lastWorldAt) {
