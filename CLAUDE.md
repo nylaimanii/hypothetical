@@ -34,6 +34,12 @@ one ai runs a single world government starting 2026-11. physics, biology, econom
 
 - every run belongs to an Agent. agent names are original sci-fi names, never real people, brands, or existing fictional characters. seed names: long now, meridian, halcyon, vesper, atlas, solace, kestrel. mutants are "<parent> ii/iii/...", crossovers are "<a> × <b>".
 
+## v3 rules
+
+- every world looks like its decisions. Region.visual, Frame.space/atmosphere/flows and Agent.archStyle drive the look. they are optional in the contract until the sim and evolve fill them; the ui derives safe defaults
+- dead worlds look dead, matching damage.kind, with an epitaph card
+- words on everything: overlays carry legends in words, the explain layer labels notable things in view
+
 ## ownership
 
 - A: scaffold, CLAUDE.md, src/lib/types.ts, src/lib/mock/**, src/app/** (except src/app/api/**), src/components/**
@@ -56,3 +62,4 @@ one ai runs a single world government starting 2026-11. physics, biology, econom
 - GET /api/evolve/now -> EvolveNow (from data/evolve-now.json, written by evolve.ts after every frame, throttled to every 2s; 404 when no evolution is running)
 - GET /api/hall -> HallEntry[]
 - POST /api/branch { runId, tick, agentId } -> { runId } (a new live world from that run's snapshot at tick, governed by agentId)
+- GET /api/steps?runs=<id,id,...> -> Step[] (the cross-world recipe: decisions ranked by how much they helped or hurt across worlds)

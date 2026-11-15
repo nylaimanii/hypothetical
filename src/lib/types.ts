@@ -41,6 +41,8 @@ export type Region = {
   foodKcalPerCapita: number; education: number; faith: number; unrest: number; techLevel: number; compliance: number
   crowds: CrowdState[]; approval: number; lifeExpectancy: number; periodLifeExpectancy: number; fertility: number; diseaseBurden: number; travelHoursToNearest: number; whys: Why[]
   provenance: Record<string, Provenance>
+  // v3: what the region looks like and how it feels, by group. optional until the sim fills them; the ui normalizes
+  visual?: RegionVisual; emotionMix?: Mood; emotionByGroup?: { group: string; mood: Mood }[]
 }
 export type Citizen = {
   id: string; regionId: string; name: string; age: number; sex: 'female'|'male'; skinTone: number
@@ -69,6 +71,8 @@ export type MoonStage = 'none'|'orbital'|'heavy_lift'|'life_support'|'lander'|'c
 export type WorldState = {
   requirements: Requirement[]; cities: City[]; companies: Company[]; frontier: Frontier; factions: Faction[]
   humanCost: HumanCost; globalPopulation: number; globalPeriodLifeExpectancy: number; lessonsKnown: number
+  // v3 (optional until the sim fills them; the ui normalizes)
+  space?: SpaceAsset[]; atmosphere?: { tint: string; haze: number }; flows?: Flow[]
 }
 export type Frame = {
   tick: number; date: string; regions: Region[]; citizens: Citizen[]; laws: Law[]; budget: Budget; religionPolicy: ReligionPolicy; schoolPolicy: SchoolPolicy
@@ -80,6 +84,7 @@ export type RunSummary = {
   moonStage: MoonStage; topEvents: WorldEvent[]; baselineStatus: WorldStatus; baselineEndDate: string
   frontier: Frontier; peakPeriodLifeExpectancy: number; finalPopulation: number; citiesFounded: number; diseasesEradicated: string[]; humanCost: HumanCost; lessonsLearned: Lesson[]; lessonsApplied: number; usage?: Usage
   agentId: string
+  epitaph?: Epitaph
 }
 // precedents: the library this run's laws cite. lessons: what the governor knew at the start of this run
 export type RunRecord = {
@@ -93,6 +98,8 @@ export type RunOptions = { runId: string; generation: number; seed: number; cons
 export type Agent = {
   id: string; name: string; emblemSeed: number; philosophy: string; constitution: string; parentIds: string[]; origin: 'seed'|'mutation'|'crossover'; generation: number; protected: boolean
   runIds: string[]; worlds: number; deaths: number; bestScore: number; avgScore: number; bestFrontier: Frontier; bestPeriodLifeExpectancy: number; champion: boolean; retired: boolean
+  // v3: optional until evolve assigns one; the ui derives one from the id
+  archStyle?: ArchStyle
 }
 export type Snapshot = { tick: number; state: string } // compressed full WorldState, for branching
 export type Divergence = { runA: string; runB: string; tick: number; decisionDiff: string; consequence: string }
@@ -128,3 +135,24 @@ export type EvolveNow = {
   // so mission control can say how long it has been offline
   lastHeartbeat?: string
 }
+
+// ---- v3: the multiverse. every world looks like its decisions ----
+
+// all fractions 0..1. energyMix sums to 1. railLinks are region ids this region has rail to
+export type RegionVisual = {
+  energyMix: { solar: number; wind: number; nuclear: number; fossil: number; hydro: number }
+  railLinks: string[]; farmland: number; forest: number; pollution: number; urbanDensity: number; lightDensity: number
+  damage: { kind: 'none'|'famine'|'revolt'|'war'|'collapse'|'disaster'; level: number }
+  landmarks: { kind: string; label: string; tick: number; lawId?: string }[]
+}
+export type SpaceAsset = {
+  id: string; kind: 'station'|'moon_base'|'mars_habitat'|'asteroid_mine'|'probe'|'ship'; body: 'earth_orbit'|'moon'|'mars'|'asteroid_belt'|'outer'
+  label: string; builtTick: number; status: 'active'|'dark'|'destroyed'; population?: number
+}
+// accent is a hex color
+export type ArchStyle = { towerShape: 'stepped'|'rounded'|'spire'|'stacked'|'dome'; accent: string; roofStyle: 'flat'|'peaked'|'garden' }
+export type Epitaph = { line: string; causeKind: RegionVisual['damage']['kind'] }
+// people moving this tick. from/to are region ids
+export type Flow = { from: string; to: string; toCityId?: string; people: number; reason: string; forced: boolean }
+// effect: score delta attributed to the step (+ helped). confidence 0..1
+export type Step = { id: string; text: string; kind: 'law'|'budget'|'policy'|'city'|'research'; helpedWorlds: string[]; hurtWorlds: string[]; effect: number; confidence: number }

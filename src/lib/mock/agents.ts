@@ -1,5 +1,6 @@
 // MOCK agents: original sci-fi governor names, their worlds, lineage, history. the real roster comes from GET /api/agents
 import type { Agent, Divergence, Frontier, HallEntry, RunRecord } from '@/lib/types'
+import { archStyleFor } from './v3'
 
 const FRONTIER_RANK: Frontier[] = ['none', 'moon_landing', 'moon_base', 'mars_crewed', 'mars_settlement', 'mars_self_sustaining', 'asteroid_mining', 'outer_system']
 export const frontierRank = (f: Frontier) => Math.max(0, FRONTIER_RANK.indexOf(f))
@@ -29,6 +30,7 @@ export function buildAgents(records: RunRecord[]): Agent[] {
     const deaths = mine.filter((r) => r.summary.status === 'destroyed').length
     return {
       ...a,
+      archStyle: archStyleFor(a.id),
       runIds: mine.map((r) => r.runId),
       worlds: mine.length + extraWorlds,
       deaths: deaths + extraDeaths,
