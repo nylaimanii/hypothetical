@@ -40,3 +40,10 @@ body {
 .scroll-thin { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--ink) 25%, transparent) transparent; }
 
 input[type="range"] { accent-color: var(--ink); }
+
+@keyframes feed-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+.feed-in { animation: feed-in 0.45s ease-out both; }
+@keyframes caption-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes caption-out { from { opacity: 1; } to { opacity: 0; transform: translateY(6px); } }
+.caption-in { animation: caption-in 0.5s ease-out both; }
+.caption-out { animation: caption-out 0.5s ease-in both; }

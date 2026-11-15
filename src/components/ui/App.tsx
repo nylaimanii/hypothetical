@@ -5,6 +5,7 @@ import { TICKS_PER_SECOND, useStore } from '../state/store'
 import { api, Offline } from './api'
 import Inspector from './Inspector'
 import { SideDrawer, useNarrow } from './Side'
+import { Caption, EventFeed, Intro, useIntroGate, useSound } from './Extras'
 import Timeline from './Timeline'
 import LivePanel from './LivePanel'
 import { Leaderboard, ModeToggle, RulesDrawer, TopLeft, TopRight } from './Chrome'
@@ -88,6 +89,8 @@ export default function App() {
   usePlayback()
   useRuns()
   useLive()
+  useSound()
+  useIntroGate()
   const setLive = useStore((s) => s.setLive)
   const liveRunId = useStore((s) => s.liveRunId)
   const drawerOpen = useStore((s) => s.drawerOpen)
@@ -137,6 +140,7 @@ export default function App() {
                 <Leaderboard />
                 <LivePanel />
               </SideDrawer>
+              <div className={`absolute right-0 top-12 flex min-h-0 ${DEV ? 'bottom-14' : 'bottom-0'}`}><EventFeed /></div>
               <SideDrawer side="right" label="details" open={rightOpen} onToggle={() => setRightOpen(!rightOpen)} reserveBottom={DEV}>
                 <Inspector />
                 {drawerOpen && <RulesDrawer />}
@@ -148,15 +152,20 @@ export default function App() {
                 <Leaderboard />
                 <LivePanel />
               </div>
-              <div className={`scroll-thin flex min-h-0 flex-col items-end gap-3 overflow-y-auto ${DEV ? 'mb-14' : ''}`}>
-                <Inspector />
-                {drawerOpen && <RulesDrawer />}
+              <div className={`flex min-h-0 items-stretch gap-3 ${DEV ? 'mb-14' : ''}`}>
+                <div className="scroll-thin flex min-h-0 flex-col items-end gap-3 overflow-y-auto">
+                  <Inspector />
+                  {drawerOpen && <RulesDrawer />}
+                </div>
+                <EventFeed />
               </div>
             </>
           )}
+          <div className="pointer-events-none absolute bottom-2 left-1/2 z-0 -translate-x-1/2"><Caption /></div>
         </div>
         <div className="mt-3 shrink-0 xl:mt-4"><Timeline /></div>
       </div>
+      <Intro />
     </main>
   )
 }

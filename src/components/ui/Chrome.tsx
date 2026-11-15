@@ -5,6 +5,7 @@ import { mockRuns } from '@/lib/mock/run'
 import { useCurrentFrame, useStore } from '../state/store'
 import { Bar, Num, Section, fmt } from './bits'
 import { api, Offline } from './api'
+import { DirectorToggle, SoundControls } from './Extras'
 
 export function StatusPill({ status }: { status: string }) {
   const danger = status === 'destroyed'
@@ -62,6 +63,8 @@ export function TopRight({ onLive }: { onLive: () => void }) {
           <button key={q} onClick={() => setQuality(q)} className={`whitespace-nowrap rounded-full px-2 py-1 xl:px-2.5 ${quality === q ? 'bg-ink text-bone' : 'text-ink/60 hover:bg-ink/5'}`}>{q}</button>
         ))}
       </div>
+      <DirectorToggle />
+      <SoundControls />
       <button onClick={onLive} className={`panel whitespace-nowrap px-3 py-2 text-[12px] xl:px-4 xl:text-[13px] ${liveRunId ? 'bg-ink! text-bone' : 'hover:bg-bone'}`}>{liveRunId ? 'live on' : 'play live'}</button>
       <button onClick={() => setDrawer(!drawerOpen)} className={`panel whitespace-nowrap px-3 py-2 text-[12px] xl:px-4 xl:text-[13px] ${drawerOpen ? 'bg-ink! text-bone' : 'hover:bg-bone'}`}>world rules</button>
     </div>

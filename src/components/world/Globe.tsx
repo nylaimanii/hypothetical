@@ -15,6 +15,8 @@ import Moon from './Moon'
 import Symbols, { spaceportId } from './Symbols'
 import Launches from './Launches'
 import PhysicsLayer from './PhysicsLayer'
+import Director from './Director'
+import { soundState } from '../sound/engine'
 import { Labels, MigrationLines } from './Overlays'
 import { pipRegistry, usePhys } from './pipShared'
 import { useCurrentFrame, useStore } from '../state/store'
@@ -68,6 +70,7 @@ function CameraRig({ destroyed }: { destroyed: boolean }) {
   const controls = useRef<OrbitControlsImpl>(null)
   const setZoom = useStore((s) => s.setZoom)
   const zoomOut = useRef(0)
+  const introOpen = useStore((s) => s.introOpen)
   useEffect(() => { if (destroyed) zoomOut.current = performance.now() / 1000 }, [destroyed])
   const camera = useThree((s) => s.camera)
   const scene = useThree((s) => s.scene)
@@ -81,6 +84,7 @@ function CameraRig({ destroyed }: { destroyed: boolean }) {
       store: useStore,
       pips: pipRegistry,
       phys: usePhys,
+      sound: soundState,
       camera,
       scene,
       THREE,
@@ -102,7 +106,7 @@ function CameraRig({ destroyed }: { destroyed: boolean }) {
     const hit = ray.intersectSphere(new THREE.Sphere(new THREE.Vector3(), LAND_TOP), new THREE.Vector3())
     sceneRefs.focus.copy(hit ?? camera.position.clone().setLength(LAND_TOP))
   })
-  return <OrbitControls ref={controls} makeDefault enablePan={false} enableDamping dampingFactor={0.07} minDistance={MIN_DIST} maxDistance={MAX_DIST} zoomSpeed={0.7} />
+  return <OrbitControls ref={controls} makeDefault enablePan={false} enableDamping dampingFactor={0.07} minDistance={MIN_DIST} maxDistance={MAX_DIST} zoomSpeed={0.7} autoRotate={introOpen} autoRotateSpeed={0.35} />
 }
 
 // frame events become visual juice; disasters also become physical shockwaves
@@ -232,6 +236,7 @@ export default function Globe() {
         )}
         <JuiceDriver />
         <CameraRig destroyed={destroyed} />
+        <Director />
         <Effects high={high} />
         {dev && <Stats className="!left-auto !right-4 !top-auto !bottom-[92px]" />}
       </Canvas>

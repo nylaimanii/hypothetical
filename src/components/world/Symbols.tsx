@@ -1,5 +1,5 @@
 'use client'
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { Outlines, RoundedBox } from '@react-three/drei'
@@ -200,12 +200,14 @@ export default function Symbols({ frame, spaceport }: { frame: Frame; spaceport?
   const quality = useStore((s) => s.quality)
   const stage = STAGE_INDEX[frame.moonStage]
   const root = useRef<THREE.Group>(null)
+  const [warm, setWarm] = useState(false)
+  useEffect(() => { const id = setTimeout(() => setWarm(true), 400); return () => clearTimeout(id) }, [])
   useLayoutEffect(() => {
     root.current?.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = quality === 'high'; o.receiveShadow = quality === 'high' } })
   })
-  if (zoom === 'far') return null
+  // mounted from the start and drawn once so shaders compile at load, then hidden at far zoom
   return (
-    <group ref={root}>
+    <group ref={root} visible={zoom !== 'far' || !warm}>
       {frame.regions.map((r) => (
         <group key={r.id}>
           {LAYERS.map((layer, i) => {

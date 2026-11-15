@@ -18,6 +18,9 @@ export type Quality = 'high' | 'fast'
 export type Source = 'mock' | 'api' | 'live'
 // a visual effect trigger, from frame events or local injections
 export type Juice = { id: number; kind: WorldEvent['kind']; regionId?: string; severity: number; text: string; at: number }
+// a camera shot: a region or the core, asked for by the director, the feed, or the user
+export type ShotRequest = { id: number; target: 'region' | 'core'; regionId?: string; force?: boolean }
+export type Caption = { id: number; parts: { t: string; mono?: boolean }[]; danger?: boolean }
 export type SentOverride = Override & { tick: number; responded?: boolean; local?: boolean }
 
 type State = {
@@ -40,6 +43,14 @@ type State = {
   overrides: SentOverride[]
   juice: Juice[]
   notice: string | null
+  director: boolean
+  directorPausedUntil: number // performance.now() ms
+  directorPaused: boolean
+  shot: ShotRequest | null
+  caption: Caption | null
+  soundOn: boolean
+  volume: number
+  introOpen: boolean
   setRecord: (r: RunRecord, source: Source) => void
   replaceRecord: (r: RunRecord) => void
   setRuns: (runs: RunSummary[], src: 'mock' | 'api') => void
@@ -58,9 +69,17 @@ type State = {
   markResponded: (ids: string[]) => void
   pushJuice: (j: Omit<Juice, 'id' | 'at'>) => void
   setNotice: (n: string | null) => void
+  setDirector: (on: boolean) => void
+  pauseDirector: (ms: number) => void
+  requestShot: (s: Omit<ShotRequest, 'id'>) => void
+  setCaption: (c: Omit<Caption, 'id'> | null) => void
+  setSound: (on: boolean) => void
+  setVolume: (v: number) => void
+  setIntro: (open: boolean) => void
 }
 
 let juiceId = 1
+let shotId = 1
 export const TICKS_PER_SECOND = 3
 
 export const useStore = create<State>((set) => ({
@@ -82,6 +101,14 @@ export const useStore = create<State>((set) => ({
   overrides: [],
   juice: [],
   notice: null,
+  director: true,
+  directorPausedUntil: 0,
+  directorPaused: false,
+  shot: null,
+  caption: null,
+  soundOn: false,
+  volume: 0.6,
+  introOpen: false,
   setRecord: (record, source) => set((s) => ({ record, source, playhead: source === 'live' ? (record.frames.at(-1)?.tick ?? 0) : 0, selection: null, overrides: s.record.runId === record.runId ? s.overrides : [] })),
   replaceRecord: (record) => set({ record }),
   setRuns: (runs, runsSource) => set({ runs, runsSource }),
@@ -100,6 +127,17 @@ export const useStore = create<State>((set) => ({
   markResponded: (ids) => set((s) => ({ overrides: s.overrides.map((o) => (ids.includes(o.id) ? { ...o, responded: true } : o)) })),
   pushJuice: (j) => set((s) => ({ juice: [...s.juice.filter((x) => performance.now() - x.at < 12000), { ...j, id: juiceId++, at: performance.now() }] })),
   setNotice: (notice) => set({ notice }),
+  setDirector: (director) => set({ director, directorPausedUntil: 0, directorPaused: false }),
+  pauseDirector: (ms) => {
+    const until = performance.now() + ms
+    set({ directorPausedUntil: until, directorPaused: true })
+    setTimeout(() => { if (useStore.getState().directorPausedUntil === until) set({ directorPaused: false }) }, ms + 20)
+  },
+  requestShot: (s) => set({ shot: { ...s, id: shotId++ } }),
+  setCaption: (c) => set({ caption: c ? { ...c, id: shotId++ } : null }),
+  setSound: (soundOn) => set({ soundOn }),
+  setVolume: (volume) => set({ volume }),
+  setIntro: (introOpen) => set({ introOpen }),
 }))
 
 export function frameIndexAt(frames: Frame[], tick: number) {
