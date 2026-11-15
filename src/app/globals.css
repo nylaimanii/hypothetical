@@ -1,26 +1,42 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bone: #efe8da;
+  --ink: #1d1b19;
+  --ember: #e4572e;
+  --dusk: #8d88a3;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bone: var(--bone);
+  --color-bone-deep: #e2d8c4;
+  --color-ink: var(--ink);
+  --color-ember: var(--ember);
+  --color-dusk: var(--dusk);
+  --font-display: var(--font-fraunces);
+  --font-mono: var(--font-jetbrains);
+  --font-sans: var(--font-fraunces);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html, body {
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bone);
+  color: var(--ink);
+  font-family: var(--font-fraunces), Georgia, serif;
 }
+
+.panel {
+  background: color-mix(in srgb, var(--bone) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  border-radius: 18px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 10px 30px -12px rgba(29, 27, 25, 0.35);
+  backdrop-filter: blur(10px);
+}
+
+.scroll-thin { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--ink) 25%, transparent) transparent; }
+
+input[type="range"] { accent-color: var(--ink); }
