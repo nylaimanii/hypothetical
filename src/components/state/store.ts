@@ -48,8 +48,8 @@ type State = {
   mode: 'ai' | 'baseline'
   zoom: Zoom
   quality: Quality
-  // close zoom fallback on high: 0 all on, 1 no pip shadows, 2 also no physics for off-screen pips
-  adaptive: 0 | 1 | 2
+  // fallback on high: 0 all on, 1 no clouds, 2 also no pip shadows, 3 also no physics for off-screen pips
+  adaptive: 0 | 1 | 2 | 3
   selection: Selection
   drawerOpen: boolean
   liveRunId: string | null
@@ -76,6 +76,7 @@ type State = {
   slim: Record<string, SlimMeta>
   globeOnly: boolean
   loading: string | null // what is loading, shown as a pill
+  daily: { open: boolean; year: number | null; peek: number | null }
   shortcutsOpen: boolean
   setRecord: (r: RunRecord, source: Source) => void
   replaceRecord: (r: RunRecord) => void
@@ -86,7 +87,7 @@ type State = {
   setMode: (m: 'ai' | 'baseline') => void
   setZoom: (z: Zoom) => void
   setQuality: (q: Quality) => void
-  setAdaptive: (a: 0 | 1 | 2) => void
+  setAdaptive: (a: 0 | 1 | 2 | 3) => void
   select: (s: Selection) => void
   setDrawer: (o: boolean) => void
   setLive: (id: string | null) => void
@@ -112,6 +113,7 @@ type State = {
   setSlim: (runId: string, meta: SlimMeta) => void
   setGlobeOnly: (on: boolean) => void
   setLoading: (what: string | null) => void
+  setDaily: (d: Partial<{ open: boolean; year: number | null; peek: number | null }>) => void
   setShortcuts: (open: boolean) => void
   mergeFrames: (runId: string, frames: Frame[]) => void
 }
@@ -158,6 +160,7 @@ export const useStore = create<State>((set) => ({
   slim: {},
   globeOnly: false,
   loading: null,
+  daily: { open: false, year: null, peek: null },
   shortcutsOpen: false,
   setRecord: (raw, source) => set((s) => { const record = source === 'mock' ? raw : normalizeRecord(raw); return { record, source, playhead: source === 'live' ? (record.frames.at(-1)?.tick ?? 0) : 0, selection: null, overrides: s.record.runId === record.runId ? s.overrides : [] } }),
   replaceRecord: (record) => set((s) => ({ record: s.source === 'mock' ? record : normalizeRecord(record) })),
@@ -197,6 +200,7 @@ export const useStore = create<State>((set) => ({
   setReel: (reel) => set({ reel }),
   setGlobeOnly: (globeOnly) => set({ globeOnly }),
   setLoading: (loading) => set({ loading }),
+  setDaily: (d) => set((s) => ({ daily: { ...s.daily, ...d } })),
   setShortcuts: (shortcutsOpen) => set({ shortcutsOpen }),
   setSlim: (runId, meta) => set((s) => ({ slim: { ...s.slim, [runId]: meta } })),
   mergeFrames: (runId, frames) => set((s) => {

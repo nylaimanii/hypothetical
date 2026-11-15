@@ -117,6 +117,7 @@ export function TopRight({ onLive }: { onLive: () => void }) {
     <div className="pointer-events-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap">
       <button onClick={() => setPanel(panel === 'offworld' ? null : 'offworld')} className={btn(panel === 'offworld')}>off-world</button>
       <button onClick={() => setPanel(panel === 'longevity' ? null : 'longevity')} className={btn(panel === 'longevity')}>200 years</button>
+      <button onClick={() => useStore.getState().setDaily({ open: true, year: null, peek: null })} className={btn(false)}>the daily</button>
       <button onClick={() => setPanel(panel === 'agents' ? null : 'agents')} className={btn(panel === 'agents')}>agents</button>
       <button onClick={() => setPanel(panel === 'hall' ? null : 'hall')} className={btn(panel === 'hall')}>hall</button>
       <Link href="/mission" className={`${btn(false)} flex items-center`}>mission</Link>
@@ -167,6 +168,8 @@ function LineageCurve({ rows, agents }: { rows: { generation: number; bestScore:
   const x = (g: number) => 3 + (g / gMax) * (W - 6)
   const y = (v: number) => H - 3 - (v / sMax) * (H - 8)
   const color = (i: number) => AGENT_COLORS[i % AGENT_COLORS.length]
+  // nothing scored yet: no chart, not a row of zeros
+  if (!rows.some((r) => r.bestScore > 0)) return <p className="text-[10.5px] text-ink/45">scores appear after the first finished worlds</p>
   // one generation so far: a line needs two points, so show the best score per lineage as bars
   if (gMax === 0 || new Set(rows.map((r) => r.generation)).size < 2) {
     const best = lineages.map((l) => ({ l, v: Math.max(...rows.filter((r) => (r.lineage ?? 'all') === l).map((r) => r.bestScore)) })).sort((a, b) => b.v - a.v)

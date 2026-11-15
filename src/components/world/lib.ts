@@ -5,6 +5,7 @@ import type { Topology, GeometryCollection } from 'topojson-specification'
 import type { Feature, MultiPolygon, Polygon } from 'geojson'
 import landTopo from 'world-atlas/land-110m.json'
 import type { Region } from '@/lib/types'
+import { biomeAt, landBand, oceanBand, type Biome } from './geodata'
 
 export const R = 10
 export const LAND_TOP = R + 0.22
@@ -96,7 +97,12 @@ export function shade(hex: string, f: number) {
 
 // ---- planet tiles: equal angle cube sphere so tiles sit on a voxel grid ----
 
-export type Tile = { pos: THREE.Vector3; normal: THREE.Vector3; quat: THREE.Quaternion; w: number; d: number; land: boolean; ice: boolean; region: number; lat: number; lon: number }
+export type Tile = { pos: THREE.Vector3; normal: THREE.Vector3; quat: THREE.Quaternion; w: number; d: number; land: boolean; ice: boolean; region: number; lat: number; lon: number; band: number; depth: number; biome: Biome }
+
+// land stacks up to 3 extra blocks of this height (real elevation, see geodata.ts)
+export const STEP = 0.085
+const TILES_N = 34
+let bandCache: Int8Array | null = null
 
 type Poly = { f: Feature<Polygon>; minLon: number; maxLon: number; minLat: number; maxLat: number; wrap: boolean }
 let polys: Poly[] | null = null
@@ -138,7 +144,7 @@ const FACES: [THREE.Vector3, THREE.Vector3, THREE.Vector3][] = [
 
 const tileCache = new Map<string, { tiles: Tile[]; neighbors: Int32Array[] }>()
 
-export function buildTiles(regions: Pick<Region, 'id' | 'lat' | 'lon'>[], n = 34) {
+export function buildTiles(regions: Pick<Region, 'id' | 'lat' | 'lon'>[], n = TILES_N) {
   const key = regions.map((r) => r.id).join(',') + n
   const hit = tileCache.get(key)
   if (hit) return hit
@@ -172,7 +178,7 @@ export function buildTiles(regions: Pick<Region, 'id' | 'lat' | 'lon'>[], n = 34
         const z = new THREE.Vector3().crossVectors(xdir, y).normalize()
         const x = new THREE.Vector3().crossVectors(y, z)
         const quat = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z))
-        tiles.push({ pos: normal.clone(), normal, quat, w, d, land, ice, region, lat, lon })
+        tiles.push({ pos: normal.clone(), normal, quat, w, d, land, ice, region, lat, lon, band: land && !ice ? landBand(lat, lon) : ice ? 1 : 0, depth: land ? 0 : oceanBand(lat, lon), biome: ice ? 'ice' : biomeAt(lat, lon) })
       }
     }
   }
@@ -188,6 +194,7 @@ export function buildTiles(regions: Pick<Region, 'id' | 'lat' | 'lon'>[], n = 34
   }
   const res = { tiles, neighbors }
   tileCache.set(key, res)
+  if (n === TILES_N) bandCache = Int8Array.from(tiles.map((t) => (t.land ? t.band : -1)))
   return res
 }
 
@@ -217,4 +224,24 @@ export function layerMetric(layer: (typeof LAYERS)[number], r: Region, all: Regi
     case 'biology': return clamp((r.foodKcalPerCapita - 1200) / 2600)
     case 'physics': return r.techLevel
   }
+}
+
+// the tile under a point: exact inverse of the equal angle cube sphere above
+export function tileIndexAt(p: THREE.Vector3, n = TILES_N) {
+  const u = p.clone().normalize()
+  let f = 0, best = -Infinity
+  FACES.forEach(([N], k) => { const d = u.dot(N); if (d > best) { best = d; f = k } })
+  const [N, U, V] = FACES[f]
+  const dn = u.dot(N)
+  const a = Math.atan(u.dot(U) / dn), b = Math.atan(u.dot(V) / dn)
+  const i = Math.min(n - 1, Math.max(0, Math.floor(((a + Math.PI / 4) / (Math.PI / 2)) * n)))
+  const j = Math.min(n - 1, Math.max(0, Math.floor(((b + Math.PI / 4) / (Math.PI / 2)) * n)))
+  return f * n * n + i * n + j
+}
+
+// surface radius where pips stand: on top of the stacked land blocks
+export function groundRadius(p: THREE.Vector3) {
+  if (!bandCache) return LAND_TOP
+  const b = bandCache[tileIndexAt(p)]
+  return LAND_TOP + Math.max(0, b) * STEP
 }

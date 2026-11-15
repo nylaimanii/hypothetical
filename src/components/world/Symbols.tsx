@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { Outlines, RoundedBox } from '@react-three/drei'
 import type { Frame, Layer, MoonStage, Region } from '@/lib/types'
-import { C, LAND_TOP, LAYERS, latLonToVec3, layerMetric, surfaceQuat, tangentBasis, vinyl } from './lib'
+import { C, LAND_TOP, LAYERS, groundRadius, latLonToVec3, layerMetric, surfaceQuat, tangentBasis, vinyl } from './lib'
 import { useStore } from '../state/store'
 
 export const STAGE_INDEX: Record<MoonStage, number> = { none: 0, orbital: 1, heavy_lift: 2, life_support: 3, lander: 4, crewed_landing: 5 }
@@ -15,6 +15,7 @@ export function symbolTransform(r: Pick<Region, 'lat' | 'lon'>, layerIdx: number
   const a = (layerIdx / LAYERS.length) * Math.PI * 2 + 0.3
   const rad = 1.7
   const pos = center.clone().multiplyScalar(LAND_TOP).addScaledVector(east, Math.cos(a) * rad).addScaledVector(north, Math.sin(a) * rad).normalize().multiplyScalar(LAND_TOP)
+  pos.setLength(groundRadius(pos))
   const quat = surfaceQuat(pos.clone().normalize(), north)
   return { pos, quat }
 }

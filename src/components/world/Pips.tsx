@@ -5,7 +5,7 @@ import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Outlines } from '@react-three/drei'
 import type { Behavior, Citizen, Frame } from '@/lib/types'
 import { dominant, valence } from '@/lib/mock/mood'
-import { C, HAIR_HEX, LAND_TOP, MONK, latLonToVec3, sceneRefs, shade, surfaceQuat, tangentBasis, vinyl } from './lib'
+import { C, HAIR_HEX, LAND_TOP, MONK, groundRadius, latLonToVec3, sceneRefs, shade, surfaceQuat, tangentBasis, vinyl } from './lib'
 import { HAIRS, P, buildW, hairGeometries, headScale, partGeometries, pipRegistry, pipScale, shoulderX, usePhys, type Agent } from './pipShared'
 import { CONFETTI_COLORS, EMOTION_ICON, EMOTION_TINT, ICONS, iconGeometries, propGeometries } from './pipProps'
 import { useStore } from '../state/store'
@@ -115,8 +115,12 @@ const onSurface = (center: THREE.Vector3, u: number, v: number, out: THREE.Vecto
   return out.copy(up).multiplyScalar(LAND_TOP).addScaledVector(east, u).addScaledVector(north, v).normalize().multiplyScalar(LAND_TOP)
 }
 
-// where the pip wants to be, by behavior
+// where the pip wants to be, by behavior, standing on the ground (ridges included)
 function rootAt(a: Agent, t: number, out: THREE.Vector3) {
+  rootFlat(a, t, out)
+  return out.setLength(groundRadius(out))
+}
+function rootFlat(a: Agent, t: number, out: THREE.Vector3) {
   const sd = a.citizen.personalitySeed
   if (a.migrant) {
     const s = (t * 0.01 + a.migrant.k / a.migrant.n / 3) % 1
@@ -268,9 +272,9 @@ export default function Pips({ frame }: { frame: Frame }) {
     if (!(visible && quality === 'high')) { setKeys([]); return }
     const pick = () => {
       const f = sceneRefs.focus.clone().normalize()
-      // adaptive level 2: only pips actually on screen keep physics
+      // adaptive level 3: only pips actually on screen keep physics
       const frustum = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse))
-      const onScreen = (k: string) => adaptive < 2 || frustum.intersectsSphere(new THREE.Sphere(pipRegistry.roots.get(k)!.pos, 0.3))
+      const onScreen = (k: string) => adaptive < 3 || frustum.intersectsSphere(new THREE.Sphere(pipRegistry.roots.get(k)!.pos, 0.3))
       const scored = agents
         .filter((a) => !a.migrant && !a.parentKey && !STILL.includes(a.behavior) && a.behavior !== 'celebrating' && a.behavior !== 'trend_following' && pipRegistry.roots.has(a.key) && onScreen(a.key))
         .map((a) => ({ k: a.key, d: a.home.dot(f) })).filter((x) => x.d > Math.cos(0.32)).sort((x, y) => y.d - x.d).slice(0, 40).map((x) => x.k).sort()
@@ -306,7 +310,8 @@ export default function Pips({ frame }: { frame: Frame }) {
       const parent = a.parentKey ? pipRegistry.roots.get(a.parentKey) : undefined
       if (parent) {
         const side = tangentBasis(parent.pos).east
-        pos = _v.copy(parent.pos).addScaledVector(parent.heading, -0.16).addScaledVector(side, 0.1).setLength(LAND_TOP)
+        pos = _v.copy(parent.pos).addScaledVector(parent.heading, -0.16).addScaledVector(side, 0.1)
+        pos.setLength(groundRadius(pos))
         heading = _v2.copy(parent.heading)
       } else {
         pos = rootAt(a, tt, _v)
@@ -468,7 +473,7 @@ export default function Pips({ frame }: { frame: Frame }) {
     onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer' },
     onPointerOut: () => { document.body.style.cursor = '' },
   }
-  const shadow = quality === 'high' && adaptive < 1
+  const shadow = quality === 'high' && adaptive < 2
   const outline = <Outlines thickness={0.022} color={C.ink} />
   const im = (ref: React.RefObject<THREE.InstancedMesh | null>, geo: THREE.BufferGeometry, mat: THREE.Material, count: number, opts: { click?: boolean; outline?: boolean; noShadow?: boolean } = {}) => (
     <instancedMesh ref={ref} args={[geo, mat, count]} frustumCulled={false} castShadow={shadow && !opts.noShadow} receiveShadow={shadow && !opts.noShadow}

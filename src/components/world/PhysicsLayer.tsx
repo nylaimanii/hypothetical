@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { BallCollider, CapsuleCollider, CuboidCollider, RigidBody, useBeforePhysicsStep, useRapier, useSphericalJoint, type RapierRigidBody } from '@react-three/rapier'
-import { C, LAND_TOP, vinyl } from './lib'
+import { C, LAND_TOP, groundRadius, vinyl } from './lib'
 import { P, buildW, headScale, pipRegistry, pipScale, shoulderX, usePhys, type Agent } from './pipShared'
 import { useStore } from '../state/store'
 
@@ -88,7 +88,7 @@ function Ragdoll({ agent }: { agent: Agent }) {
     const st = state.current
     const pos = v3(tb.translation())
     const n = pos.clone().normalize()
-    const h = pos.length() - LAND_TOP
+    const h = pos.length() - groundRadius(pos)
     const H = P.hipY * s
     const rot = q4(tb.rotation())
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(rot)

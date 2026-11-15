@@ -3,7 +3,7 @@ import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import type { Frame } from '@/lib/types'
-import { LAND_TOP, buildTiles, latLonToVec3, sceneRefs, surfacePoint } from './lib'
+import { LAND_TOP, STEP, buildTiles, groundRadius, latLonToVec3, sceneRefs, surfacePoint } from './lib'
 
 const MAX = 900
 
@@ -20,7 +20,7 @@ export default function CityLights({ frame }: { frame: Frame }) {
       const count = Math.min(90, Math.round(Math.sqrt(r.population / 1e6) * 2.2))
       for (let k = 0; k < count && land.length; k++) {
         const t = land[Math.floor(rnd() * land.length)]
-        const p = surfacePoint(t.normal, (rnd() - 0.5) * t.w * 0.8, (rnd() - 0.5) * t.d * 0.8, LAND_TOP + 0.012)
+        const p = surfacePoint(t.normal, (rnd() - 0.5) * t.w * 0.8, (rnd() - 0.5) * t.d * 0.8, LAND_TOP + t.band * STEP + 0.012)
         pts.push({ n: p, s: 0.6 + rnd() * 0.8 })
       }
     })
@@ -28,7 +28,7 @@ export default function CityLights({ frame }: { frame: Frame }) {
       if (c.offWorld) continue
       const center = latLonToVec3(c.lat, c.lon, 1)
       const n = Math.min(40, 6 + Math.round(Math.log10(Math.max(10, c.population)) * 4))
-      for (let k = 0; k < n; k++) pts.push({ n: surfacePoint(center, (rnd() - 0.5) * 0.7, (rnd() - 0.5) * 0.7, LAND_TOP + 0.012), s: 0.9 + rnd() * 0.9 })
+      for (let k = 0; k < n; k++) { const q = surfacePoint(center, (rnd() - 0.5) * 0.7, (rnd() - 0.5) * 0.7, LAND_TOP); pts.push({ n: q.setLength(groundRadius(q) + 0.012), s: 0.9 + rnd() * 0.9 }) }
     }
     return pts.slice(0, MAX)
   }, [frame.regions, frame.cities, tiles])

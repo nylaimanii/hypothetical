@@ -9,6 +9,7 @@ import { Caption, EventFeed, Intro, useIntroGate, useSound } from './Extras'
 import { stopReel } from './Timeline'
 import { loadAgents, openRun, startCompare } from './worlds'
 import Chronicle from './Chronicle'
+import { DailyPaper, DailyPeek } from './Daily'
 import { ShortcutSheet, toggleGlobeOnly, useShortcuts } from './Shortcuts'
 import { ensureWindow, needsWindow } from '../state/frames'
 import { AgentsPanel, HallPanel } from './Agents'
@@ -293,9 +294,11 @@ export default function App() {
             </div>
           )}
           <div className="pointer-events-none absolute bottom-2 left-1/2 z-0 -translate-x-1/2"><Caption /></div>
+          {!compare && <div className="absolute bottom-2 left-0 z-20"><DailyPeek /></div>}
         </div>
         <div className="mt-3 shrink-0 xl:mt-4"><Timeline /></div>
       </div>
+      <DailyPaper />
       <ShortcutSheet />
       <Intro />
     </main>

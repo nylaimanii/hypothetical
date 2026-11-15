@@ -7,6 +7,7 @@ import { ToneMappingMode } from 'postprocessing'
 import type { Frame } from '@/lib/types'
 import Planet from './Planet'
 import CityLights from './CityLights'
+import { Atmosphere, Clouds, DisasterFx } from './Weather'
 import Core from './Core'
 import Moon from './Moon'
 import { KeyLight, Sky } from './Globe'
@@ -23,6 +24,9 @@ export default function WorldGlobe({ frame, prev, pulseKey, gray = false, autoRo
         <Suspense fallback={null}>
           <Planet frame={frame} />
           <CityLights frame={frame} />
+          <Atmosphere />
+          <Clouds frame={frame} />
+          <DisasterFx frame={frame} />
           <Core frame={frame} prev={prev} idx={pulseKey} />
           <Moon frame={frame} />
         </Suspense>

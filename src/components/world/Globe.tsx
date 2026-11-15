@@ -21,6 +21,7 @@ import { Labels, MigrationLines } from './Overlays'
 import { pipRegistry, usePhys } from './pipShared'
 import { sunDirection, tickToDate } from './time'
 import CityLights from './CityLights'
+import { Atmosphere, Clouds, DisasterFx } from './Weather'
 import { useCurrentFrame, useStore } from '../state/store'
 
 export function Sky() {
@@ -90,6 +91,7 @@ function CameraRig({ destroyed }: { destroyed: boolean }) {
   useEffect(() => { if (destroyed) zoomOut.current = performance.now() / 1000 }, [destroyed])
   const camera = useThree((s) => s.camera)
   const scene = useThree((s) => s.scene)
+  const gl = useThree((s) => s.gl)
   useEffect(() => {
     // dev only: lets the browser console move the camera, eg __hyp.zoom(14)
     if (process.env.NODE_ENV !== 'development') return
@@ -103,9 +105,10 @@ function CameraRig({ destroyed }: { destroyed: boolean }) {
       sound: soundState,
       camera,
       scene,
+      gl,
       THREE,
     }
-  }, [camera, scene])
+  }, [camera, scene, gl])
   useFrame(({ camera }, dt) => {
     let d = camera.position.length()
     const since = performance.now() / 1000 - zoomOut.current
@@ -156,26 +159,34 @@ function JuiceDriver() {
 // dev only perf switches: ?noao ?nopcss ?nophys
 const dbg = (k: string) => process.env.NODE_ENV === 'development' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has(k)
 
-// close zoom on high: under 50fps for 2s drops pip shadows, then physics for off-screen pips.
-// 2s at 58fps or better turns them back on, last one off first
+// on high: under 50fps for 2s drops clouds, then pip shadows, then physics for off-screen pips.
+// 2s at 58fps or better turns them back on, last one off first. clouds can go at any zoom; the rest only matter close up
 function AdaptiveQuality({ high }: { high: boolean }) {
-  const t = useRef({ frames: 0, window: 0, low: 0, good: 0 })
+  const t = useRef({ frames: 0, window: 0, low: 0, good: 0, sq: 0 })
   useFrame((_, dt) => {
     const s = useStore.getState()
     const w = t.current
-    if (!high || s.zoom !== 'close') {
+    if (!high) {
       if (s.adaptive !== 0) s.setAdaptive(0)
       w.low = 0; w.good = 0
       return
     }
     w.frames++
     w.window += dt
+    w.sq += dt * dt
     if (w.window < 0.25) return
     const fps = w.frames / w.window
-    if (fps < 50) { w.low += w.window; w.good = 0 } else if (fps >= 58) { w.good += w.window; w.low = 0 } else { w.low = 0; w.good = 0 }
-    w.frames = 0; w.window = 0
-    if (w.low >= 2 && s.adaptive < 2) { s.setAdaptive((s.adaptive + 1) as 1 | 2); w.low = 0 }
-    if (w.good >= 2 && s.adaptive > 0) { s.setAdaptive((s.adaptive - 1) as 0 | 1); w.good = 0 }
+    // a browser or display capped at 30hz gives slow but perfectly even frames; real overload is uneven.
+    // only step down when frames are both slow and jittery, so a capped tab keeps its clouds
+    const mean = w.window / w.frames
+    const jitter = Math.sqrt(Math.max(0, w.sq / w.frames - mean * mean)) * 1000
+    const capped = jitter < 1.5
+    if (fps < 50 && !capped) { w.low += w.window; w.good = 0 } else if (fps >= 58 || capped) { w.good += w.window; w.low = 0 } else { w.low = 0; w.good = 0 }
+    w.frames = 0; w.window = 0; w.sq = 0
+    const cap = s.zoom === 'close' ? 3 : 1
+    if (w.low >= 2 && s.adaptive < cap) { s.setAdaptive((s.adaptive + 1) as 1 | 2 | 3); w.low = 0 }
+    if (w.good >= 2 && s.adaptive > 0) { s.setAdaptive((s.adaptive - 1) as 0 | 1 | 2); w.good = 0 }
+    if (s.adaptive > cap && w.good >= 2) { s.setAdaptive(cap as 1); w.good = 0 }
   })
   return null
 }
@@ -236,6 +247,9 @@ export default function Globe() {
         <Suspense fallback={null}>
           <Planet frame={frame} />
           <CityLights frame={frame} />
+          <Atmosphere />
+          <Clouds frame={frame} />
+          <DisasterFx frame={frame} />
           <Core frame={frame} prev={prev} idx={idx} />
           <Moon frame={frame} />
           <Symbols frame={frame} spaceport={spaceport} />
