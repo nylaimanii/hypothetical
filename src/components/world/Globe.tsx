@@ -29,6 +29,7 @@ import CrowdDots from './CrowdDots'
 import CityMarkers from './geo/CityMarkers'
 import CountryNames from './geo/CountryNames'
 import BorderRidges from './geo/BorderRidges'
+import StateRidges from './geo/StateRidges'
 import TrendArrows from './geo/TrendArrows'
 import Orrery from './Orrery'
 import DeadWorld, { CoreShards, useDeathMood } from './DeadWorld'
@@ -313,7 +314,8 @@ export default function Globe() {
         camera={{ position: [20, 16, 56], fov: 38, near: 0.05, far: 500 }}
         // other views cover the globe: stop rendering it underneath
         frameloop={view === 'globe' ? 'always' : 'never'}
-        onPointerMissed={() => select(null)}
+        // only a click on the canvas itself clears the selection; clicks on floating labels bubble here too
+        onPointerMissed={(e) => { if ((e.target as HTMLElement | null)?.tagName === 'CANVAS') select(null) }}
       >
         <PerformanceMonitor bounds={() => [50, 58]} flipflops={6} onIncline={() => setDpr((d) => Math.min(cap, d + 0.25))} onDecline={() => setDpr((d) => Math.max(1, d - 0.25))} onFallback={() => setDpr(1)} />
         <AdaptiveQuality high={high} />
@@ -348,6 +350,7 @@ export default function Globe() {
           <CountryNames frame={frame} />
           <CityMarkers frame={frame} />
           <BorderRidges frame={frame} />
+          <StateRidges frame={frame} />
           <TrendArrows frame={frame} />
           {overlay === 'real' && <MigrationLines frame={frame} />}
           <Pips frame={frame} />

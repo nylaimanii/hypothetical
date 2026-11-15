@@ -11,6 +11,7 @@ import { useStore } from '../state/store'
 import { ChunkSet } from './chunks'
 import { isStatMode, regionModeColor, statColor } from './modes'
 import { COUNTRY_TABLE, tileCountries } from './geo/countries'
+import { hoverLine, placeForTile as resolvePlace } from './geo/resolve'
 
 const TILE_H = 0.5
 
@@ -106,7 +107,7 @@ export default function Planet({ frame }: { frame: Frame }) {
   const sets = useMemo(() => {
     const L = new ChunkSet(layout.land, tiles, geo, geoLo, landMat, { cast: shadow, receive: true, pick: true })
     const S = new ChunkSet(layout.stacks.map((x) => x.tile), tiles, blockGeo, blockGeoLo, landMat, { cast: shadow, receive: true, pick: true })
-    const O = new ChunkSet(layout.sea, tiles, geoLo, geoLo, ocean.mat, { receive: true })
+    const O = new ChunkSet(layout.sea, tiles, geoLo, geoLo, ocean.mat, { receive: true, pick: true })
     const F = new ChunkSet(layout.coast.map((x) => x.tile), tiles, foamGeo, foamGeo, foam.mat)
     const G = new ChunkSet(layout.land, tiles, geoLo, geoLo, glowMat, { renderOrder: 2 })
     return { L, S, O, F, G }
@@ -227,36 +228,17 @@ export default function Planet({ frame }: { frame: Frame }) {
     if (sel) select(sel)
     else if (t.region >= 0) select({ kind: 'region', id: frame.regions[t.region].id })
   }
-  // the most specific real place a tile belongs to. far: the country (states are too small to aim at).
-  // mid and close: the city whose footprint it falls in, else the country
-  const placeForTile = (ti: number) => {
-    const zoom = useStore.getState().zoom
-    const t = tiles[ti]
-    if (zoom !== 'far') {
-      const p = t.normal
-      let best: { id: string; d: number } | null = null
-      for (const c of frame.cities) {
-        if (c.offWorld) continue
-        const radius = (0.6 + Math.min(1, Math.sqrt(c.population / 37e6)) * 1.0) * t.w
-        const d = latLonToVec3(c.lat, c.lon, 1).distanceTo(p) * R
-        if (d < radius && (!best || d < best.d)) best = { id: c.id, d }
-      }
-      if (best) return { kind: 'city' as const, id: best.id }
-    }
-    const ci = tileCountries(tiles)[ti]
-    const iso = ci >= 0 ? COUNTRY_TABLE[ci].iso3 : undefined
-    if (iso && frame.countries?.some((c) => c.id === iso)) return { kind: 'country' as const, id: iso }
-    return null
-  }
+  // the most specific real place a tile belongs to (see geo/resolve.ts)
+  const placeForTile = (ti: number) => resolvePlace(frame, ti, useStore.getState().zoom)
   const stackTiles = useMemo(() => layout.stacks.map((s) => s.tile), [layout])
   // hovering land names its region in one plain line: the labels only show the biggest few
   const tipFor = (list: number[], set: ChunkSet) => (e: ThreeEvent<PointerEvent>) => {
     const k = e.instanceId != null ? set.globalId(e.object, e.instanceId) : undefined
-    const t = k !== undefined ? tiles[list[k]] : undefined
-    const r = t && t.region >= 0 ? frame.regions[t.region] : undefined
-    if (!r) return
-    const pop = r.population >= 1e9 ? `${(r.population / 1e9).toFixed(2)}B` : `${Math.round(r.population / 1e6)}M`
-    useStore.getState().setTip({ title: r.name, text: `${pop} people · approval ${Math.round(r.approval * 100)}%`, x: e.nativeEvent.clientX, y: e.nativeEvent.clientY })
+    if (k === undefined) return
+    // one line: the place's name and population (or the sea's name)
+    const sel = placeForTile(list[k])
+    const line = sel ? hoverLine(frame, sel) : null
+    if (line) useStore.getState().setTip({ ...line, x: e.nativeEvent.clientX, y: e.nativeEvent.clientY })
   }
   const hoverOn = (list: number[], set: ChunkSet) => ({
     onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer' },
@@ -269,7 +251,7 @@ export default function Planet({ frame }: { frame: Frame }) {
         <sphereGeometry args={[R - 0.2, 64, 48]} />
         <meshToonMaterial color={C.grout} gradientMap={toonGradient()} />
       </mesh>
-      <primitive object={sets.O.group} />
+      <primitive object={sets.O.group} onClick={pick(layout.sea, sets.O)} {...hoverOn(layout.sea, sets.O)} />
       <primitive object={sets.F.group} />
       <primitive object={sets.L.group} onClick={pick(layout.land, sets.L)} {...hoverOn(layout.land, sets.L)} />
       <primitive object={sets.S.group} onClick={pick(stackTiles, sets.S)} {...hoverOn(stackTiles, sets.S)} />

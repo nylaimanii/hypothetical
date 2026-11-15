@@ -21,6 +21,7 @@ export type Selection =
   | { kind: 'agent'; id: string }
   | { kind: 'country'; id: string }
   | { kind: 'admin'; id: string }
+  | { kind: 'sea'; ocean: number; chokepoint?: string }
   | null
 
 export type Zoom = 'far' | 'mid' | 'close'

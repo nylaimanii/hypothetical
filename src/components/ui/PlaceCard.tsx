@@ -6,8 +6,10 @@ import { useCurrentFrame, useStore } from '../state/store'
 import { Num, Sparkline, fmt } from './bits'
 import { regionPlaceStats } from '../world/modes'
 import { StoryLine, useLinks } from './chains'
+import { resolveAdmin, resolveCountry, seaInfo, type Crumb } from '../world/geo/resolve'
 
-type Place = { kind: 'country' | 'admin' | 'city'; id: string; name: string; stats: PlaceStats; sub: { text: string; go?: () => void }[]; regionId?: string }
+// crumbs sit above the name ("texas · united states · north america"); tap one to jump up
+type Place = { kind: 'country' | 'admin' | 'city'; id: string; name: string; stats: PlaceStats; crumbs: Crumb[]; meta: string[]; note?: string; popEstimate?: boolean; regionId?: string }
 
 const SIX: { key: keyof PlaceStats; label: string }[] = [
   { key: 'happiness', label: 'happiness' }, { key: 'economy', label: 'economy' }, { key: 'livability', label: 'livability' },
@@ -15,31 +17,24 @@ const SIX: { key: keyof PlaceStats; label: string }[] = [
 ]
 const WORDS: Partial<Record<keyof PlaceStats, string>> = { happiness: 'happiness', economy: 'the economy', livability: 'livability', foodSecurity: 'food', safety: 'safety', health: 'health', jobs: 'jobs', airQuality: 'clean air' }
 
-// find a place in a frame, whichever kind it is
+// find a place in a frame, whichever kind it is. untracked states and countries roll up their numbers and say so
 export function findPlace(f: Frame, kind: Place['kind'], id: string): Place | null {
-  const sel = useStore.getState().select
-  if (kind === 'country') {
-    const c = f.countries?.find((x) => x.id === id)
-    return c ? { kind, id, name: c.name, stats: c.stats, regionId: c.regionId, sub: [{ text: `part of ${f.regions.find((r) => r.id === c.regionId)?.name ?? 'its region'}`, go: () => sel({ kind: 'region', id: c.regionId }) }] } : null
-  }
-  if (kind === 'admin') {
-    const a = f.adminAreas?.find((x) => x.id === id)
-    const c = a && f.countries?.find((x) => x.id === a.countryId)
-    return a ? { kind, id, name: a.name, stats: a.stats, regionId: c?.regionId, sub: c ? [{ text: `in ${c.name}`, go: () => sel({ kind: 'country', id: c.id }) }] : [] } : null
+  if (kind === 'country' || kind === 'admin') {
+    const r = kind === 'country' ? resolveCountry(f, id) : resolveAdmin(f, id)
+    return r ? { kind, id, name: r.name, stats: r.stats, crumbs: r.crumbs, meta: [], note: r.note, popEstimate: r.popEstimate, regionId: r.region?.id } : null
   }
   const c = f.cities.find((x) => x.id === id)
   if (!c) return null
   const r = f.regions.find((x) => x.id === c.regionId)
-  const stats = c.stats ?? (r ? { ...regionPlaceStats(r), population: c.population } : null)
+  const co = c.countryId ? resolveCountry(f, c.countryId) : null
+  const stats = c.stats ?? (co ? { ...co.stats, population: c.population } : r ? { ...regionPlaceStats(r), population: c.population } : null)
   if (!stats) return null
-  const a = c.adminId ? f.adminAreas?.find((x) => x.id === c.adminId) : undefined
-  const co = c.countryId ? f.countries?.find((x) => x.id === c.countryId) : undefined
-  const sub = [
-    ...(a ? [{ text: a.name, go: () => sel({ kind: 'admin', id: a.id }) }] : []),
-    ...(co ? [{ text: co.name, go: () => sel({ kind: 'country', id: co.id }) }] : []),
-    ...(!c.real ? [{ text: `founded ${2026 + Math.floor((c.foundedTick + 10) / 12)}` }] : []),
+  const a = c.adminId ? resolveAdmin(f, c.adminId) : null
+  const crumbs: Crumb[] = [
+    ...(a && c.adminId ? [{ text: a.name, sel: { kind: 'admin' as const, id: c.adminId } }] : []),
+    ...(co && c.countryId ? [{ text: co.name, sel: { kind: 'country' as const, id: c.countryId } }, ...co.crumbs] : r ? [{ text: r.name, sel: { kind: 'region' as const, id: r.id } }] : []),
   ]
-  return { kind, id, name: c.name, stats, regionId: c.regionId, sub }
+  return { kind, id, name: c.name, stats, crumbs, meta: !c.real ? [`founded ${2026 + Math.floor((c.foundedTick + 10) / 12)}`] : [], note: c.stats ? undefined : co ? 'country average' : 'region average', regionId: c.regionId }
 }
 
 // the same place a year earlier, for the trend's why
@@ -88,15 +83,21 @@ export function PlaceCard({ kind, id }: { kind: Place['kind']; id: string }) {
     <div className="sheet-in panel pointer-events-auto w-[20rem] max-w-full p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
+          {place.crumbs.length > 0 && (
+            <div className="mb-0.5 flex flex-wrap gap-x-1 text-[11px] text-ink/50">
+              {place.crumbs.map((x, i) => <span key={x.text}>{i > 0 && '· '}<button onClick={() => x.sel && st.select(x.sel)} className="hover:text-ink hover:underline hover:decoration-ink/25 hover:underline-offset-2">{x.text}</button></span>)}
+            </div>
+          )}
           <div className="flex items-center gap-2 font-display text-[19px] leading-tight"><span className="truncate">{place.name}</span> <Arrow t={s.trend} /></div>
           <div className="mt-0.5 flex flex-wrap gap-x-1.5 text-[12px] text-ink/55">
-            <span><Num>{fmt.people(s.population)}</Num> people</span>
-            {place.sub.map((x) => <span key={x.text}>· {x.go ? <button onClick={x.go} className="underline decoration-ink/20 underline-offset-2 hover:text-ink">{x.text}</button> : x.text}</span>)}
+            <span>{place.popEstimate && 'about '}<Num>{fmt.people(s.population)}</Num> people{place.popEstimate && <span className="text-ink/40"> (estimate)</span>}</span>
+            {place.meta.map((m) => <span key={m}>· {m}</span>)}
           </div>
         </div>
         <button onClick={() => st.select(null)} aria-label="close" className="text-[16px] leading-none text-ink/40 hover:text-ink">×</button>
       </div>
       <div className="mt-3 space-y-1.5">{SIX.map((k) => <Bar key={k.key} label={k.label} v={s[k.key] as number} />)}</div>
+      {place.note && <div className="mt-1 text-right text-[10.5px] text-ink/45">numbers: {place.note}</div>}
       <div className="mt-3"><StoryLine story={frame.regions.find((r) => r.id === place.regionId)?.story} links={links} frame={frame} fallback={whyLine(s, before?.stats ?? null)} /></div>
       <div className="mt-2 flex gap-4 text-[12px]">
         <button onClick={() => st.setReport(true)} className="text-ink/60 underline decoration-ink/25 underline-offset-2 hover:text-ink">full report</button>
@@ -137,6 +138,27 @@ export function PlaceReport({ kind, id }: { kind: Place['kind']; id: string }) {
           population: {country.provenance.population?.kind === 'SOURCED' ? <a href={country.provenance.population.url} target="_blank" rel="noreferrer" className="underline">un world population prospects</a> : 'estimate'}. every other number here is an estimate from the sim.
         </p>
       )}
+    </div>
+  )
+}
+
+// a sea: its name, shipping, and the chokepoint if this is one
+export function SeaCard({ ocean, chokepoint }: { ocean: number; chokepoint?: string }) {
+  const { frame } = useCurrentFrame()
+  const info = seaInfo(frame, { ocean, chokepoint })
+  return (
+    <div className="sheet-in panel pointer-events-auto w-[20rem] max-w-full p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          {info.chokepoint && <div className="mb-0.5 text-[11px] text-ink/50">{info.name}</div>}
+          <div className="font-display text-[19px] leading-tight">{info.chokepoint ?? info.name}</div>
+        </div>
+        <button onClick={() => useStore.getState().select(null)} aria-label="close" className="text-[16px] leading-none text-ink/40 hover:text-ink">×</button>
+      </div>
+      <p className="mt-2 text-[12.5px] leading-snug text-ink/75">
+        shipping: {info.shipping}{info.status && <>. chokepoint: <span className={info.status.startsWith('open') ? '' : 'text-ember'}>{info.status}</span></>}
+      </p>
+      <p className="mt-1 text-[10.5px] text-ink/45">traffic is an estimate until real shipping lanes arrive</p>
     </div>
   )
 }

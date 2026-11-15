@@ -18,7 +18,7 @@ import Dossier from './Dossier'
 import { EpitaphCard } from './WorldViews'
 import { agentOf, prettyAgent, worldNumber } from './WorldTabs'
 import { openRun } from './worlds'
-import { PlaceCard, PlaceReport } from './PlaceCard'
+import { PlaceCard, PlaceReport, SeaCard } from './PlaceCard'
 import { StoryLine, useLinks } from './chains'
 
 const DEV = process.env.NODE_ENV === 'development'
@@ -319,7 +319,8 @@ export function PanelHost() {
   const prev = record.frames[Math.max(0, idx - 12)]
   const links = useLinks(record, idx)
   let right: React.ReactNode = null
-  if (selection && (selection.kind === 'country' || selection.kind === 'admin' || selection.kind === 'city')) {
+  if (selection?.kind === 'sea') right = <SeaCard ocean={selection.ocean} chokepoint={selection.chokepoint} />
+  else if (selection && (selection.kind === 'country' || selection.kind === 'admin' || selection.kind === 'city')) {
     right = report ? <PlaceReport kind={selection.kind} id={selection.id} /> : <PlaceCard kind={selection.kind} id={selection.id} />
   } else if (selection?.kind === 'region' && !report) {
     const r = frame.regions.find((x) => x.id === selection.id)

@@ -89,9 +89,10 @@ export function applyChains(rec: RunRecord): RunRecord {
           yStories.set(r.id, {
             year: yearOf(f.tick) - 1,
             sentences: best.map((ch) => {
-              const [first, ...rest] = ch
-              const tail = rest.map((x) => x.what.toLowerCase()).join(', then ')
-              return `in ${yearOf(first.tick)}, ${first.what.toLowerCase()}${tail ? `, so ${tail}` : ''}.`
+              // one line: where it started and where it ended up; the steps between live in the chain on tap
+              const first = ch[0], last = ch[ch.length - 1]
+              const start = first.what.toLowerCase().split(':')[0]
+              return `in ${yearOf(first.tick)}, ${start}${last !== first ? `, so ${last.what.toLowerCase()}` : ''}.`
             }),
             chainIds: best.map((ch) => ch.map((x) => x.id)),
           })
