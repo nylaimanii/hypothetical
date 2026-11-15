@@ -10,7 +10,8 @@
     "evolve": "tsx scripts/evolve.ts",
     "live": "tsx scripts/live.ts",
     "run-one": "tsx scripts/run-one.ts",
-    "seed": "tsx scripts/seed.ts"
+    "seed": "tsx scripts/seed.ts",
+    "reality-check": "tsx scripts/reality-check.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",

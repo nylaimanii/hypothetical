@@ -25,6 +25,7 @@ npm run evolve -- --gens 10 --concurrency 1   # one gpu: keep it at 1
 # overnight, without the mac sleeping:
 nohup caffeinate -i npx tsx scripts/evolve.ts --gens 50 --concurrency 1 > data/evolve.log 2>&1 &
 npm run run-one -- --seed 1 --constitution technocrat
+npm run reality-check          # the no-ai twin vs real published data, writes data/reality-check.json
 npm run live -- --runId mylive --seed 7 --constitution-file path/to/constitution.txt
 ```
 
@@ -89,6 +90,16 @@ If any of these is missing, that feature logs once and is skipped. Nothing crash
   - **Other transient errors:** retried after 30s, 2m, 10m, then at the next hour.
 - LLM calls, tokens, wall time and cost ($0 on ollama) per world are logged to `data/reports/usage-<date>.json`. `/status` shows the average minutes per world and how many more fit before 7am.
 
+## reality check
+
+Once a month, the evolve watchdog compares the no-AI twin with real published data:
+
+- **Sources:** World Bank population (UN-based), and FAOSTAT food supply via Our World in Data.
+- **What it compares:** every year from 2026 that has real data. Until such data exists, it checks the starting point against the latest published year.
+- **Drift:** past 1% (population) or 3% (food), the matching `ESTIMATE` constants in `src/lib/sim/constants.ts` are flagged for tuning.
+- **Not comparable:** life expectancy, GDP and energy, because the twin only records population and food.
+- **Output:** results go to `data/reality-check.json`, a section of the PDF digest, and `GET /api/reality-check`. Drift also sends a telegram.
+
 ## telegram
 
 - **Every destroyed world:** world number, generation, date, its epitaph and cause; what it got wrong and the lesson it added; how far it got (frontier, period life expectancy, population); and its human cost.
@@ -141,6 +152,7 @@ PDFs styled like the site go out over gmail and are always saved to `data/report
 | `GET /api/hall` | `HallEntry[]` |
 | `GET /api/steps[?runs=a,b]` | `Step[]`, the cross-world recipe over real LLM worlds: up to 15 steps found in the worlds that did best for everyone (effect > 0), then up to 15 found in the dead ones. Each has plain-words text, effect, confidence (by sample size), and helped/hurt world ids as proof. Recomputed after every generation into `data/steps.json`; `?runs` restricts it to those worlds |
 | `GET /api/report/[runId]` | one world in plain words: a summary (5 lines max), then what it decided and why, what people felt, who moved and why, what it cost in lives, what it learned from earlier worlds, what killed it (or how far it got), and the steps it got right or wrong. Every claim carries refs: an event tick, a source url, or another world |
+| `GET /api/reality-check` | the latest monthly twin vs reality comparison, with flagged parameters (null before the first check) |
 | `GET /api/report/learning` | the cross-world story: every world in order, its cause of death, the lesson it added, and whether later worlds avoided that mistake |
 | `POST /api/branch` `{ runId, tick, agentId }` | `{ runId }`, a new live world from that moment, governed by that agent |
 | `GET /api/runs/[id]` | `RunRecord`; with `?slim=1` a `SlimRun` (no frames, yearly rows and decision rows) |

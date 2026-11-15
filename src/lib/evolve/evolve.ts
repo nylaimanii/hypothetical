@@ -27,6 +27,7 @@ import { trackWorld } from './usage'
 import { lineageRoots, recordAgentRun, registerPopulation, settleGeneration } from './agents'
 import { indexFeatures, recomputeSteps } from './steps'
 import { enterVersion, simVersionOnDisk, verifyLessons } from './version'
+import { realityCheckDue, runRealityCheck } from './reality'
 import { agentRanges, EXTRA_SEEDS, markUncertaintyDone, milestoneYears, readUncertainty, versionTopAgents } from './uncertainty'
 import { checkHall } from './hall'
 import { sendDigest, sendGoalReport } from '../notify/email'
@@ -482,6 +483,13 @@ function startWatchdogs(log: (l: string) => void, logFile?: string) {
         const mins = (control.lastWorldAt - startedAt) / MIN
         const perDay = Math.floor((1440 / Math.max(mins, 0.1)) * Math.max(1, control.concurrency))
         await send(`evolution restarted · gen ${control.generation} · first world took ${mins.toFixed(1)} min · est. ${perDay} worlds per day`)
+      }
+      // monthly: compare the no-ai twin against real published data, flag ESTIMATE parameters that drift
+      if (now - lastHourly >= 60 * MIN && realityCheckDue()) {
+        const r = await runRealityCheck()
+        const drifted = r.rows.filter(x => x.flagged)
+        log(`reality check: ${r.rows.length} comparisons, ${drifted.length} drifted, ${r.flags.length} parameters flagged`)
+        if (drifted.length) await send(`reality check: the no-ai twin drifted from real data\n${drifted.map(x => `${x.stat} ${x.year}: twin ${x.twin} vs real ${x.real} (${(x.drift * 100).toFixed(1)}%)`).join('\n')}\ntune: ${r.flags.map(f => f.name).join(', ') || 'no matching parameters found'}`)
       }
       if (now - lastHourly >= 60 * MIN) {
         lastHourly = now

@@ -9,6 +9,7 @@ import type { LearningRow } from '../evolve/lessons'
 import type { StepsFile } from '../evolve/steps'
 import { learningReport, worldReport, type LearningReport, type Ref, type ReportSection, type WorldReport } from '../evolve/report'
 import { epitaphOf } from './epitaph'
+import { readRealityCheck, type RealityCheck } from '../evolve/reality'
 import { familyTree, readAgents } from '../evolve/agents'
 import { agentRanges } from '../evolve/uncertainty'
 
@@ -294,6 +295,20 @@ function stepsPage(doc: Doc, steps: StepsFile) {
   list('in the worlds that died', steps.hurt, C.ember)
 }
 
+// the monthly reality check: the no-ai twin against real published data, and which ESTIMATEs to tune
+function realityPage(doc: Doc, r: RealityCheck | null) {
+  if (!r || !r.rows.length) return
+  h2(doc, 'reality check')
+  mono(doc, `checked ${r.checkedAt.slice(0, 10)}. the no-ai twin (2026 policies frozen) against real published data`)
+  table(doc, ['stat', 'year', 'kind', 'twin', 'real', 'drift'], r.rows.map(x => [x.stat === 'foodKcalPerCapita' ? 'food kcal per person' : x.stat, x.year, x.kind === 'start' ? 'starting point' : 'since 2026', x.stat === 'population' ? pop(x.twin) : x.twin, x.stat === 'population' ? pop(x.real) : x.real, `${(x.drift * 100).toFixed(2)}%`]), [1.6, 0.6, 1.1, 1, 1, 0.8])
+  for (const src of [...new Map(r.rows.map(x => [x.source.url, x.source])).values()]) doc.font('mono').fontSize(8).fillColor(C.muted).text(src.name, M, doc.y, { width: width(doc), link: src.url, underline: true })
+  if (r.flags.length) {
+    h3(doc, 'parameters to tune', C.ember)
+    for (const f of r.flags) { para(doc, `${f.name} = ${f.value} (drives ${f.stat === 'foodKcalPerCapita' ? 'food supply' : f.stat})`); if (f.note) mono(doc, f.note) }
+  } else mono(doc, 'no drift past the thresholds (population 1%, food 3%), nothing to tune')
+  for (const n of r.notComparable) mono(doc, n)
+}
+
 function learningStory(doc: Doc, rep: LearningReport, last = 15) {
   const entries = rep.entries.filter(e => e.status === 'destroyed' || e.lesson).slice(-last)
   if (!entries.length) return
@@ -349,6 +364,7 @@ export async function digestPdf({ generation: g, leaderboard, bestRecord, allRun
   }
 
   if (steps) stepsPage(doc, steps)
+  realityPage(doc, readRealityCheck())
   learningStory(doc, learningReport())
   if (bestRecord) aiVsTwin(doc, bestRecord)
 
