@@ -1,0 +1,2299 @@
+{
+  "generatedAt": "2026-11-15",
+  "note": "appearance weights are ESTIMATE (no global dataset exists at this granularity). heights and age structure are SOURCED. every region gives every skin tone a nonzero weight.",
+  "monkScale": "https://skintone.google/",
+  "regions": {
+    "na": {
+      "skinTone": {
+        "weights": [
+          0.08,
+          0.16,
+          0.18,
+          0.14,
+          0.12,
+          0.1,
+          0.08,
+          0.06,
+          0.05,
+          0.03
+        ],
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "US and Canada: majority European ancestry plus large Latino, African American, Asian and Indigenous populations, so a broad spread centered on the lighter half."
+      },
+      "hairType": {
+        "weights": {
+          "bald": 0.0459,
+          "buzz": 0.0712,
+          "short_straight": 0.155,
+          "long_straight": 0.155,
+          "short_wavy": 0.1206,
+          "long_wavy": 0.1125,
+          "short_coily": 0.0574,
+          "afro": 0.0344,
+          "locs": 0.023,
+          "braids": 0.0413,
+          "bun": 0.0873,
+          "ponytail": 0.0964
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "texture mix straight/wavy/coily = 0.45/0.35/0.2. mixed ancestry, roughly an eighth African descent. styles derived from texture in scripts/seed.ts hairStyleWeights, every style kept nonzero."
+      },
+      "hairColor": {
+        "weights": {
+          "black": 0.25,
+          "dark_brown": 0.3,
+          "brown": 0.22,
+          "blonde": 0.18,
+          "red": 0.05
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "brown shades dominant, blonde from European ancestry. gray and white are not in the base mix, they come from age in sim/citizens.ts."
+      },
+      "heightCm": {
+        "female": 163.5,
+        "male": 177.1,
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        },
+        "note": "NCD-RisC 2020 release, mean height at age 19 in 2019, population-weighted",
+        "sd": {
+          "female": 6.5,
+          "male": 7,
+          "provenance": {
+            "kind": "ESTIMATE"
+          },
+          "reasoning": "within-population adult height sd is about 6 to 7.5 cm in most national surveys; one value used for all regions"
+        }
+      },
+      "childHeightCm": {
+        "ages": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "female": [
+          113.3,
+          120.1,
+          126.2,
+          132.1,
+          137.8,
+          143.9,
+          150.1,
+          155.6,
+          159.4,
+          161.7,
+          162.8,
+          163.2,
+          163.3,
+          163.3,
+          163.5
+        ],
+        "male": [
+          113.7,
+          120.2,
+          126.3,
+          132.1,
+          137.7,
+          143.2,
+          148.8,
+          155.1,
+          162.2,
+          168.7,
+          173.2,
+          175.8,
+          177,
+          177.2,
+          177.1
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        }
+      },
+      "ageStructure": {
+        "bands": [
+          "0-4",
+          "5-9",
+          "10-14",
+          "15-19",
+          "20-24",
+          "25-29",
+          "30-34",
+          "35-39",
+          "40-44",
+          "45-49",
+          "50-54",
+          "55-59",
+          "60-64",
+          "65-69",
+          "70-74",
+          "75-79",
+          "80+"
+        ],
+        "share": [
+          0.0528,
+          0.05612,
+          0.05977,
+          0.06456,
+          0.06577,
+          0.06568,
+          0.06932,
+          0.06953,
+          0.06699,
+          0.06192,
+          0.05919,
+          0.05985,
+          0.06258,
+          0.05818,
+          0.04795,
+          0.03694,
+          0.04284
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.0004.FE.5Y"
+        },
+        "note": "UN World Population Prospects estimates as published by the World Bank (5-year bands by sex). https://population.un.org/wpp/"
+      },
+      "vitalRates": {
+        "tfr": 1.586,
+        "crudeDeathPer1000": 8.88,
+        "under5MortalityPer1000": 6.4,
+        "provenance": {
+          "tfr": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.TFRT.IN"
+          },
+          "crudeDeathPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.CDRT.IN"
+          },
+          "under5MortalityPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SH.DYN.MORT"
+          }
+        }
+      }
+    },
+    "latam": {
+      "skinTone": {
+        "weights": [
+          0.03,
+          0.07,
+          0.12,
+          0.16,
+          0.18,
+          0.16,
+          0.12,
+          0.08,
+          0.05,
+          0.03
+        ],
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "mestizo majority with European, Indigenous and Afro-Latin populations (Brazil, Colombia), so centered on mid tones with wide tails."
+      },
+      "hairType": {
+        "weights": {
+          "bald": 0.0461,
+          "buzz": 0.068,
+          "short_straight": 0.1555,
+          "long_straight": 0.1555,
+          "short_wavy": 0.1382,
+          "long_wavy": 0.129,
+          "short_coily": 0.0432,
+          "afro": 0.0259,
+          "locs": 0.0173,
+          "braids": 0.0311,
+          "bun": 0.0887,
+          "ponytail": 0.1014
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "texture mix straight/wavy/coily = 0.45/0.4/0.15. straight to wavy majority, coily common in Brazil and coastal regions. styles derived from texture in scripts/seed.ts hairStyleWeights, every style kept nonzero."
+      },
+      "hairColor": {
+        "weights": {
+          "black": 0.45,
+          "dark_brown": 0.35,
+          "brown": 0.13,
+          "blonde": 0.05,
+          "red": 0.02
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "mostly black and dark brown. gray and white are not in the base mix, they come from age in sim/citizens.ts."
+      },
+      "heightCm": {
+        "female": 159.3,
+        "male": 172.4,
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        },
+        "note": "NCD-RisC 2020 release, mean height at age 19 in 2019, population-weighted",
+        "sd": {
+          "female": 6.5,
+          "male": 7,
+          "provenance": {
+            "kind": "ESTIMATE"
+          },
+          "reasoning": "within-population adult height sd is about 6 to 7.5 cm in most national surveys; one value used for all regions"
+        }
+      },
+      "childHeightCm": {
+        "ages": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "female": [
+          111.1,
+          117.4,
+          123.2,
+          128.7,
+          134.2,
+          140.1,
+          146.2,
+          151.6,
+          155.3,
+          157.5,
+          158.5,
+          158.9,
+          158.9,
+          158.9,
+          159.3
+        ],
+        "male": [
+          112.9,
+          118.9,
+          124.6,
+          129.9,
+          135,
+          140,
+          145.1,
+          150.9,
+          157.5,
+          163.6,
+          167.8,
+          170.2,
+          171.4,
+          171.9,
+          172.4
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        }
+      },
+      "ageStructure": {
+        "bands": [
+          "0-4",
+          "5-9",
+          "10-14",
+          "15-19",
+          "20-24",
+          "25-29",
+          "30-34",
+          "35-39",
+          "40-44",
+          "45-49",
+          "50-54",
+          "55-59",
+          "60-64",
+          "65-69",
+          "70-74",
+          "75-79",
+          "80+"
+        ],
+        "share": [
+          0.0692,
+          0.07425,
+          0.07781,
+          0.07845,
+          0.07921,
+          0.07954,
+          0.07775,
+          0.07479,
+          0.07078,
+          0.06444,
+          0.05736,
+          0.05086,
+          0.04468,
+          0.03615,
+          0.02715,
+          0.01848,
+          0.01912
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.0004.FE.5Y"
+        },
+        "note": "UN World Population Prospects estimates as published by the World Bank (5-year bands by sex). https://population.un.org/wpp/"
+      },
+      "vitalRates": {
+        "tfr": 1.771,
+        "crudeDeathPer1000": 6.51,
+        "under5MortalityPer1000": 13.6,
+        "provenance": {
+          "tfr": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.TFRT.IN"
+          },
+          "crudeDeathPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.CDRT.IN"
+          },
+          "under5MortalityPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SH.DYN.MORT"
+          }
+        }
+      }
+    },
+    "europe": {
+      "skinTone": {
+        "weights": [
+          0.14,
+          0.24,
+          0.22,
+          0.15,
+          0.09,
+          0.06,
+          0.04,
+          0.03,
+          0.02,
+          0.01
+        ],
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "high-latitude ancestry concentrates the lighter tones; Mediterranean populations plus migrant communities from Africa, the Middle East and South Asia widen it."
+      },
+      "hairType": {
+        "weights": {
+          "bald": 0.046,
+          "buzz": 0.0609,
+          "short_straight": 0.1551,
+          "long_straight": 0.1551,
+          "short_wavy": 0.1723,
+          "long_wavy": 0.1608,
+          "short_coily": 0.0144,
+          "afro": 0.0115,
+          "locs": 0.0115,
+          "braids": 0.0115,
+          "bun": 0.0908,
+          "ponytail": 0.1103
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "texture mix straight/wavy/coily = 0.45/0.5/0.05. straight and wavy dominant. styles derived from texture in scripts/seed.ts hairStyleWeights, every style kept nonzero."
+      },
+      "hairColor": {
+        "weights": {
+          "black": 0.1,
+          "dark_brown": 0.32,
+          "brown": 0.3,
+          "blonde": 0.22,
+          "red": 0.06
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "widest natural hair color range of any region, blonde and red mostly northern. gray and white are not in the base mix, they come from age in sim/citizens.ts."
+      },
+      "heightCm": {
+        "female": 164.9,
+        "male": 178.7,
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        },
+        "note": "NCD-RisC 2020 release, mean height at age 19 in 2019, population-weighted",
+        "sd": {
+          "female": 6.5,
+          "male": 7,
+          "provenance": {
+            "kind": "ESTIMATE"
+          },
+          "reasoning": "within-population adult height sd is about 6 to 7.5 cm in most national surveys; one value used for all regions"
+        }
+      },
+      "childHeightCm": {
+        "ages": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "female": [
+          114.1,
+          120.2,
+          125.9,
+          131.5,
+          137.1,
+          143.1,
+          149.5,
+          155.2,
+          159.2,
+          161.8,
+          163.3,
+          164,
+          164.3,
+          164.5,
+          164.9
+        ],
+        "male": [
+          115.4,
+          121.6,
+          127.4,
+          132.8,
+          138.1,
+          143.3,
+          148.7,
+          154.8,
+          161.7,
+          168.2,
+          172.9,
+          175.8,
+          177.5,
+          178.3,
+          178.7
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        }
+      },
+      "ageStructure": {
+        "bands": [
+          "0-4",
+          "5-9",
+          "10-14",
+          "15-19",
+          "20-24",
+          "25-29",
+          "30-34",
+          "35-39",
+          "40-44",
+          "45-49",
+          "50-54",
+          "55-59",
+          "60-64",
+          "65-69",
+          "70-74",
+          "75-79",
+          "80+"
+        ],
+        "share": [
+          0.04366,
+          0.04936,
+          0.05294,
+          0.05473,
+          0.05403,
+          0.05652,
+          0.06141,
+          0.06647,
+          0.0678,
+          0.06861,
+          0.06929,
+          0.07044,
+          0.06782,
+          0.06119,
+          0.0527,
+          0.0433,
+          0.05974
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.0004.FE.5Y"
+        },
+        "note": "UN World Population Prospects estimates as published by the World Bank (5-year bands by sex). https://population.un.org/wpp/"
+      },
+      "vitalRates": {
+        "tfr": 1.348,
+        "crudeDeathPer1000": 10.78,
+        "under5MortalityPer1000": 4.2,
+        "provenance": {
+          "tfr": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.TFRT.IN"
+          },
+          "crudeDeathPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.CDRT.IN"
+          },
+          "under5MortalityPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SH.DYN.MORT"
+          }
+        }
+      }
+    },
+    "rus_ca": {
+      "skinTone": {
+        "weights": [
+          0.12,
+          0.22,
+          0.22,
+          0.17,
+          0.12,
+          0.07,
+          0.04,
+          0.02,
+          0.01,
+          0.01
+        ],
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "Russia skews light; Caucasus and Central Asian populations sit in the light-to-mid range."
+      },
+      "hairType": {
+        "weights": {
+          "bald": 0.0458,
+          "buzz": 0.0607,
+          "short_straight": 0.1891,
+          "long_straight": 0.1891,
+          "short_wavy": 0.1375,
+          "long_wavy": 0.1284,
+          "short_coily": 0.0143,
+          "afro": 0.0115,
+          "locs": 0.0115,
+          "braids": 0.0115,
+          "bun": 0.0905,
+          "ponytail": 0.11
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "texture mix straight/wavy/coily = 0.55/0.4/0.05. straight common in Central Asia, wavy in the Caucasus. styles derived from texture in scripts/seed.ts hairStyleWeights, every style kept nonzero."
+      },
+      "hairColor": {
+        "weights": {
+          "black": 0.25,
+          "dark_brown": 0.35,
+          "brown": 0.23,
+          "blonde": 0.14,
+          "red": 0.03
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "dark brown common, blonde in northern Russia. gray and white are not in the base mix, they come from age in sim/citizens.ts."
+      },
+      "heightCm": {
+        "female": 163,
+        "male": 174.9,
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        },
+        "note": "NCD-RisC 2020 release, mean height at age 19 in 2019, population-weighted",
+        "sd": {
+          "female": 6.5,
+          "male": 7,
+          "provenance": {
+            "kind": "ESTIMATE"
+          },
+          "reasoning": "within-population adult height sd is about 6 to 7.5 cm in most national surveys; one value used for all regions"
+        }
+      },
+      "childHeightCm": {
+        "ages": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "female": [
+          111.6,
+          117.3,
+          122.6,
+          127.8,
+          133.2,
+          139.1,
+          145.5,
+          151.3,
+          155.6,
+          158.5,
+          160.5,
+          161.7,
+          162.4,
+          162.8,
+          163
+        ],
+        "male": [
+          114.1,
+          119.8,
+          125,
+          129.9,
+          134.6,
+          139.2,
+          143.9,
+          149.5,
+          156,
+          162.4,
+          167.1,
+          170.5,
+          172.8,
+          174.2,
+          174.9
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        }
+      },
+      "ageStructure": {
+        "bands": [
+          "0-4",
+          "5-9",
+          "10-14",
+          "15-19",
+          "20-24",
+          "25-29",
+          "30-34",
+          "35-39",
+          "40-44",
+          "45-49",
+          "50-54",
+          "55-59",
+          "60-64",
+          "65-69",
+          "70-74",
+          "75-79",
+          "80+"
+        ],
+        "share": [
+          0.07009,
+          0.07537,
+          0.07652,
+          0.06612,
+          0.05773,
+          0.05772,
+          0.06994,
+          0.08347,
+          0.07507,
+          0.06614,
+          0.05934,
+          0.05235,
+          0.05546,
+          0.05027,
+          0.03741,
+          0.02334,
+          0.02365
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.0004.FE.5Y"
+        },
+        "note": "UN World Population Prospects estimates as published by the World Bank (5-year bands by sex). https://population.un.org/wpp/"
+      },
+      "vitalRates": {
+        "tfr": 2.021,
+        "crudeDeathPer1000": 9.82,
+        "under5MortalityPer1000": 9.9,
+        "provenance": {
+          "tfr": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.TFRT.IN"
+          },
+          "crudeDeathPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.CDRT.IN"
+          },
+          "under5MortalityPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SH.DYN.MORT"
+          }
+        }
+      }
+    },
+    "mideast": {
+      "skinTone": {
+        "weights": [
+          0.02,
+          0.06,
+          0.12,
+          0.18,
+          0.22,
+          0.18,
+          0.11,
+          0.06,
+          0.03,
+          0.02
+        ],
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "mostly light-to-mid olive tones, darker in Yemen and the Gulf coast, plus large South Asian and African migrant workforces in the Gulf."
+      },
+      "hairType": {
+        "weights": {
+          "bald": 0.0464,
+          "buzz": 0.065,
+          "short_straight": 0.1044,
+          "long_straight": 0.1044,
+          "short_wavy": 0.2088,
+          "long_wavy": 0.1949,
+          "short_coily": 0.029,
+          "afro": 0.0174,
+          "locs": 0.0116,
+          "braids": 0.0209,
+          "bun": 0.0905,
+          "ponytail": 0.1067
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "texture mix straight/wavy/coily = 0.3/0.6/0.1. wavy dominant. styles derived from texture in scripts/seed.ts hairStyleWeights, every style kept nonzero."
+      },
+      "hairColor": {
+        "weights": {
+          "black": 0.55,
+          "dark_brown": 0.32,
+          "brown": 0.1,
+          "blonde": 0.02,
+          "red": 0.01
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "black and dark brown dominant. gray and white are not in the base mix, they come from age in sim/citizens.ts."
+      },
+      "heightCm": {
+        "female": 157.7,
+        "male": 170.9,
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        },
+        "note": "NCD-RisC 2020 release, mean height at age 19 in 2019, population-weighted",
+        "sd": {
+          "female": 6.5,
+          "male": 7,
+          "provenance": {
+            "kind": "ESTIMATE"
+          },
+          "reasoning": "within-population adult height sd is about 6 to 7.5 cm in most national surveys; one value used for all regions"
+        }
+      },
+      "childHeightCm": {
+        "ages": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "female": [
+          108,
+          113.7,
+          119,
+          124.2,
+          129.6,
+          135.4,
+          141.6,
+          147.2,
+          151.2,
+          153.7,
+          155.3,
+          156.3,
+          156.8,
+          157.2,
+          157.8
+        ],
+        "male": [
+          109.7,
+          115.5,
+          121,
+          126.1,
+          131,
+          135.9,
+          140.9,
+          146.6,
+          153.2,
+          159.5,
+          164.1,
+          167,
+          168.9,
+          170.1,
+          170.9
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        }
+      },
+      "ageStructure": {
+        "bands": [
+          "0-4",
+          "5-9",
+          "10-14",
+          "15-19",
+          "20-24",
+          "25-29",
+          "30-34",
+          "35-39",
+          "40-44",
+          "45-49",
+          "50-54",
+          "55-59",
+          "60-64",
+          "65-69",
+          "70-74",
+          "75-79",
+          "80+"
+        ],
+        "share": [
+          0.10564,
+          0.10348,
+          0.10219,
+          0.09314,
+          0.08506,
+          0.0817,
+          0.07793,
+          0.07293,
+          0.06417,
+          0.05262,
+          0.04268,
+          0.03522,
+          0.02869,
+          0.02129,
+          0.01547,
+          0.00966,
+          0.00812
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.0004.FE.5Y"
+        },
+        "note": "UN World Population Prospects estimates as published by the World Bank (5-year bands by sex). https://population.un.org/wpp/"
+      },
+      "vitalRates": {
+        "tfr": 2.941,
+        "crudeDeathPer1000": 5.26,
+        "under5MortalityPer1000": 32.7,
+        "provenance": {
+          "tfr": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.TFRT.IN"
+          },
+          "crudeDeathPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.CDRT.IN"
+          },
+          "under5MortalityPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SH.DYN.MORT"
+          }
+        }
+      }
+    },
+    "nafrica": {
+      "skinTone": {
+        "weights": [
+          0.01,
+          0.04,
+          0.09,
+          0.15,
+          0.2,
+          0.2,
+          0.14,
+          0.09,
+          0.05,
+          0.03
+        ],
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "Mediterranean coast mid tones darkening southward into Sudan."
+      },
+      "hairType": {
+        "weights": {
+          "bald": 0.0461,
+          "buzz": 0.0715,
+          "short_straight": 0.0865,
+          "long_straight": 0.0865,
+          "short_wavy": 0.1903,
+          "long_wavy": 0.1776,
+          "short_coily": 0.0577,
+          "afro": 0.0346,
+          "locs": 0.0231,
+          "braids": 0.0415,
+          "bun": 0.0877,
+          "ponytail": 0.0969
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "texture mix straight/wavy/coily = 0.25/0.55/0.2. wavy dominant, coily common in Sudan and southern Egypt. styles derived from texture in scripts/seed.ts hairStyleWeights, every style kept nonzero."
+      },
+      "hairColor": {
+        "weights": {
+          "black": 0.6,
+          "dark_brown": 0.3,
+          "brown": 0.08,
+          "blonde": 0.015,
+          "red": 0.005
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "black and dark brown dominant, rare lighter shades in Berber populations. gray and white are not in the base mix, they come from age in sim/citizens.ts."
+      },
+      "heightCm": {
+        "female": 161.2,
+        "male": 174.6,
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        },
+        "note": "NCD-RisC 2020 release, mean height at age 19 in 2019, population-weighted",
+        "sd": {
+          "female": 6.5,
+          "male": 7,
+          "provenance": {
+            "kind": "ESTIMATE"
+          },
+          "reasoning": "within-population adult height sd is about 6 to 7.5 cm in most national surveys; one value used for all regions"
+        }
+      },
+      "childHeightCm": {
+        "ages": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "female": [
+          110.3,
+          115.9,
+          121.2,
+          126.4,
+          131.7,
+          137.5,
+          143.8,
+          149.5,
+          153.6,
+          156.2,
+          158,
+          159.1,
+          159.7,
+          160.4,
+          161.2
+        ],
+        "male": [
+          113.1,
+          118.5,
+          123.5,
+          128.3,
+          133,
+          137.6,
+          142.5,
+          148.1,
+          154.8,
+          161.1,
+          165.8,
+          169,
+          171.3,
+          173.1,
+          174.6
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        }
+      },
+      "ageStructure": {
+        "bands": [
+          "0-4",
+          "5-9",
+          "10-14",
+          "15-19",
+          "20-24",
+          "25-29",
+          "30-34",
+          "35-39",
+          "40-44",
+          "45-49",
+          "50-54",
+          "55-59",
+          "60-64",
+          "65-69",
+          "70-74",
+          "75-79",
+          "80+"
+        ],
+        "share": [
+          0.10385,
+          0.10704,
+          0.10437,
+          0.09163,
+          0.08017,
+          0.07462,
+          0.07259,
+          0.07032,
+          0.06405,
+          0.05497,
+          0.04642,
+          0.03927,
+          0.03237,
+          0.02479,
+          0.01703,
+          0.0096,
+          0.00691
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.0004.FE.5Y"
+        },
+        "note": "UN World Population Prospects estimates as published by the World Bank (5-year bands by sex). https://population.un.org/wpp/"
+      },
+      "vitalRates": {
+        "tfr": 2.893,
+        "crudeDeathPer1000": 5.59,
+        "under5MortalityPer1000": 27.9,
+        "provenance": {
+          "tfr": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.TFRT.IN"
+          },
+          "crudeDeathPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.CDRT.IN"
+          },
+          "under5MortalityPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SH.DYN.MORT"
+          }
+        }
+      }
+    },
+    "ssa": {
+      "skinTone": {
+        "weights": [
+          0.01,
+          0.01,
+          0.02,
+          0.03,
+          0.05,
+          0.09,
+          0.15,
+          0.22,
+          0.24,
+          0.18
+        ],
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "equatorial UV ancestry centers on the darker tones; Horn of Africa and southern Africa add mid tones, small European, Indian and mixed-ancestry populations in the south and east keep lighter tones present."
+      },
+      "hairType": {
+        "weights": {
+          "bald": 0.0441,
+          "buzz": 0.1147,
+          "short_straight": 0.011,
+          "long_straight": 0.011,
+          "short_wavy": 0.0232,
+          "long_wavy": 0.0216,
+          "short_coily": 0.2482,
+          "afro": 0.1489,
+          "locs": 0.0993,
+          "braids": 0.1787,
+          "bun": 0.0684,
+          "ponytail": 0.0309
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "texture mix straight/wavy/coily = 0.03/0.07/0.9. coily dominant. styles derived from texture in scripts/seed.ts hairStyleWeights, every style kept nonzero."
+      },
+      "hairColor": {
+        "weights": {
+          "black": 0.88,
+          "dark_brown": 0.1,
+          "brown": 0.015,
+          "blonde": 0.003,
+          "red": 0.002
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "black dominant. gray and white are not in the base mix, they come from age in sim/citizens.ts."
+      },
+      "heightCm": {
+        "female": 158.1,
+        "male": 169.5,
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        },
+        "note": "NCD-RisC 2020 release, mean height at age 19 in 2019, population-weighted",
+        "sd": {
+          "female": 6.5,
+          "male": 7,
+          "provenance": {
+            "kind": "ESTIMATE"
+          },
+          "reasoning": "within-population adult height sd is about 6 to 7.5 cm in most national surveys; one value used for all regions"
+        }
+      },
+      "childHeightCm": {
+        "ages": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "female": [
+          107.2,
+          112.9,
+          118.2,
+          123.4,
+          128.8,
+          134.7,
+          140.9,
+          146.6,
+          150.8,
+          153.5,
+          155.2,
+          156.3,
+          157,
+          157.5,
+          158.1
+        ],
+        "male": [
+          106.4,
+          112.2,
+          117.5,
+          122.5,
+          127.4,
+          132.3,
+          137.3,
+          143,
+          149.8,
+          156.2,
+          160.8,
+          164,
+          166.2,
+          167.9,
+          169.5
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        }
+      },
+      "ageStructure": {
+        "bands": [
+          "0-4",
+          "5-9",
+          "10-14",
+          "15-19",
+          "20-24",
+          "25-29",
+          "30-34",
+          "35-39",
+          "40-44",
+          "45-49",
+          "50-54",
+          "55-59",
+          "60-64",
+          "65-69",
+          "70-74",
+          "75-79",
+          "80+"
+        ],
+        "share": [
+          0.14782,
+          0.13373,
+          0.12221,
+          0.1091,
+          0.09343,
+          0.07878,
+          0.06696,
+          0.05691,
+          0.0476,
+          0.03853,
+          0.03034,
+          0.02387,
+          0.01845,
+          0.01354,
+          0.00912,
+          0.00541,
+          0.0042
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.0004.FE.5Y"
+        },
+        "note": "UN World Population Prospects estimates as published by the World Bank (5-year bands by sex). https://population.un.org/wpp/"
+      },
+      "vitalRates": {
+        "tfr": 4.317,
+        "crudeDeathPer1000": 8.05,
+        "under5MortalityPer1000": 69.3,
+        "provenance": {
+          "tfr": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.TFRT.IN"
+          },
+          "crudeDeathPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.CDRT.IN"
+          },
+          "under5MortalityPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SH.DYN.MORT"
+          }
+        }
+      }
+    },
+    "sasia": {
+      "skinTone": {
+        "weights": [
+          0.01,
+          0.02,
+          0.05,
+          0.1,
+          0.16,
+          0.21,
+          0.2,
+          0.14,
+          0.08,
+          0.03
+        ],
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "wide range from lighter northern populations to darker southern ones, centered on mid-to-dark tones."
+      },
+      "hairType": {
+        "weights": {
+          "bald": 0.0462,
+          "buzz": 0.0626,
+          "short_straight": 0.1559,
+          "long_straight": 0.1559,
+          "short_wavy": 0.1662,
+          "long_wavy": 0.1552,
+          "short_coily": 0.0202,
+          "afro": 0.0121,
+          "locs": 0.0115,
+          "braids": 0.0145,
+          "bun": 0.0907,
+          "ponytail": 0.109
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "texture mix straight/wavy/coily = 0.45/0.48/0.07. straight and wavy dominant. styles derived from texture in scripts/seed.ts hairStyleWeights, every style kept nonzero."
+      },
+      "hairColor": {
+        "weights": {
+          "black": 0.75,
+          "dark_brown": 0.22,
+          "brown": 0.025,
+          "blonde": 0.003,
+          "red": 0.002
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "black dominant. gray and white are not in the base mix, they come from age in sim/citizens.ts."
+      },
+      "heightCm": {
+        "female": 154.8,
+        "male": 166.3,
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        },
+        "note": "NCD-RisC 2020 release, mean height at age 19 in 2019, population-weighted",
+        "sd": {
+          "female": 6.5,
+          "male": 7,
+          "provenance": {
+            "kind": "ESTIMATE"
+          },
+          "reasoning": "within-population adult height sd is about 6 to 7.5 cm in most national surveys; one value used for all regions"
+        }
+      },
+      "childHeightCm": {
+        "ages": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "female": [
+          107.3,
+          113,
+          118.1,
+          123,
+          127.9,
+          133.2,
+          138.9,
+          144.2,
+          148,
+          150.6,
+          152.4,
+          153.7,
+          154.5,
+          154.8,
+          154.8
+        ],
+        "male": [
+          107,
+          113,
+          118.5,
+          123.5,
+          128.2,
+          132.7,
+          137.2,
+          142.4,
+          148.7,
+          154.8,
+          159.3,
+          162.4,
+          164.6,
+          165.9,
+          166.3
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        }
+      },
+      "ageStructure": {
+        "bands": [
+          "0-4",
+          "5-9",
+          "10-14",
+          "15-19",
+          "20-24",
+          "25-29",
+          "30-34",
+          "35-39",
+          "40-44",
+          "45-49",
+          "50-54",
+          "55-59",
+          "60-64",
+          "65-69",
+          "70-74",
+          "75-79",
+          "80+"
+        ],
+        "share": [
+          0.07932,
+          0.08156,
+          0.08497,
+          0.08766,
+          0.08905,
+          0.08561,
+          0.08116,
+          0.07632,
+          0.06938,
+          0.05952,
+          0.05168,
+          0.04376,
+          0.03646,
+          0.02898,
+          0.02097,
+          0.01242,
+          0.01118
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.0004.FE.5Y"
+        },
+        "note": "UN World Population Prospects estimates as published by the World Bank (5-year bands by sex). https://population.un.org/wpp/"
+      },
+      "vitalRates": {
+        "tfr": 1.98,
+        "crudeDeathPer1000": 6.45,
+        "under5MortalityPer1000": 26.7,
+        "provenance": {
+          "tfr": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.TFRT.IN"
+          },
+          "crudeDeathPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.CDRT.IN"
+          },
+          "under5MortalityPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SH.DYN.MORT"
+          }
+        }
+      }
+    },
+    "easia": {
+      "skinTone": {
+        "weights": [
+          0.06,
+          0.16,
+          0.26,
+          0.24,
+          0.14,
+          0.07,
+          0.03,
+          0.02,
+          0.01,
+          0.01
+        ],
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "light-to-mid tones dominate, darker in southern China, small minorities across the range."
+      },
+      "hairType": {
+        "weights": {
+          "bald": 0.0447,
+          "buzz": 0.0572,
+          "short_straight": 0.2949,
+          "long_straight": 0.2949,
+          "short_wavy": 0.0335,
+          "long_wavy": 0.0313,
+          "short_coily": 0.0112,
+          "afro": 0.0112,
+          "locs": 0.0112,
+          "braids": 0.0112,
+          "bun": 0.0889,
+          "ponytail": 0.1099
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "texture mix straight/wavy/coily = 0.88/0.1/0.02. straight dominant. styles derived from texture in scripts/seed.ts hairStyleWeights, every style kept nonzero."
+      },
+      "hairColor": {
+        "weights": {
+          "black": 0.85,
+          "dark_brown": 0.13,
+          "brown": 0.015,
+          "blonde": 0.003,
+          "red": 0.002
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "black dominant. gray and white are not in the base mix, they come from age in sim/citizens.ts."
+      },
+      "heightCm": {
+        "female": 163,
+        "male": 175.4,
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        },
+        "note": "NCD-RisC 2020 release, mean height at age 19 in 2019, population-weighted",
+        "sd": {
+          "female": 6.5,
+          "male": 7,
+          "provenance": {
+            "kind": "ESTIMATE"
+          },
+          "reasoning": "within-population adult height sd is about 6 to 7.5 cm in most national surveys; one value used for all regions"
+        }
+      },
+      "childHeightCm": {
+        "ages": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "female": [
+          114.4,
+          120.5,
+          126.1,
+          131.6,
+          137.2,
+          143.1,
+          149.3,
+          154.8,
+          158.6,
+          160.8,
+          162,
+          162.5,
+          162.6,
+          162.6,
+          163
+        ],
+        "male": [
+          113.1,
+          119.3,
+          125.2,
+          130.8,
+          136.2,
+          141.7,
+          147.2,
+          153.5,
+          160.5,
+          166.8,
+          171,
+          173.3,
+          174.2,
+          174.6,
+          175.4
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        }
+      },
+      "ageStructure": {
+        "bands": [
+          "0-4",
+          "5-9",
+          "10-14",
+          "15-19",
+          "20-24",
+          "25-29",
+          "30-34",
+          "35-39",
+          "40-44",
+          "45-49",
+          "50-54",
+          "55-59",
+          "60-64",
+          "65-69",
+          "70-74",
+          "75-79",
+          "80+"
+        ],
+        "share": [
+          0.03373,
+          0.05468,
+          0.06152,
+          0.05822,
+          0.0552,
+          0.05828,
+          0.06818,
+          0.08228,
+          0.07136,
+          0.06576,
+          0.08113,
+          0.08122,
+          0.06627,
+          0.05096,
+          0.04711,
+          0.03107,
+          0.03302
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.0004.FE.5Y"
+        },
+        "note": "UN World Population Prospects estimates as published by the World Bank (5-year bands by sex). https://population.un.org/wpp/"
+      },
+      "vitalRates": {
+        "tfr": 1.03,
+        "crudeDeathPer1000": 8.18,
+        "under5MortalityPer1000": 5.6,
+        "provenance": {
+          "tfr": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.TFRT.IN"
+          },
+          "crudeDeathPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.CDRT.IN"
+          },
+          "under5MortalityPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SH.DYN.MORT"
+          }
+        }
+      }
+    },
+    "seasia": {
+      "skinTone": {
+        "weights": [
+          0.02,
+          0.05,
+          0.12,
+          0.19,
+          0.22,
+          0.19,
+          0.11,
+          0.06,
+          0.03,
+          0.01
+        ],
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "mid tones dominate, lighter in urban Chinese-descent communities, darker in eastern Indonesia and among Negrito and Melanesian-descent groups."
+      },
+      "hairType": {
+        "weights": {
+          "bald": 0.0457,
+          "buzz": 0.0606,
+          "short_straight": 0.223,
+          "long_straight": 0.223,
+          "short_wavy": 0.1029,
+          "long_wavy": 0.0961,
+          "short_coily": 0.0143,
+          "afro": 0.0114,
+          "locs": 0.0114,
+          "braids": 0.0114,
+          "bun": 0.0903,
+          "ponytail": 0.1098
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "texture mix straight/wavy/coily = 0.65/0.3/0.05. straight dominant, wavy common. styles derived from texture in scripts/seed.ts hairStyleWeights, every style kept nonzero."
+      },
+      "hairColor": {
+        "weights": {
+          "black": 0.8,
+          "dark_brown": 0.17,
+          "brown": 0.025,
+          "blonde": 0.003,
+          "red": 0.002
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "black dominant. gray and white are not in the base mix, they come from age in sim/citizens.ts."
+      },
+      "heightCm": {
+        "female": 155.7,
+        "male": 167.2,
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        },
+        "note": "NCD-RisC 2020 release, mean height at age 19 in 2019, population-weighted",
+        "sd": {
+          "female": 6.5,
+          "male": 7,
+          "provenance": {
+            "kind": "ESTIMATE"
+          },
+          "reasoning": "within-population adult height sd is about 6 to 7.5 cm in most national surveys; one value used for all regions"
+        }
+      },
+      "childHeightCm": {
+        "ages": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "female": [
+          108.3,
+          113.8,
+          119,
+          124.1,
+          129.3,
+          135,
+          141.1,
+          146.6,
+          150.4,
+          152.9,
+          154.3,
+          155.1,
+          155.4,
+          155.5,
+          155.6
+        ],
+        "male": [
+          108.1,
+          113.6,
+          118.8,
+          123.7,
+          128.6,
+          133.4,
+          138.4,
+          144.1,
+          150.8,
+          157.1,
+          161.5,
+          164.4,
+          166,
+          166.8,
+          167.2
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        }
+      },
+      "ageStructure": {
+        "bands": [
+          "0-4",
+          "5-9",
+          "10-14",
+          "15-19",
+          "20-24",
+          "25-29",
+          "30-34",
+          "35-39",
+          "40-44",
+          "45-49",
+          "50-54",
+          "55-59",
+          "60-64",
+          "65-69",
+          "70-74",
+          "75-79",
+          "80+"
+        ],
+        "share": [
+          0.0721,
+          0.07861,
+          0.0839,
+          0.08101,
+          0.07776,
+          0.07738,
+          0.07758,
+          0.07504,
+          0.07229,
+          0.06497,
+          0.05864,
+          0.05238,
+          0.04429,
+          0.0341,
+          0.02313,
+          0.01393,
+          0.0129
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.0004.FE.5Y"
+        },
+        "note": "UN World Population Prospects estimates as published by the World Bank (5-year bands by sex). https://population.un.org/wpp/"
+      },
+      "vitalRates": {
+        "tfr": 1.927,
+        "crudeDeathPer1000": 7.35,
+        "under5MortalityPer1000": 19.3,
+        "provenance": {
+          "tfr": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.TFRT.IN"
+          },
+          "crudeDeathPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.CDRT.IN"
+          },
+          "under5MortalityPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SH.DYN.MORT"
+          }
+        }
+      }
+    },
+    "oceania": {
+      "skinTone": {
+        "weights": [
+          0.12,
+          0.2,
+          0.18,
+          0.14,
+          0.11,
+          0.09,
+          0.07,
+          0.04,
+          0.03,
+          0.02
+        ],
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "Australia and New Zealand: European majority, large Asian communities, Aboriginal, Torres Strait Islander and Maori populations."
+      },
+      "hairType": {
+        "weights": {
+          "bald": 0.0462,
+          "buzz": 0.0647,
+          "short_straight": 0.1561,
+          "long_straight": 0.1561,
+          "short_wavy": 0.1561,
+          "long_wavy": 0.1457,
+          "short_coily": 0.0289,
+          "afro": 0.0173,
+          "locs": 0.0116,
+          "braids": 0.0208,
+          "bun": 0.0902,
+          "ponytail": 0.1064
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "texture mix straight/wavy/coily = 0.45/0.45/0.1. straight and wavy dominant. styles derived from texture in scripts/seed.ts hairStyleWeights, every style kept nonzero."
+      },
+      "hairColor": {
+        "weights": {
+          "black": 0.15,
+          "dark_brown": 0.3,
+          "brown": 0.28,
+          "blonde": 0.21,
+          "red": 0.06
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "similar to northwest European mix plus Asian and Pacific black and dark brown. gray and white are not in the base mix, they come from age in sim/citizens.ts."
+      },
+      "heightCm": {
+        "female": 164.7,
+        "male": 178.6,
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        },
+        "note": "NCD-RisC 2020 release, mean height at age 19 in 2019, population-weighted",
+        "sd": {
+          "female": 6.5,
+          "male": 7,
+          "provenance": {
+            "kind": "ESTIMATE"
+          },
+          "reasoning": "within-population adult height sd is about 6 to 7.5 cm in most national surveys; one value used for all regions"
+        }
+      },
+      "childHeightCm": {
+        "ages": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "female": [
+          113.8,
+          120.1,
+          126,
+          131.7,
+          137.5,
+          143.6,
+          150.2,
+          156,
+          160,
+          162.6,
+          164.1,
+          164.7,
+          164.7,
+          164.7,
+          164.7
+        ],
+        "male": [
+          115.5,
+          121.9,
+          127.8,
+          133.5,
+          138.9,
+          144.3,
+          149.8,
+          155.9,
+          162.9,
+          169.4,
+          174,
+          176.8,
+          178.2,
+          178.6,
+          178.6
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        }
+      },
+      "ageStructure": {
+        "bands": [
+          "0-4",
+          "5-9",
+          "10-14",
+          "15-19",
+          "20-24",
+          "25-29",
+          "30-34",
+          "35-39",
+          "40-44",
+          "45-49",
+          "50-54",
+          "55-59",
+          "60-64",
+          "65-69",
+          "70-74",
+          "75-79",
+          "80+"
+        ],
+        "share": [
+          0.05731,
+          0.05842,
+          0.06139,
+          0.062,
+          0.06072,
+          0.06673,
+          0.07254,
+          0.07255,
+          0.06868,
+          0.06081,
+          0.06252,
+          0.0587,
+          0.05749,
+          0.05202,
+          0.04465,
+          0.03746,
+          0.04602
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.0004.FE.5Y"
+        },
+        "note": "UN World Population Prospects estimates as published by the World Bank (5-year bands by sex). https://population.un.org/wpp/"
+      },
+      "vitalRates": {
+        "tfr": 1.495,
+        "crudeDeathPer1000": 6.92,
+        "under5MortalityPer1000": 3.8,
+        "provenance": {
+          "tfr": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.TFRT.IN"
+          },
+          "crudeDeathPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.CDRT.IN"
+          },
+          "under5MortalityPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SH.DYN.MORT"
+          }
+        }
+      }
+    },
+    "carib_pac": {
+      "skinTone": {
+        "weights": [
+          0.02,
+          0.03,
+          0.05,
+          0.08,
+          0.11,
+          0.14,
+          0.16,
+          0.17,
+          0.14,
+          0.1
+        ],
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "Caribbean populations are mostly African and mixed ancestry; Papua New Guinea and Melanesia dark, Polynesia mid tones; European and South Asian descendants present."
+      },
+      "hairType": {
+        "weights": {
+          "bald": 0.045,
+          "buzz": 0.0967,
+          "short_straight": 0.0506,
+          "long_straight": 0.0506,
+          "short_wavy": 0.0844,
+          "long_wavy": 0.0787,
+          "short_coily": 0.1687,
+          "afro": 0.1012,
+          "locs": 0.0675,
+          "braids": 0.1215,
+          "bun": 0.0765,
+          "ponytail": 0.0585
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "texture mix straight/wavy/coily = 0.15/0.25/0.6. coily dominant in the Caribbean and Melanesia, wavy and straight in Polynesia. styles derived from texture in scripts/seed.ts hairStyleWeights, every style kept nonzero."
+      },
+      "hairColor": {
+        "weights": {
+          "black": 0.65,
+          "dark_brown": 0.25,
+          "brown": 0.07,
+          "blonde": 0.02,
+          "red": 0.01
+        },
+        "provenance": {
+          "kind": "ESTIMATE"
+        },
+        "reasoning": "black dominant. gray and white are not in the base mix, they come from age in sim/citizens.ts."
+      },
+      "heightCm": {
+        "female": 160.5,
+        "male": 171.9,
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        },
+        "note": "NCD-RisC 2020 release, mean height at age 19 in 2019, population-weighted",
+        "sd": {
+          "female": 6.5,
+          "male": 7,
+          "provenance": {
+            "kind": "ESTIMATE"
+          },
+          "reasoning": "within-population adult height sd is about 6 to 7.5 cm in most national surveys; one value used for all regions"
+        }
+      },
+      "childHeightCm": {
+        "ages": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "female": [
+          112.3,
+          118.2,
+          123.7,
+          129,
+          134.5,
+          140.3,
+          146.4,
+          151.9,
+          155.8,
+          158.1,
+          159.4,
+          159.9,
+          160.1,
+          160.2,
+          160.5
+        ],
+        "male": [
+          113.6,
+          119.4,
+          124.8,
+          129.9,
+          134.8,
+          139.7,
+          144.8,
+          150.5,
+          157.1,
+          163.3,
+          167.5,
+          170,
+          171.3,
+          171.7,
+          172
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://www.ncdrisc.org/data-downloads-height.html"
+        }
+      },
+      "ageStructure": {
+        "bands": [
+          "0-4",
+          "5-9",
+          "10-14",
+          "15-19",
+          "20-24",
+          "25-29",
+          "30-34",
+          "35-39",
+          "40-44",
+          "45-49",
+          "50-54",
+          "55-59",
+          "60-64",
+          "65-69",
+          "70-74",
+          "75-79",
+          "80+"
+        ],
+        "share": [
+          0.08119,
+          0.08311,
+          0.08439,
+          0.08168,
+          0.07978,
+          0.07722,
+          0.07486,
+          0.07111,
+          0.06297,
+          0.05674,
+          0.0557,
+          0.0513,
+          0.04513,
+          0.03337,
+          0.02498,
+          0.01738,
+          0.01908
+        ],
+        "provenance": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.0004.FE.5Y"
+        },
+        "note": "UN World Population Prospects estimates as published by the World Bank (5-year bands by sex). https://population.un.org/wpp/"
+      },
+      "vitalRates": {
+        "tfr": 2.199,
+        "crudeDeathPer1000": 7.9,
+        "under5MortalityPer1000": 31,
+        "provenance": {
+          "tfr": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.TFRT.IN"
+          },
+          "crudeDeathPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SP.DYN.CDRT.IN"
+          },
+          "under5MortalityPer1000": {
+            "kind": "SOURCED",
+            "url": "https://data.worldbank.org/indicator/SH.DYN.MORT"
+          }
+        }
+      }
+    }
+  }
+}

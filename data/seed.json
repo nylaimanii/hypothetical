@@ -1,0 +1,1222 @@
+{
+  "generatedAt": "2026-11-15",
+  "note": "starting world for tick 0 (2026-11). latest available value per country, population-weighted per region.",
+  "sources": {
+    "worldBank": "https://api.worldbank.org/v2 (SP.POP.TOTL, NY.GDP.MKTP.CD, SP.POP.65UP.TO.ZS, EG.USE.ELEC.KH.PC, SE.TER.ENRR, GOV_WGI_PV.EST, GOV_WGI_RL.EST)",
+    "fao": "https://ourworldindata.org/grapher/daily-per-capita-caloric-supply (FAO food balance sheets, kcal/capita/day, via Our World in Data; FAOSTAT API was unreachable)",
+    "pew": "https://www.pewresearch.org/religion/2025/06/09/how-the-global-religious-landscape-changed-from-2010-to-2020/"
+  },
+  "coverageGaps": [
+    "latam.ter coverage 98.0%",
+    "mideast.elec coverage 92.8%",
+    "ssa.elec coverage 89.6%",
+    "carib_pac.elec coverage 66.8%",
+    "carib_pac.ter coverage 97.6%",
+    "carib_pac.kcal coverage 93.0%"
+  ],
+  "regions": [
+    {
+      "id": "na",
+      "name": "North America",
+      "lat": 40,
+      "lon": -96,
+      "color": "#3b6ea8",
+      "population": 383501065,
+      "share65plus": 0.1859,
+      "gdpUsd": 33098794271426,
+      "energyTWh": 5076.2,
+      "foodKcalPerCapita": 3908,
+      "education": 0.7902,
+      "faith": 0.6974,
+      "unrest": 0.2645,
+      "techLevel": 0.8823,
+      "compliance": 0.6212,
+      "provenance": {
+        "id": {
+          "kind": "ESTIMATE"
+        },
+        "name": {
+          "kind": "ESTIMATE"
+        },
+        "lat": {
+          "kind": "ESTIMATE"
+        },
+        "lon": {
+          "kind": "ESTIMATE"
+        },
+        "color": {
+          "kind": "ESTIMATE"
+        },
+        "population": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.TOTL"
+        },
+        "share65plus": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.65UP.TO.ZS"
+        },
+        "gdpUsd": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/NY.GDP.MKTP.CD"
+        },
+        "energyTWh": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/EG.USE.ELEC.KH.PC"
+        },
+        "foodKcalPerCapita": {
+          "kind": "SOURCED",
+          "url": "https://ourworldindata.org/grapher/daily-per-capita-caloric-supply"
+        },
+        "education": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "faith": {
+          "kind": "SOURCED",
+          "url": "https://www.pewresearch.org/religion/2025/06/09/how-the-global-religious-landscape-changed-from-2010-to-2020/"
+        },
+        "unrest": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        },
+        "techLevel": {
+          "kind": "ESTIMATE",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "compliance": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        }
+      }
+    },
+    {
+      "id": "latam",
+      "name": "Latin America",
+      "lat": -10,
+      "lon": -60,
+      "color": "#2f8f6b",
+      "population": 622948940,
+      "share65plus": 0.1009,
+      "gdpUsd": 6824839728969,
+      "energyTWh": 1575.7,
+      "foodKcalPerCapita": 3193,
+      "education": 0.6508,
+      "faith": 0.8837,
+      "unrest": 0.2848,
+      "techLevel": 0.5404,
+      "compliance": 0.3986,
+      "provenance": {
+        "id": {
+          "kind": "ESTIMATE"
+        },
+        "name": {
+          "kind": "ESTIMATE"
+        },
+        "lat": {
+          "kind": "ESTIMATE"
+        },
+        "lon": {
+          "kind": "ESTIMATE"
+        },
+        "color": {
+          "kind": "ESTIMATE"
+        },
+        "population": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.TOTL"
+        },
+        "share65plus": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.65UP.TO.ZS"
+        },
+        "gdpUsd": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/NY.GDP.MKTP.CD"
+        },
+        "energyTWh": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/EG.USE.ELEC.KH.PC"
+        },
+        "foodKcalPerCapita": {
+          "kind": "SOURCED",
+          "url": "https://ourworldindata.org/grapher/daily-per-capita-caloric-supply"
+        },
+        "education": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "faith": {
+          "kind": "SOURCED",
+          "url": "https://www.pewresearch.org/religion/2025/06/09/how-the-global-religious-landscape-changed-from-2010-to-2020/"
+        },
+        "unrest": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        },
+        "techLevel": {
+          "kind": "ESTIMATE",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "compliance": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        }
+      }
+    },
+    {
+      "id": "europe",
+      "name": "Europe",
+      "lat": 50,
+      "lon": 12,
+      "color": "#6a5acd",
+      "population": 602797566,
+      "share65plus": 0.2169,
+      "gdpUsd": 27446384199710,
+      "energyTWh": 3383.4,
+      "foodKcalPerCapita": 3476,
+      "education": 0.7988,
+      "faith": 0.7293,
+      "unrest": 0.2257,
+      "techLevel": 0.7397,
+      "compliance": 0.6197,
+      "provenance": {
+        "id": {
+          "kind": "ESTIMATE"
+        },
+        "name": {
+          "kind": "ESTIMATE"
+        },
+        "lat": {
+          "kind": "ESTIMATE"
+        },
+        "lon": {
+          "kind": "ESTIMATE"
+        },
+        "color": {
+          "kind": "ESTIMATE"
+        },
+        "population": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.TOTL"
+        },
+        "share65plus": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.65UP.TO.ZS"
+        },
+        "gdpUsd": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/NY.GDP.MKTP.CD"
+        },
+        "energyTWh": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/EG.USE.ELEC.KH.PC"
+        },
+        "foodKcalPerCapita": {
+          "kind": "SOURCED",
+          "url": "https://ourworldindata.org/grapher/daily-per-capita-caloric-supply"
+        },
+        "education": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "faith": {
+          "kind": "SOURCED",
+          "url": "https://www.pewresearch.org/religion/2025/06/09/how-the-global-religious-landscape-changed-from-2010-to-2020/"
+        },
+        "unrest": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        },
+        "techLevel": {
+          "kind": "ESTIMATE",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "compliance": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        }
+      }
+    },
+    {
+      "id": "rus_ca",
+      "name": "Russia + Central Asia",
+      "lat": 55,
+      "lon": 70,
+      "color": "#5b7f95",
+      "population": 244428617,
+      "share65plus": 0.1347,
+      "gdpUsd": 3248025172948,
+      "energyTWh": 1416.5,
+      "foodKcalPerCapita": 3357,
+      "education": 0.567,
+      "faith": 0.8757,
+      "unrest": 0.2964,
+      "techLevel": 0.5638,
+      "compliance": 0.3563,
+      "provenance": {
+        "id": {
+          "kind": "ESTIMATE"
+        },
+        "name": {
+          "kind": "ESTIMATE"
+        },
+        "lat": {
+          "kind": "ESTIMATE"
+        },
+        "lon": {
+          "kind": "ESTIMATE"
+        },
+        "color": {
+          "kind": "ESTIMATE"
+        },
+        "population": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.TOTL"
+        },
+        "share65plus": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.65UP.TO.ZS"
+        },
+        "gdpUsd": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/NY.GDP.MKTP.CD"
+        },
+        "energyTWh": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/EG.USE.ELEC.KH.PC"
+        },
+        "foodKcalPerCapita": {
+          "kind": "SOURCED",
+          "url": "https://ourworldindata.org/grapher/daily-per-capita-caloric-supply"
+        },
+        "education": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "faith": {
+          "kind": "SOURCED",
+          "url": "https://www.pewresearch.org/religion/2025/06/09/how-the-global-religious-landscape-changed-from-2010-to-2020/"
+        },
+        "unrest": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        },
+        "techLevel": {
+          "kind": "ESTIMATE",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "compliance": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        }
+      }
+    },
+    {
+      "id": "mideast",
+      "name": "Middle East",
+      "lat": 30,
+      "lon": 45,
+      "color": "#b8963e",
+      "population": 688100756,
+      "share65plus": 0.0545,
+      "gdpUsd": 5760905796737,
+      "energyTWh": 2004,
+      "foodKcalPerCapita": 2769,
+      "education": 0.3788,
+      "faith": 0.9952,
+      "unrest": 0.3661,
+      "techLevel": 0.418,
+      "compliance": 0.3715,
+      "provenance": {
+        "id": {
+          "kind": "ESTIMATE"
+        },
+        "name": {
+          "kind": "ESTIMATE"
+        },
+        "lat": {
+          "kind": "ESTIMATE"
+        },
+        "lon": {
+          "kind": "ESTIMATE"
+        },
+        "color": {
+          "kind": "ESTIMATE"
+        },
+        "population": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.TOTL"
+        },
+        "share65plus": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.65UP.TO.ZS"
+        },
+        "gdpUsd": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/NY.GDP.MKTP.CD"
+        },
+        "energyTWh": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/EG.USE.ELEC.KH.PC"
+        },
+        "foodKcalPerCapita": {
+          "kind": "SOURCED",
+          "url": "https://ourworldindata.org/grapher/daily-per-capita-caloric-supply"
+        },
+        "education": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "faith": {
+          "kind": "SOURCED",
+          "url": "https://www.pewresearch.org/religion/2025/06/09/how-the-global-religious-landscape-changed-from-2010-to-2020/"
+        },
+        "unrest": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        },
+        "techLevel": {
+          "kind": "ESTIMATE",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "compliance": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        }
+      }
+    },
+    {
+      "id": "nafrica",
+      "name": "North Africa",
+      "lat": 27,
+      "lon": 15,
+      "color": "#8c7a4f",
+      "population": 275701352,
+      "share65plus": 0.0583,
+      "gdpUsd": 1000424487516,
+      "energyTWh": 382.6,
+      "foodKcalPerCapita": 3082,
+      "education": 0.3868,
+      "faith": 0.9964,
+      "unrest": 0.3332,
+      "techLevel": 0.3428,
+      "compliance": 0.3788,
+      "provenance": {
+        "id": {
+          "kind": "ESTIMATE"
+        },
+        "name": {
+          "kind": "ESTIMATE"
+        },
+        "lat": {
+          "kind": "ESTIMATE"
+        },
+        "lon": {
+          "kind": "ESTIMATE"
+        },
+        "color": {
+          "kind": "ESTIMATE"
+        },
+        "population": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.TOTL"
+        },
+        "share65plus": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.65UP.TO.ZS"
+        },
+        "gdpUsd": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/NY.GDP.MKTP.CD"
+        },
+        "energyTWh": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/EG.USE.ELEC.KH.PC"
+        },
+        "foodKcalPerCapita": {
+          "kind": "SOURCED",
+          "url": "https://ourworldindata.org/grapher/daily-per-capita-caloric-supply"
+        },
+        "education": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "faith": {
+          "kind": "SOURCED",
+          "url": "https://www.pewresearch.org/religion/2025/06/09/how-the-global-religious-landscape-changed-from-2010-to-2020/"
+        },
+        "unrest": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        },
+        "techLevel": {
+          "kind": "ESTIMATE",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "compliance": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        }
+      }
+    },
+    {
+      "id": "ssa",
+      "name": "Sub-Saharan Africa",
+      "lat": 2,
+      "lon": 22,
+      "color": "#5e8c31",
+      "population": 1271176146,
+      "share65plus": 0.0323,
+      "gdpUsd": 2159821677727,
+      "energyTWh": 491,
+      "foodKcalPerCapita": 2454,
+      "education": 0.0904,
+      "faith": 0.9741,
+      "unrest": 0.3486,
+      "techLevel": 0.1582,
+      "compliance": 0.3756,
+      "provenance": {
+        "id": {
+          "kind": "ESTIMATE"
+        },
+        "name": {
+          "kind": "ESTIMATE"
+        },
+        "lat": {
+          "kind": "ESTIMATE"
+        },
+        "lon": {
+          "kind": "ESTIMATE"
+        },
+        "color": {
+          "kind": "ESTIMATE"
+        },
+        "population": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.TOTL"
+        },
+        "share65plus": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.65UP.TO.ZS"
+        },
+        "gdpUsd": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/NY.GDP.MKTP.CD"
+        },
+        "energyTWh": {
+          "kind": "ESTIMATE",
+          "url": "https://data.worldbank.org/indicator/EG.USE.ELEC.KH.PC"
+        },
+        "foodKcalPerCapita": {
+          "kind": "SOURCED",
+          "url": "https://ourworldindata.org/grapher/daily-per-capita-caloric-supply"
+        },
+        "education": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "faith": {
+          "kind": "SOURCED",
+          "url": "https://www.pewresearch.org/religion/2025/06/09/how-the-global-religious-landscape-changed-from-2010-to-2020/"
+        },
+        "unrest": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        },
+        "techLevel": {
+          "kind": "ESTIMATE",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "compliance": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        }
+      }
+    },
+    {
+      "id": "sasia",
+      "name": "South Asia",
+      "lat": 23,
+      "lon": 79,
+      "color": "#9b5fa8",
+      "population": 1692252900,
+      "share65plus": 0.0735,
+      "gdpUsd": 4578021773987,
+      "energyTWh": 1929.3,
+      "foodKcalPerCapita": 2665,
+      "education": 0.3292,
+      "faith": 1,
+      "unrest": 0.3005,
+      "techLevel": 0.296,
+      "compliance": 0.4701,
+      "provenance": {
+        "id": {
+          "kind": "ESTIMATE"
+        },
+        "name": {
+          "kind": "ESTIMATE"
+        },
+        "lat": {
+          "kind": "ESTIMATE"
+        },
+        "lon": {
+          "kind": "ESTIMATE"
+        },
+        "color": {
+          "kind": "ESTIMATE"
+        },
+        "population": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.TOTL"
+        },
+        "share65plus": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.65UP.TO.ZS"
+        },
+        "gdpUsd": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/NY.GDP.MKTP.CD"
+        },
+        "energyTWh": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/EG.USE.ELEC.KH.PC"
+        },
+        "foodKcalPerCapita": {
+          "kind": "SOURCED",
+          "url": "https://ourworldindata.org/grapher/daily-per-capita-caloric-supply"
+        },
+        "education": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "faith": {
+          "kind": "SOURCED",
+          "url": "https://www.pewresearch.org/religion/2025/06/09/how-the-global-religious-landscape-changed-from-2010-to-2020/"
+        },
+        "unrest": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        },
+        "techLevel": {
+          "kind": "ESTIMATE",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "compliance": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        }
+      }
+    },
+    {
+      "id": "easia",
+      "name": "East Asia",
+      "lat": 34,
+      "lon": 112,
+      "color": "#2a9bb0",
+      "population": 1619961112,
+      "share65plus": 0.1622,
+      "gdpUsd": 26749063076728,
+      "energyTWh": 11536.1,
+      "foodKcalPerCapita": 3429,
+      "education": 0.7644,
+      "faith": 0.1462,
+      "unrest": 0.2379,
+      "techLevel": 0.6755,
+      "compliance": 0.4668,
+      "provenance": {
+        "id": {
+          "kind": "ESTIMATE"
+        },
+        "name": {
+          "kind": "ESTIMATE"
+        },
+        "lat": {
+          "kind": "ESTIMATE"
+        },
+        "lon": {
+          "kind": "ESTIMATE"
+        },
+        "color": {
+          "kind": "ESTIMATE"
+        },
+        "population": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.TOTL"
+        },
+        "share65plus": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.65UP.TO.ZS"
+        },
+        "gdpUsd": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/NY.GDP.MKTP.CD"
+        },
+        "energyTWh": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/EG.USE.ELEC.KH.PC"
+        },
+        "foodKcalPerCapita": {
+          "kind": "SOURCED",
+          "url": "https://ourworldindata.org/grapher/daily-per-capita-caloric-supply"
+        },
+        "education": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "faith": {
+          "kind": "SOURCED",
+          "url": "https://www.pewresearch.org/religion/2025/06/09/how-the-global-religious-landscape-changed-from-2010-to-2020/"
+        },
+        "unrest": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        },
+        "techLevel": {
+          "kind": "ESTIMATE",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "compliance": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        }
+      }
+    },
+    {
+      "id": "seasia",
+      "name": "Southeast Asia",
+      "lat": 8,
+      "lon": 108,
+      "color": "#3e9e8f",
+      "population": 700272124,
+      "share65plus": 0.0841,
+      "gdpUsd": 4268668520928,
+      "energyTWh": 1387.5,
+      "foodKcalPerCapita": 2926,
+      "education": 0.4192,
+      "faith": 0.8991,
+      "unrest": 0.2981,
+      "techLevel": 0.3997,
+      "compliance": 0.4497,
+      "provenance": {
+        "id": {
+          "kind": "ESTIMATE"
+        },
+        "name": {
+          "kind": "ESTIMATE"
+        },
+        "lat": {
+          "kind": "ESTIMATE"
+        },
+        "lon": {
+          "kind": "ESTIMATE"
+        },
+        "color": {
+          "kind": "ESTIMATE"
+        },
+        "population": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.TOTL"
+        },
+        "share65plus": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.65UP.TO.ZS"
+        },
+        "gdpUsd": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/NY.GDP.MKTP.CD"
+        },
+        "energyTWh": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/EG.USE.ELEC.KH.PC"
+        },
+        "foodKcalPerCapita": {
+          "kind": "SOURCED",
+          "url": "https://ourworldindata.org/grapher/daily-per-capita-caloric-supply"
+        },
+        "education": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "faith": {
+          "kind": "SOURCED",
+          "url": "https://www.pewresearch.org/religion/2025/06/09/how-the-global-religious-landscape-changed-from-2010-to-2020/"
+        },
+        "unrest": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        },
+        "techLevel": {
+          "kind": "ESTIMATE",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "compliance": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        }
+      }
+    },
+    {
+      "id": "oceania",
+      "name": "Oceania",
+      "lat": -27,
+      "lon": 140,
+      "color": "#4a6fc4",
+      "population": 32939111,
+      "share65plus": 0.1801,
+      "gdpUsd": 2062576347429,
+      "energyTWh": 312.6,
+      "foodKcalPerCapita": 3491,
+      "education": 1,
+      "faith": 0.562,
+      "unrest": 0.1824,
+      "techLevel": 0.894,
+      "compliance": 0.7087,
+      "provenance": {
+        "id": {
+          "kind": "ESTIMATE"
+        },
+        "name": {
+          "kind": "ESTIMATE"
+        },
+        "lat": {
+          "kind": "ESTIMATE"
+        },
+        "lon": {
+          "kind": "ESTIMATE"
+        },
+        "color": {
+          "kind": "ESTIMATE"
+        },
+        "population": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.TOTL"
+        },
+        "share65plus": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.65UP.TO.ZS"
+        },
+        "gdpUsd": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/NY.GDP.MKTP.CD"
+        },
+        "energyTWh": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/EG.USE.ELEC.KH.PC"
+        },
+        "foodKcalPerCapita": {
+          "kind": "SOURCED",
+          "url": "https://ourworldindata.org/grapher/daily-per-capita-caloric-supply"
+        },
+        "education": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "faith": {
+          "kind": "SOURCED",
+          "url": "https://www.pewresearch.org/religion/2025/06/09/how-the-global-religious-landscape-changed-from-2010-to-2020/"
+        },
+        "unrest": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        },
+        "techLevel": {
+          "kind": "ESTIMATE",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "compliance": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        }
+      }
+    },
+    {
+      "id": "carib_pac",
+      "name": "Caribbean + Pacific Islands",
+      "lat": 15,
+      "lon": -75,
+      "color": "#7f8fa6",
+      "population": 57998463,
+      "share65plus": 0.0948,
+      "gdpUsd": 572374265315,
+      "energyTWh": 79.1,
+      "foodKcalPerCapita": 2726,
+      "education": 0.295,
+      "faith": 0.8783,
+      "unrest": 0.2549,
+      "techLevel": 0.3753,
+      "compliance": 0.4157,
+      "provenance": {
+        "id": {
+          "kind": "ESTIMATE"
+        },
+        "name": {
+          "kind": "ESTIMATE"
+        },
+        "lat": {
+          "kind": "ESTIMATE"
+        },
+        "lon": {
+          "kind": "ESTIMATE"
+        },
+        "color": {
+          "kind": "ESTIMATE"
+        },
+        "population": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.TOTL"
+        },
+        "share65plus": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SP.POP.65UP.TO.ZS"
+        },
+        "gdpUsd": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/NY.GDP.MKTP.CD"
+        },
+        "energyTWh": {
+          "kind": "ESTIMATE",
+          "url": "https://data.worldbank.org/indicator/EG.USE.ELEC.KH.PC"
+        },
+        "foodKcalPerCapita": {
+          "kind": "SOURCED",
+          "url": "https://ourworldindata.org/grapher/daily-per-capita-caloric-supply"
+        },
+        "education": {
+          "kind": "SOURCED",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "faith": {
+          "kind": "SOURCED",
+          "url": "https://www.pewresearch.org/religion/2025/06/09/how-the-global-religious-landscape-changed-from-2010-to-2020/"
+        },
+        "unrest": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        },
+        "techLevel": {
+          "kind": "ESTIMATE",
+          "url": "https://data.worldbank.org/indicator/SE.TER.ENRR"
+        },
+        "compliance": {
+          "kind": "ESTIMATE",
+          "url": "https://www.worldbank.org/en/publication/worldwide-governance-indicators"
+        }
+      }
+    }
+  ],
+  "extras": {
+    "na": {
+      "countries": [
+        "BMU",
+        "CAN",
+        "USA"
+      ],
+      "gdpPerCapita": 86307,
+      "kwhPerCapita": 13236,
+      "wgiStability": -0.181,
+      "wgiRuleOfLaw": 0.866
+    },
+    "latam": {
+      "countries": [
+        "ARG",
+        "BLZ",
+        "BOL",
+        "BRA",
+        "CHL",
+        "COL",
+        "CRI",
+        "ECU",
+        "GTM",
+        "GUY",
+        "HND",
+        "MEX",
+        "NIC",
+        "PAN",
+        "PER",
+        "PRY",
+        "SLV",
+        "SUR",
+        "URY",
+        "VEN"
+      ],
+      "gdpPerCapita": 10956,
+      "kwhPerCapita": 2529,
+      "wgiStability": -0.434,
+      "wgiRuleOfLaw": -0.724
+    },
+    "europe": {
+      "countries": [
+        "ALB",
+        "AND",
+        "AUT",
+        "BEL",
+        "BGR",
+        "BIH",
+        "BLR",
+        "CHE",
+        "CHI",
+        "CYP",
+        "CZE",
+        "DEU",
+        "DNK",
+        "ESP",
+        "EST",
+        "FIN",
+        "FRA",
+        "FRO",
+        "GBR",
+        "GIB",
+        "GRC",
+        "GRL",
+        "HRV",
+        "HUN",
+        "IMN",
+        "IRL",
+        "ISL",
+        "ITA",
+        "LIE",
+        "LTU",
+        "LUX",
+        "LVA",
+        "MCO",
+        "MDA",
+        "MKD",
+        "MLT",
+        "MNE",
+        "NLD",
+        "NOR",
+        "POL",
+        "PRT",
+        "ROU",
+        "SMR",
+        "SRB",
+        "SVK",
+        "SVN",
+        "SWE",
+        "UKR",
+        "XKX"
+      ],
+      "gdpPerCapita": 45532,
+      "kwhPerCapita": 5613,
+      "wgiStability": 0.303,
+      "wgiRuleOfLaw": 0.855
+    },
+    "rus_ca": {
+      "countries": [
+        "ARM",
+        "AZE",
+        "GEO",
+        "KAZ",
+        "KGZ",
+        "RUS",
+        "TJK",
+        "TKM",
+        "UZB"
+      ],
+      "gdpPerCapita": 13288,
+      "kwhPerCapita": 5795,
+      "wgiStability": -0.58,
+      "wgiRuleOfLaw": -1.026
+    },
+    "mideast": {
+      "countries": [
+        "AFG",
+        "ARE",
+        "BHR",
+        "IRN",
+        "IRQ",
+        "ISR",
+        "JOR",
+        "KWT",
+        "LBN",
+        "OMN",
+        "PAK",
+        "PSE",
+        "QAT",
+        "SAU",
+        "SYR",
+        "TUR",
+        "YEM"
+      ],
+      "gdpPerCapita": 8372,
+      "kwhPerCapita": 2912,
+      "wgiStability": -1.452,
+      "wgiRuleOfLaw": -0.918
+    },
+    "nafrica": {
+      "countries": [
+        "DZA",
+        "EGY",
+        "LBY",
+        "MAR",
+        "SDN",
+        "TUN"
+      ],
+      "gdpPerCapita": 3629,
+      "kwhPerCapita": 1388,
+      "wgiStability": -1.04,
+      "wgiRuleOfLaw": -0.865
+    },
+    "ssa": {
+      "countries": [
+        "AGO",
+        "BDI",
+        "BEN",
+        "BFA",
+        "BWA",
+        "CAF",
+        "CIV",
+        "CMR",
+        "COD",
+        "COG",
+        "COM",
+        "CPV",
+        "DJI",
+        "ERI",
+        "ETH",
+        "GAB",
+        "GHA",
+        "GIN",
+        "GMB",
+        "GNB",
+        "GNQ",
+        "KEN",
+        "LBR",
+        "LSO",
+        "MDG",
+        "MLI",
+        "MOZ",
+        "MRT",
+        "MUS",
+        "MWI",
+        "NAM",
+        "NER",
+        "NGA",
+        "RWA",
+        "SEN",
+        "SLE",
+        "SOM",
+        "SSD",
+        "STP",
+        "SWZ",
+        "SYC",
+        "TCD",
+        "TGO",
+        "TZA",
+        "UGA",
+        "ZAF",
+        "ZMB",
+        "ZWE"
+      ],
+      "gdpPerCapita": 1699,
+      "kwhPerCapita": 386,
+      "wgiStability": -1.233,
+      "wgiRuleOfLaw": -0.888
+    },
+    "sasia": {
+      "countries": [
+        "BGD",
+        "BTN",
+        "IND",
+        "LKA",
+        "MDV",
+        "NPL"
+      ],
+      "gdpPerCapita": 2705,
+      "kwhPerCapita": 1140,
+      "wgiStability": -0.631,
+      "wgiRuleOfLaw": -0.213
+    },
+    "easia": {
+      "countries": [
+        "CHN",
+        "HKG",
+        "JPN",
+        "KOR",
+        "MAC",
+        "MNG",
+        "PRK"
+      ],
+      "gdpPerCapita": 16512,
+      "kwhPerCapita": 7121,
+      "wgiStability": 0.151,
+      "wgiRuleOfLaw": -0.237
+    },
+    "seasia": {
+      "countries": [
+        "BRN",
+        "IDN",
+        "KHM",
+        "LAO",
+        "MMR",
+        "MYS",
+        "PHL",
+        "SGP",
+        "THA",
+        "TLS",
+        "VNM"
+      ],
+      "gdpPerCapita": 6096,
+      "kwhPerCapita": 1981,
+      "wgiStability": -0.601,
+      "wgiRuleOfLaw": -0.36
+    },
+    "oceania": {
+      "countries": [
+        "AUS",
+        "NZL"
+      ],
+      "gdpPerCapita": 62618,
+      "kwhPerCapita": 9490,
+      "wgiStability": 0.845,
+      "wgiRuleOfLaw": 1.491
+    },
+    "carib_pac": {
+      "countries": [
+        "ABW",
+        "ASM",
+        "ATG",
+        "BHS",
+        "BRB",
+        "CUB",
+        "CUW",
+        "CYM",
+        "DMA",
+        "DOM",
+        "FJI",
+        "FSM",
+        "GRD",
+        "GUM",
+        "HTI",
+        "JAM",
+        "KIR",
+        "KNA",
+        "LCA",
+        "MAF",
+        "MHL",
+        "MNP",
+        "NCL",
+        "NRU",
+        "PLW",
+        "PNG",
+        "PRI",
+        "PYF",
+        "SLB",
+        "SXM",
+        "TCA",
+        "TON",
+        "TTO",
+        "TUV",
+        "VCT",
+        "VGB",
+        "VIR",
+        "VUT",
+        "WSM"
+      ],
+      "gdpPerCapita": 9869,
+      "kwhPerCapita": 1364,
+      "wgiStability": -0.061,
+      "wgiRuleOfLaw": -0.602
+    }
+  }
+}
