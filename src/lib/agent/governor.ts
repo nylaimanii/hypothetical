@@ -115,6 +115,7 @@ export async function decide(w: World, constitution: string, overrides: Override
       return finish(d, w)
     } catch (e) {
       if ((e as Error).name === 'LlmUnavailable' || /ollama not running/.test((e as Error).message)) throw e
+      if (process.env.LLM_DEBUG) console.error(`[governor] tick ${w.tick} attempt ${attempt + 1} rejected: ${(e as Error).message.slice(0, 300)}`)
       user = `${text}\n\nYOUR PREVIOUS REPLY WAS REJECTED: ${(e as Error).message.slice(0, 600)}\nReply again with valid JSON only.`
     }
   }

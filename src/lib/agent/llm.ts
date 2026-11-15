@@ -6,6 +6,7 @@
 //   offline: no llm at all; the deterministic offline governor and templates. only for tests and
 //           determinism checks, never chosen silently.
 import { AsyncLocalStorage } from 'node:async_hooks'
+import http from 'node:http'
 
 export type Provider = 'ollama' | 'groq' | 'offline'
 export type Usage = { llmCalls: number; tokens: number }
@@ -76,16 +77,13 @@ export async function chat(opts: ChatOpts): Promise<string> {
     temperature: opts.temperature ?? 0.4,
     max_tokens: opts.maxTokens ?? 4096,
   }
+  // gpt-oss thinks before answering; low effort keeps local runs tolerable (LLM_REASONING=medium|high for more)
+  if (/gpt-oss/.test(modelName())) body.reasoning_effort = process.env.LLM_REASONING ?? 'low'
   if (opts.schema) body.response_format = { type: 'json_schema', json_schema: { name: opts.schemaName ?? 'reply', schema: grammarSchema(opts.schema), strict: true } }
   else if (opts.json) body.response_format = { type: 'json_object' }
+  if (p === 'ollama') return ollamaPost(url, body, opts.timeoutMs ?? 1_800_000)
   for (let attempt = 0; ; attempt++) {
-    let res: Response
-    try {
-      res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(opts.timeoutMs ?? (p === 'ollama' ? 600_000 : 90_000)) })
-    } catch (e) {
-      if (p === 'ollama' && (e as Error).name !== 'TimeoutError') throw new LlmUnavailable('ollama not running: ollama serve')
-      throw e
-    }
+    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(opts.timeoutMs ?? 90_000) })
     if (res.status === 429 && attempt < 6) {
       const ra = Number(res.headers.get('retry-after'))
       await sleep(Number.isFinite(ra) && ra > 0 ? ra * 1000 : 1000 * 2 ** attempt)
@@ -97,4 +95,29 @@ export async function chat(opts: ChatOpts): Promise<string> {
     if (u) { u.llmCalls++; u.tokens += data.usage?.total_tokens ?? 0 }
     return data.choices?.[0]?.message?.content ?? ''
   }
+}
+
+// local generation can take many minutes before the first byte (long reasoning, or queued behind another
+// request), longer than fetch's built-in 300s header timeout, so ollama goes through plain node:http
+function ollamaPost(url: string, body: Record<string, unknown>, timeoutMs: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url)
+    const req = http.request({ hostname: u.hostname, port: u.port, path: u.pathname, method: 'POST', headers: { 'Content-Type': 'application/json' } }, res => {
+      let data = ''
+      res.setEncoding('utf8')
+      res.on('data', c => { data += c })
+      res.on('end', () => {
+        if ((res.statusCode ?? 500) >= 400) return reject(new Error(`ollama ${res.statusCode}: ${data.slice(0, 300)}`))
+        try {
+          const j = JSON.parse(data) as { choices?: { message?: { content?: string } }[]; usage?: { total_tokens?: number } }
+          const st = usageStore.getStore()
+          if (st) { st.llmCalls++; st.tokens += j.usage?.total_tokens ?? 0 }
+          resolve(j.choices?.[0]?.message?.content ?? '')
+        } catch (e) { reject(e) }
+      })
+    })
+    req.setTimeout(timeoutMs, () => req.destroy(new Error(`ollama timed out after ${Math.round(timeoutMs / 1000)}s`)))
+    req.on('error', e => reject((e as NodeJS.ErrnoException).code === 'ECONNREFUSED' ? new LlmUnavailable('ollama not running: ollama serve') : e))
+    req.end(JSON.stringify(body))
+  })
 }
