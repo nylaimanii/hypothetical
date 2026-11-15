@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import { useFrame, type ThreeEvent } from '@react-three/fiber'
+import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Outlines } from '@react-three/drei'
 import type { Frame } from '@/lib/types'
 import { C, HAIR_HEX, LAND_TOP, MONK, latLonToVec3, sceneRefs, shade, surfaceQuat, tangentBasis, vinyl } from './lib'
@@ -102,6 +102,8 @@ export default function Pips({ frame }: { frame: Frame }) {
   const select = useStore((s) => s.select)
   const juice = useStore((s) => s.juice)
   const setKeys = usePhys((s) => s.setKeys)
+  const adaptive = useStore((s) => s.adaptive)
+  const camera = useThree((s) => s.camera)
   // injected revolts and famines last 12s on top of the frame
   const injected = juice.filter((j) => j.text === 'injected by you' && j.regionId)
   const revKey = injected.filter((j) => j.kind === 'revolt' || j.kind === 'war').map((j) => j.regionId!).join()
@@ -180,14 +182,17 @@ export default function Pips({ frame }: { frame: Frame }) {
     if (!(visible && quality === 'high')) { setKeys([]); return }
     const pick = () => {
       const f = sceneRefs.focus.clone().normalize()
-      const scored = agents.filter((a) => !a.migrant && pipRegistry.roots.has(a.key)).map((a) => ({ k: a.key, d: a.home.dot(f) })).filter((x) => x.d > Math.cos(0.32)).sort((x, y) => y.d - x.d).slice(0, 40).map((x) => x.k).sort()
+      // adaptive level 2: only pips actually on screen keep physics
+      const frustum = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse))
+      const onScreen = (k: string) => adaptive < 2 || frustum.intersectsSphere(new THREE.Sphere(pipRegistry.roots.get(k)!.pos, 0.3))
+      const scored = agents.filter((a) => !a.migrant && pipRegistry.roots.has(a.key) && onScreen(a.key)).map((a) => ({ k: a.key, d: a.home.dot(f) })).filter((x) => x.d > Math.cos(0.32)).sort((x, y) => y.d - x.d).slice(0, 40).map((x) => x.k).sort()
       const cur = usePhys.getState().keys
       if (scored.join() !== cur.join()) setKeys(scored)
     }
     pick()
     const id = setInterval(pick, 600)
     return () => clearInterval(id)
-  }, [visible, quality, agents, setKeys])
+  }, [visible, quality, agents, setKeys, adaptive, camera])
 
   useFrame(({ clock }) => {
     if (!visible) return
@@ -316,7 +321,7 @@ export default function Pips({ frame }: { frame: Frame }) {
     onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer' },
     onPointerOut: () => { document.body.style.cursor = '' },
   }
-  const shadow = quality === 'high'
+  const shadow = quality === 'high' && adaptive < 1
   const outline = <Outlines thickness={0.022} color={C.ink} />
   const im = (ref: React.RefObject<THREE.InstancedMesh | null>, geo: THREE.BufferGeometry, mat: THREE.Material, count: number, opts: { click?: boolean; outline?: boolean } = {}) => (
     <instancedMesh ref={ref} args={[geo, mat, count]} frustumCulled={false} castShadow={shadow} receiveShadow={shadow}

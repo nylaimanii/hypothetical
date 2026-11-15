@@ -1,8 +1,8 @@
 'use client'
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { Environment, Lightformer, OrbitControls, PerformanceMonitor, SoftShadows, Stats } from '@react-three/drei'
+import { Environment, Lightformer, OrbitControls, SoftShadows, Stats } from '@react-three/drei'
 import { Bloom, EffectComposer, N8AO, SMAA, ToneMapping, Vignette } from '@react-three/postprocessing'
 import { ToneMappingMode } from 'postprocessing'
 import { Physics } from '@react-three/rapier'
@@ -16,7 +16,7 @@ import Symbols, { spaceportId } from './Symbols'
 import Launches from './Launches'
 import PhysicsLayer from './PhysicsLayer'
 import { Labels, MigrationLines } from './Overlays'
-import { pipRegistry } from './pipShared'
+import { pipRegistry, usePhys } from './pipShared'
 import { useCurrentFrame, useStore } from '../state/store'
 
 function Sky() {
@@ -80,6 +80,7 @@ function CameraRig({ destroyed }: { destroyed: boolean }) {
       look: (lat: number, lon: number, d = camera.position.length()) => camera.position.copy(latLonToVec3(lat, lon, d)),
       store: useStore,
       pips: pipRegistry,
+      phys: usePhys,
       camera,
       scene,
       THREE,
@@ -135,12 +136,35 @@ function JuiceDriver() {
 // dev only perf switches: ?noao ?nopcss ?nophys
 const dbg = (k: string) => process.env.NODE_ENV === 'development' && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has(k)
 
-// high runs ao at full res; if the machine cannot hold frame rate, ao drops to half res
-function Effects({ high, degraded }: { high: boolean; degraded: boolean }) {
+// close zoom on high: under 50fps for 2s drops pip shadows, then physics for off-screen pips.
+// 2s at 58fps or better turns them back on, last one off first
+function AdaptiveQuality({ high }: { high: boolean }) {
+  const t = useRef({ frames: 0, window: 0, low: 0, good: 0 })
+  useFrame((_, dt) => {
+    const s = useStore.getState()
+    const w = t.current
+    if (!high || s.zoom !== 'close') {
+      if (s.adaptive !== 0) s.setAdaptive(0)
+      w.low = 0; w.good = 0
+      return
+    }
+    w.frames++
+    w.window += dt
+    if (w.window < 0.25) return
+    const fps = w.frames / w.window
+    if (fps < 50) { w.low += w.window; w.good = 0 } else if (fps >= 58) { w.good += w.window; w.low = 0 } else { w.low = 0; w.good = 0 }
+    w.frames = 0; w.window = 0
+    if (w.low >= 2 && s.adaptive < 2) { s.setAdaptive((s.adaptive + 1) as 1 | 2); w.low = 0 }
+    if (w.good >= 2 && s.adaptive > 0) { s.setAdaptive((s.adaptive - 1) as 0 | 1); w.good = 0 }
+  })
+  return null
+}
+
+function Effects({ high }: { high: boolean }) {
   if (high && !dbg('noao'))
     return (
-      <EffectComposer multisampling={0} key={degraded ? 'high-half' : 'high'}>
-        <N8AO halfRes={degraded} aoRadius={0.5} distanceFalloff={0.6} intensity={2.4} quality="medium" />
+      <EffectComposer multisampling={0} key="high">
+        <N8AO halfRes aoRadius={0.5} distanceFalloff={0.6} intensity={2.4} quality="medium" />
         <Bloom mipmapBlur luminanceThreshold={1} luminanceSmoothing={0.15} intensity={0.85} />
         <ToneMapping mode={ToneMappingMode.AGX} />
         <SMAA />
@@ -166,20 +190,19 @@ export default function Globe() {
   const spaceport = useMemo(() => spaceportId(record.frames, idx, frame.regions), [record.frames, idx, frame.regions])
   const destroyed = frame.status === 'destroyed'
   const dev = process.env.NODE_ENV === 'development'
-  const [degraded, setDegraded] = useState(false)
 
   return (
     <div className="absolute inset-0" style={{ filter: destroyed ? 'grayscale(1) brightness(0.92)' : 'none', transition: 'filter 3s ease' }}>
       <Canvas
         key={quality}
         shadows={high ? { type: THREE.PCFShadowMap } : false}
-        dpr={degraded ? [1, 1.5] : [1, 2]}
+        dpr={[1, 2]}
         flat
         gl={{ antialias: false, powerPreference: 'high-performance', stencil: false }}
         camera={{ position: [20, 16, 56], fov: 38, near: 0.05, far: 500 }}
         onPointerMissed={() => select(null)}
       >
-        <PerformanceMonitor flipflops={2} onDecline={() => setDegraded(true)} onFallback={() => setDegraded(true)} />
+        <AdaptiveQuality high={high} />
         <Sky />
         <KeyLight high={high} />
         {high && !dbg('nopcss') && <SoftShadows size={12} samples={6} focus={0.5} />}
@@ -208,7 +231,7 @@ export default function Globe() {
         )}
         <JuiceDriver />
         <CameraRig destroyed={destroyed} />
-        <Effects high={high} degraded={degraded} />
+        <Effects high={high} />
         {dev && <Stats className="!top-auto !bottom-28 !left-4" />}
       </Canvas>
     </div>

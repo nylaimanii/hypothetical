@@ -31,6 +31,8 @@ type State = {
   mode: 'ai' | 'baseline'
   zoom: Zoom
   quality: Quality
+  // close zoom fallback on high: 0 all on, 1 no pip shadows, 2 also no physics for off-screen pips
+  adaptive: 0 | 1 | 2
   selection: Selection
   drawerOpen: boolean
   liveRunId: string | null
@@ -47,6 +49,7 @@ type State = {
   setMode: (m: 'ai' | 'baseline') => void
   setZoom: (z: Zoom) => void
   setQuality: (q: Quality) => void
+  setAdaptive: (a: 0 | 1 | 2) => void
   select: (s: Selection) => void
   setDrawer: (o: boolean) => void
   setLive: (id: string | null) => void
@@ -71,6 +74,7 @@ export const useStore = create<State>((set) => ({
   mode: 'ai',
   zoom: 'far',
   quality: 'high',
+  adaptive: 0,
   selection: null,
   drawerOpen: false,
   liveRunId: null,
@@ -86,7 +90,8 @@ export const useStore = create<State>((set) => ({
   setSpeed: (speed) => set({ speed }),
   setMode: (mode) => set({ mode }),
   setZoom: (zoom) => set({ zoom }),
-  setQuality: (quality) => set({ quality }),
+  setQuality: (quality) => set({ quality, adaptive: 0 }),
+  setAdaptive: (adaptive) => set({ adaptive }),
   select: (selection) => set({ selection }),
   setDrawer: (drawerOpen) => set({ drawerOpen }),
   setLive: (liveRunId) => set({ liveRunId }),
