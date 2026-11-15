@@ -1,12 +1,16 @@
 'use client'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { TICKS_PER_SECOND, useStore } from '../state/store'
 import { api, Offline } from './api'
 import Inspector from './Inspector'
+import { SideDrawer, useNarrow } from './Side'
 import Timeline from './Timeline'
 import LivePanel from './LivePanel'
 import { Leaderboard, ModeToggle, RulesDrawer, TopLeft, TopRight } from './Chrome'
+
+// dev shows an fps meter in the bottom right corner of the middle row; panels leave it room
+const DEV = process.env.NODE_ENV === 'development'
 
 const Globe = dynamic(() => import('../world/Globe'), { ssr: false })
 
@@ -87,6 +91,16 @@ export default function App() {
   const setLive = useStore((s) => s.setLive)
   const liveRunId = useStore((s) => s.liveRunId)
   const drawerOpen = useStore((s) => s.drawerOpen)
+  const selection = useStore((s) => s.selection)
+  const narrow = useNarrow()
+  const [leftOpen, setLeftOpen] = useState(false)
+  const [rightOpen, setRightOpen] = useState(false)
+  // narrow layout: picking something or opening the rules slides the right drawer in, clearing both closes it
+  const wantsRight = Boolean(selection) || drawerOpen
+  const [prevWants, setPrevWants] = useState(wantsRight)
+  if (prevWants !== wantsRight) { setPrevWants(wantsRight); setRightOpen(wantsRight) }
+  const [prevLive, setPrevLive] = useState(liveRunId)
+  if (prevLive !== liveRunId) { setPrevLive(liveRunId); if (liveRunId) setLeftOpen(true) }
 
   const startLive = async () => {
     const s = useStore.getState()
@@ -107,23 +121,41 @@ export default function App() {
   return (
     <main className="relative h-screen w-screen overflow-hidden">
       <Globe />
-      <div className="pointer-events-none absolute inset-0 flex flex-col p-4">
-        <div className="flex items-start justify-between gap-4">
+      <div className="pointer-events-none absolute inset-0 z-10 flex flex-col p-3 xl:p-4">
+        <div className="relative flex flex-wrap items-start justify-between gap-2">
           <TopLeft />
-          <div className="flex flex-col items-center gap-2"><ModeToggle /><Notice /></div>
+          <div className="order-last flex w-full flex-col items-center gap-2 lg:absolute lg:left-1/2 lg:top-0 lg:order-none lg:w-auto lg:-translate-x-1/2">
+            <ModeToggle />
+            <Notice />
+          </div>
           <TopRight onLive={startLive} />
         </div>
-        <div className="mt-4 flex min-h-0 flex-1 items-start justify-between gap-4">
-          <div className="flex flex-col gap-3">
-            <Leaderboard />
-            <LivePanel />
-          </div>
-          <div className="flex items-start gap-3">
-            <Inspector />
-            {drawerOpen && <RulesDrawer />}
-          </div>
+        <div className="relative mt-3 flex min-h-0 flex-1 items-stretch justify-between gap-4 xl:mt-4">
+          {narrow ? (
+            <>
+              <SideDrawer side="left" label="runs" open={leftOpen} onToggle={() => setLeftOpen(!leftOpen)}>
+                <Leaderboard />
+                <LivePanel />
+              </SideDrawer>
+              <SideDrawer side="right" label="details" open={rightOpen} onToggle={() => setRightOpen(!rightOpen)} reserveBottom={DEV}>
+                <Inspector />
+                {drawerOpen && <RulesDrawer />}
+              </SideDrawer>
+            </>
+          ) : (
+            <>
+              <div className="scroll-thin flex min-h-0 flex-col gap-3 overflow-y-auto">
+                <Leaderboard />
+                <LivePanel />
+              </div>
+              <div className={`scroll-thin flex min-h-0 flex-col items-end gap-3 overflow-y-auto ${DEV ? 'mb-14' : ''}`}>
+                <Inspector />
+                {drawerOpen && <RulesDrawer />}
+              </div>
+            </>
+          )}
         </div>
-        <div className="mt-4"><Timeline /></div>
+        <div className="mt-3 shrink-0 xl:mt-4"><Timeline /></div>
       </div>
     </main>
   )

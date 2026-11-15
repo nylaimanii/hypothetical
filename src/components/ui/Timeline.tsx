@@ -32,12 +32,12 @@ export default function Timeline() {
           <svg width="12" height="12" viewBox="0 0 12 12"><path d="M3 1.5v9l7.5-4.5z" fill="currentColor" /></svg>
         )}
       </button>
-      <div className="flex shrink-0 rounded-full border border-ink/15 p-0.5 font-mono text-[10px]">
+      <div className="flex shrink-0 whitespace-nowrap rounded-full border border-ink/15 p-0.5 font-mono text-[10px]">
         {([1, 4, 16] as const).map((s) => (
           <button key={s} onClick={() => setSpeed(s)} className={`rounded-full px-2 py-0.5 ${speed === s ? 'bg-ink text-bone' : 'text-ink/60'}`}>{s}x</button>
         ))}
       </div>
-      <Num className="w-16 shrink-0 text-[12px] text-ink/60">{record.frames[0].date}</Num>
+      <Num className="shrink-0 whitespace-nowrap text-[12px] text-ink/60">{record.frames[0].date}</Num>
       <div ref={bar} className="relative h-9 flex-1 cursor-pointer select-none"
         onPointerDown={(e) => { (e.target as HTMLElement).setPointerCapture(e.pointerId); setPlaying(false); scrub(e.clientX) }}
         onPointerMove={(e) => { if (e.buttons === 1) scrub(e.clientX) }}>
@@ -65,7 +65,7 @@ export default function Timeline() {
           </div>
         )}
       </div>
-      <Num className="w-16 shrink-0 text-right text-[12px] text-ink/60">{record.frames.at(-1)!.date}</Num>
+      <Num className="shrink-0 whitespace-nowrap text-right text-[12px] text-ink/60">{record.frames.at(-1)!.date}</Num>
     </div>
   )
 }

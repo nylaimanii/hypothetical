@@ -9,7 +9,7 @@ import { api, Offline } from './api'
 export function StatusPill({ status }: { status: string }) {
   const danger = status === 'destroyed'
   return (
-    <span className={`rounded-full px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] ${danger ? 'bg-ember text-bone' : status === 'moon' ? 'bg-ink text-bone' : 'border border-ink/25 text-ink/70'}`}>{status}</span>
+    <span className={`whitespace-nowrap rounded-full px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] ${danger ? 'bg-ember text-bone' : status === 'moon' ? 'bg-ink text-bone' : 'border border-ink/25 text-ink/70'}`}>{status}</span>
   )
 }
 
@@ -17,14 +17,14 @@ export function TopLeft() {
   const { frame, record } = useCurrentFrame()
   const source = useStore((s) => s.source)
   return (
-    <div className="panel pointer-events-auto px-4 py-3">
-      <div className="flex items-center gap-3">
-        <Num className="text-2xl tracking-tight">{frame.date}</Num>
+    <div className="panel pointer-events-auto shrink-0 whitespace-nowrap px-3 py-2 xl:px-4 xl:py-3">
+      <div className="flex items-center gap-2 xl:gap-3">
+        <Num className="text-xl tracking-tight xl:text-2xl">{frame.date}</Num>
         <StatusPill status={frame.status} />
         {source === 'mock' && <span className="rounded border border-dashed border-ink/40 px-1.5 font-mono text-[10px] tracking-[0.2em] text-ink/60">MOCK</span>}
         {source === 'live' && <span className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.2em]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ink" />live</span>}
       </div>
-      <div className="mt-1 flex gap-3 text-[11px] text-ink/55">
+      <div className="mt-1 flex gap-3 text-[10px] text-ink/55 xl:text-[11px]">
         <span>run <Num className="text-ink/80">{record.runId}</Num></span>
         <span>gen <Num className="text-ink/80">{record.generation}</Num></span>
         <span>tick <Num className="text-ink/80">{frame.tick}</Num></span>
@@ -39,9 +39,9 @@ export function ModeToggle() {
   const { record } = useCurrentFrame()
   if (!record.baseline.length) return null
   return (
-    <div className="panel pointer-events-auto flex p-1 text-[13px]">
+    <div className="panel pointer-events-auto flex shrink-0 whitespace-nowrap p-1 text-[12px] xl:text-[13px]">
       {(['ai', 'baseline'] as const).map((m) => (
-        <button key={m} onClick={() => setMode(m)} className={`rounded-full px-4 py-1.5 transition ${mode === m ? 'bg-ink text-bone' : 'text-ink/70 hover:bg-ink/5'}`}>
+        <button key={m} onClick={() => setMode(m)} className={`whitespace-nowrap rounded-full px-3 py-1.5 transition xl:px-4 ${mode === m ? 'bg-ink text-bone' : 'text-ink/70 hover:bg-ink/5'}`}>
           {m === 'ai' ? 'with ai' : 'without ai'}
         </button>
       ))}
@@ -56,14 +56,14 @@ export function TopRight({ onLive }: { onLive: () => void }) {
   const setDrawer = useStore((s) => s.setDrawer)
   const liveRunId = useStore((s) => s.liveRunId)
   return (
-    <div className="pointer-events-auto flex items-center gap-2">
+    <div className="pointer-events-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap xl:gap-2">
       <div className="panel flex p-1 font-mono text-[10px] uppercase tracking-[0.14em]">
         {(['high', 'fast'] as const).map((q) => (
-          <button key={q} onClick={() => setQuality(q)} className={`rounded-full px-2.5 py-1 ${quality === q ? 'bg-ink text-bone' : 'text-ink/60 hover:bg-ink/5'}`}>{q}</button>
+          <button key={q} onClick={() => setQuality(q)} className={`whitespace-nowrap rounded-full px-2 py-1 xl:px-2.5 ${quality === q ? 'bg-ink text-bone' : 'text-ink/60 hover:bg-ink/5'}`}>{q}</button>
         ))}
       </div>
-      <button onClick={onLive} className={`panel px-4 py-2 text-[13px] ${liveRunId ? 'bg-ink! text-bone' : 'hover:bg-bone'}`}>{liveRunId ? 'live on' : 'play live'}</button>
-      <button onClick={() => setDrawer(!drawerOpen)} className={`panel px-4 py-2 text-[13px] ${drawerOpen ? 'bg-ink! text-bone' : 'hover:bg-bone'}`}>world rules</button>
+      <button onClick={onLive} className={`panel whitespace-nowrap px-3 py-2 text-[12px] xl:px-4 xl:text-[13px] ${liveRunId ? 'bg-ink! text-bone' : 'hover:bg-bone'}`}>{liveRunId ? 'live on' : 'play live'}</button>
+      <button onClick={() => setDrawer(!drawerOpen)} className={`panel whitespace-nowrap px-3 py-2 text-[12px] xl:px-4 xl:text-[13px] ${drawerOpen ? 'bg-ink! text-bone' : 'hover:bg-bone'}`}>world rules</button>
     </div>
   )
 }
@@ -83,7 +83,7 @@ export function Leaderboard() {
     try { setRecord(await api.run(id), 'api') } catch (e) { setNotice(e instanceof Offline ? 'runner offline' : 'could not load run') }
   }
   return (
-    <div className="panel pointer-events-auto w-64 overflow-hidden">
+    <div className="panel pointer-events-auto flex min-h-0 w-64 shrink-0 flex-col overflow-hidden">
       <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between px-4 py-2.5 text-left">
         <span className="font-display text-[15px]">leaderboard</span>
         <span className="flex items-center gap-2">
@@ -92,7 +92,7 @@ export function Leaderboard() {
         </span>
       </button>
       {open && (
-        <ul className="scroll-thin max-h-[40vh] overflow-y-auto pb-2">
+        <ul className="scroll-thin min-h-0 max-h-[40vh] overflow-y-auto pb-2">
           {sorted.map((r, i) => (
             <li key={r.runId}>
               <button onClick={() => load(r.runId)} className={`w-full px-4 py-1.5 text-left hover:bg-ink/5 ${record.runId === r.runId ? 'bg-ink/[0.07]' : ''}`}>
@@ -126,7 +126,7 @@ export function RulesDrawer() {
   if (!open) return null
   const b0 = record.frames[0].budget
   return (
-    <div className="panel scroll-thin pointer-events-auto max-h-[calc(100vh-15rem)] w-80 overflow-y-auto p-5">
+    <div className="panel pointer-events-auto w-[22rem] shrink-0 p-5">
       <div className="text-[11px] uppercase tracking-[0.16em] text-ink/45">{mode === 'ai' ? 'set by the core' : 'frozen 2026 policies'}</div>
       <div className="font-display text-2xl">world rules</div>
       <Section title="religion">

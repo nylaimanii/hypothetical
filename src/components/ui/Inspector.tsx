@@ -20,7 +20,7 @@ function migrationsUpTo(rec: RunRecord, idx: number): (Migration & { tick: numbe
 function Shell({ kicker, title, children }: { kicker: string; title: React.ReactNode; children: React.ReactNode }) {
   const select = useStore((s) => s.select)
   return (
-    <div className="panel scroll-thin pointer-events-auto max-h-[calc(100vh-15rem)] w-[22rem] overflow-y-auto p-5">
+    <div className="panel pointer-events-auto w-[22rem] shrink-0 p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[11px] uppercase tracking-[0.16em] text-ink/45">{kicker}</div>

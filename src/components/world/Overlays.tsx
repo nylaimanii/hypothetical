@@ -13,23 +13,44 @@ export function Labels({ frame }: { frame: Frame }) {
   const camera = useThree((s) => s.camera)
   const refs = useRef<(HTMLDivElement | null)[]>([])
   const spots = useMemo(() => frame.regions.map((r) => ({ r, pos: latLonToVec3(r.lat, r.lon, LAND_TOP + 1.3), n: latLonToVec3(r.lat, r.lon, 1) })), [frame.regions])
-  useFrame(() => {
+  // bigger regions claim screen space first; a label that would overlap one already placed hides
+  const order = useMemo(() => spots.map((_, i) => i).sort((a, b) => spots[b].r.population - spots[a].r.population), [spots])
+  const shown = useRef<boolean[]>([])
+  const acc = useRef(0)
+  useFrame((_, dt) => {
     const c = camera.position.clone().normalize()
+    acc.current += dt
+    const relayout = acc.current > 0.12
+    if (relayout) {
+      acc.current = 0
+      const placed: DOMRect[] = []
+      for (const i of order) {
+        const el = refs.current[i]
+        const facing = spots[i].n.dot(c) > 0.15
+        if (!el || !facing) { shown.current[i] = false; continue }
+        const b = el.getBoundingClientRect()
+        const pad = 4
+        const hit = placed.some((p) => b.left - pad < p.right && b.right + pad > p.left && b.top - pad < p.bottom && b.bottom + pad > p.top)
+        shown.current[i] = !hit
+        if (!hit) placed.push(b)
+      }
+    }
     spots.forEach((s, i) => {
       const el = refs.current[i]
       if (!el) return
-      const d = s.n.dot(c)
-      el.style.opacity = String(Math.max(0, Math.min(1, (d - 0.15) * 3)))
-      el.style.pointerEvents = d > 0.3 ? 'auto' : 'none'
+      const face = Math.max(0, Math.min(1, (s.n.dot(c) - 0.15) * 3))
+      const op = shown.current[i] ? face : 0
+      el.style.opacity = String(op)
+      el.style.pointerEvents = op > 0.5 ? 'auto' : 'none'
     })
   })
   if (zoom !== 'mid') return null
   return (
     <>
       {spots.map((s, i) => (
-        <Html key={s.r.id} position={s.pos} center zIndexRange={[20, 0]}>
+        <Html key={s.r.id} position={s.pos} center zIndexRange={[5, 0]}>
           <div ref={(el) => { refs.current[i] = el }} onClick={() => select({ kind: 'region', id: s.r.id })}
-            className="cursor-pointer select-none whitespace-nowrap rounded-full border border-ink/15 bg-bone/85 px-3 py-1 font-display text-[13px] text-ink shadow-sm backdrop-blur transition-opacity hover:bg-bone">
+            style={{ opacity: 0 }} className="cursor-pointer select-none whitespace-nowrap rounded-full border border-ink/15 bg-bone/85 px-3 py-1 font-display text-[13px] text-ink shadow-sm backdrop-blur transition-opacity duration-200 hover:bg-bone">
             {s.r.name}
             {s.r.unrest > 0.6 && <span className="ml-2 inline-block h-1.5 w-1.5 rounded-full bg-ember align-middle" />}
           </div>

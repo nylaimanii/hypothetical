@@ -192,7 +192,8 @@ export default function Globe() {
   const dev = process.env.NODE_ENV === 'development'
 
   return (
-    <div className="absolute inset-0" style={{ filter: destroyed ? 'grayscale(1) brightness(0.92)' : 'none', transition: 'filter 3s ease' }}>
+    // isolate: html labels inside the canvas can never stack above the ui panels
+    <div className="absolute inset-0 isolate z-0" style={{ filter: destroyed ? 'grayscale(1) brightness(0.92)' : 'none', transition: 'filter 3s ease' }}>
       <Canvas
         key={quality}
         shadows={high ? { type: THREE.PCFShadowMap } : false}
@@ -232,7 +233,7 @@ export default function Globe() {
         <JuiceDriver />
         <CameraRig destroyed={destroyed} />
         <Effects high={high} />
-        {dev && <Stats className="!top-auto !bottom-28 !left-4" />}
+        {dev && <Stats className="!left-auto !right-4 !top-auto !bottom-[92px]" />}
       </Canvas>
     </div>
   )
