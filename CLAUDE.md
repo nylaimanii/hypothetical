@@ -30,6 +30,10 @@ one ai runs a single world government starting 2026-11. physics, biology, econom
 - learning: every death adds lessons to data/lessons.json, and later governors get the most relevant lessons in their prompt
 - the no-ai twin is still computed but hidden in the ui (reports + an advanced settings toggle only)
 
+## v2.1 rules
+
+- every run belongs to an Agent. agent names are original sci-fi names, never real people, brands, or existing fictional characters. seed names: long now, meridian, halcyon, vesper, atlas, solace, kestrel. mutants are "<parent> ii/iii/...", crossovers are "<a> × <b>".
+
 ## ownership
 
 - A: scaffold, CLAUDE.md, src/lib/types.ts, src/lib/mock/**, src/app/** (except src/app/api/**), src/components/**
@@ -44,4 +48,8 @@ one ai runs a single world government starting 2026-11. physics, biology, econom
 - POST /api/live/start { constitution?, seed? } -> { runId }
 - GET /api/live/[id] -> RunRecord (live: true, frames so far)
 - POST /api/override { runId, override: Override } -> { ok: true }
-- GET /api/learning -> { generation: number; bestScore: number; lessonsKnown?: number }[] (one row per generation, for the leaderboard learning curve)
+- GET /api/learning -> { generation: number; bestScore: number; lessonsKnown?: number; lineage?: string }[] (one row per generation per lineage; lineage = the seed agent id it descends from)
+- GET /api/agents -> Agent[]
+- GET /api/compare?agents=<id,id,...> -> { runs: RunRecord[]; divergences: Divergence[] } (one run per agent, same seed when possible)
+- GET /api/hall -> HallEntry[]
+- POST /api/branch { runId, tick, agentId } -> { runId } (a new live world from that run's snapshot at tick, governed by agentId)

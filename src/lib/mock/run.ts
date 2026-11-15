@@ -154,7 +154,16 @@ function normBudget(b: Budget): Budget {
   return Object.fromEntries(Object.entries(b).map(([k, v]) => [k, v / s])) as Budget
 }
 
-function thoughtFor(r: Rng, c: Citizen, region: Region, events: WorldEvent[], doomed: boolean): string {
+type BaseEvent = Omit<WorldEvent, 'significance' | 'headline'>
+// how much an event matters for chronicles and reels
+const KIND_WEIGHT: Partial<Record<WorldEvent['kind'], number>> = { launch: 0.85, war: 0.95, pandemic: 0.85, famine: 0.8, revolt: 0.75, disaster: 0.8, breakthrough: 0.8, migration: 0.45, law: 0.3 }
+export function withSignificance(e: BaseEvent): WorldEvent {
+  const w = KIND_WEIGHT[e.kind] ?? 0.4
+  const sig = Math.min(1, w * (0.55 + e.severity * 0.6) + (e.kind === 'launch' && /crewed|lander/.test(e.text) ? 0.25 : 0))
+  return { ...e, significance: Math.round(sig * 100) / 100, headline: e.text.split(/[,:]/)[0] }
+}
+
+function thoughtFor(r: Rng, c: Citizen, region: Region, events: BaseEvent[], doomed: boolean): string {
   const here = events.find((e) => e.regionId === region.id)
   if (here?.kind === 'famine') return pick(r, ['the silo line was three hours today.', 'my kids ask why we eat less now.'])
   if (here?.kind === 'revolt') return pick(r, ['nobody asked us before they moved the pads here.', 'i am not going home until they listen.'])
@@ -178,7 +187,7 @@ function worldState(regions: Region[], progress: number, doomed: boolean, year: 
   }
 }
 
-export function makeMockRun(runId: string, seed: number, fate: MockFate, generation = 3): RunRecord {
+export function makeMockRun(runId: string, seed: number, fate: MockFate, generation = 3, agentId = 'meridian'): RunRecord {
   const r = mulberry32(seed)
   const doomed = fate === 'destroyed'
   const seeds = REGION_SEEDS.map((s) => ({ ...s }))
@@ -199,7 +208,7 @@ export function makeMockRun(runId: string, seed: number, fate: MockFate, generat
 
   for (let year = 0; year < 10; year++) {
     const tick = year * 12
-    const events: WorldEvent[] = []
+    const events: BaseEvent[] = []
     let decision: Decision | undefined
     let migrations: Migration[] = []
 
@@ -294,7 +303,7 @@ export function makeMockRun(runId: string, seed: number, fate: MockFate, generat
     frames.push({
       tick, date: dateFor(tick), regions, citizens, laws: laws.map((l) => ({ ...l })), budget,
       religionPolicy, schoolPolicy: school, moonStage: stageFor(progress), moonProgress: progress,
-      status, newEvents: events, decision, ...worldState(regions, progress, doomed, year),
+      status, newEvents: events.map(withSignificance), decision, ...worldState(regions, progress, doomed, year),
     })
 
     // no-ai twin: 2026 policies frozen
@@ -330,14 +339,14 @@ export function makeMockRun(runId: string, seed: number, fate: MockFate, generat
     baselineStatus: 'alive', baselineEndDate: last.date,
     frontier: last.frontier, peakPeriodLifeExpectancy: Math.max(...frames.map((f) => f.globalPeriodLifeExpectancy)),
     finalPopulation: last.globalPopulation, citiesFounded: last.cities.length, diseasesEradicated: [], humanCost: last.humanCost,
-    lessonsLearned: [], lessonsApplied: 0,
+    lessonsLearned: [], lessonsApplied: 0, agentId,
   }
-  return { runId, generation, seed, constitution: summary.constitution, frames, baseline, summary }
+  return { runId, generation, seed, constitution: summary.constitution, frames, baseline, summary, agentId, snapshots: [] }
 }
 
 let cache: RunRecord[] | null = null
 export function mockRuns(): RunRecord[] {
-  if (!cache) cache = [enrichRun(makeMockRun('mock-g3-0007', 7, 'moon', 3), 'moon'), enrichRun(makeMockRun('mock-g2-0031', 31, 'destroyed', 2), 'destroyed')]
+  if (!cache) cache = [enrichRun(makeMockRun('mock-g3-0007', 7, 'moon', 3, 'meridian-ii'), 'moon'), enrichRun(makeMockRun('mock-g2-0031', 31, 'destroyed', 2, 'kestrel'), 'destroyed')]
   return cache
 }
 export const mockRun = () => mockRuns()[0]

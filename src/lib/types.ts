@@ -59,7 +59,8 @@ export type Decision = {
   tick: number; laws: Law[]; repeal: string[]; migrations: Migration[]; budget: Budget; religionPolicy: ReligionPolicy; schoolPolicy: SchoolPolicy; rationale: string; respondedToOverrides: string[]
   foundCities: Omit<City, 'id'|'population'|'foundedTick'>[]; charterCompanies: Omit<Company, 'id'|'workers'|'foundedTick'>[]; researchFocus: string[]; publicStatement: string; lessonsApplied: string[]
 }
-export type WorldEvent = { tick: number; regionId?: string; kind: 'famine'|'revolt'|'war'|'disaster'|'pandemic'|'breakthrough'|'launch'|'migration'|'law'|'injected'|'override'; text: string; severity: number }
+// significance 0..1 drives the chronicle (>= 0.6), highlight reels and hall of history. headline is a short title for lists
+export type WorldEvent = { tick: number; regionId?: string; kind: 'famine'|'revolt'|'war'|'disaster'|'pandemic'|'breakthrough'|'launch'|'migration'|'law'|'injected'|'override'; text: string; severity: number; significance: number; headline?: string }
 export type Override = { id: string; tick?: number; kind: 'inject_event'|'veto_law'|'force_budget'; regionId?: string; eventKind?: WorldEvent['kind']; severity?: number; lawId?: string; budget?: Partial<Budget> }
 export type WorldStatus = 'alive'|'destroyed'|'complete'|'goal_achieved'
 export type MoonStage = 'none'|'orbital'|'heavy_lift'|'life_support'|'lander'|'crewed_landing'
@@ -78,7 +79,21 @@ export type RunSummary = {
   runId: string; generation: number; status: WorldStatus; endDate: string; ticks: number; score: number; causeOfDeath?: string; constitution: string; peakPopulation: number
   moonStage: MoonStage; topEvents: WorldEvent[]; baselineStatus: WorldStatus; baselineEndDate: string
   frontier: Frontier; peakPeriodLifeExpectancy: number; finalPopulation: number; citiesFounded: number; diseasesEradicated: string[]; humanCost: HumanCost; lessonsLearned: Lesson[]; lessonsApplied: number; usage?: Usage
+  agentId: string
 }
 // precedents: the library this run's laws cite. lessons: what the governor knew at the start of this run
-export type RunRecord = { runId: string; generation: number; seed: number; constitution: string; frames: Frame[]; baseline: BaselineFrame[]; summary: RunSummary; live?: boolean; precedents?: Precedent[]; lessons?: Lesson[] }
+export type RunRecord = {
+  runId: string; generation: number; seed: number; constitution: string; frames: Frame[]; baseline: BaselineFrame[]; summary: RunSummary; live?: boolean; precedents?: Precedent[]; lessons?: Lesson[]
+  agentId: string; snapshots: Snapshot[]; branchedFrom?: { runId: string; tick: number; agentId: string }
+}
 export type RunOptions = { runId: string; generation: number; seed: number; constitution: string; onFrame?: (f: Frame) => void; overrideDir?: string; live?: { msPerTick: number }; frameEvery?: number }
+
+// ---- agents, lineage, comparison, history ----
+// every run belongs to an Agent (a governor with a constitution). names are original sci-fi names, never real people or brands
+export type Agent = {
+  id: string; name: string; emblemSeed: number; philosophy: string; constitution: string; parentIds: string[]; origin: 'seed'|'mutation'|'crossover'; generation: number; protected: boolean
+  runIds: string[]; worlds: number; deaths: number; bestScore: number; avgScore: number; bestFrontier: Frontier; bestPeriodLifeExpectancy: number; champion: boolean; retired: boolean
+}
+export type Snapshot = { tick: number; state: string } // compressed full WorldState, for branching
+export type Divergence = { runA: string; runB: string; tick: number; decisionDiff: string; consequence: string }
+export type HallEntry = { id: string; title: string; runId: string; agentId: string; tick: number; kind: 'first'|'record'|'catastrophe'|'milestone'; text: string }
