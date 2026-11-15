@@ -1,7 +1,68 @@
 'use client'
 import { useRef, useState } from 'react'
+import type { Divergence } from '@/lib/types'
 import { useCurrentFrame, useStore } from '../state/store'
 import { Num } from './bits'
+import Emblem from './Emblem'
+import { Offline } from './api'
+
+// plays the world's top events by significance, back to back, through the director
+export function startReel() {
+  const s = useStore.getState()
+  if (s.reel) { stopReel(); return }
+  const rec = s.compare ? s.compare.records[s.compareFocus ?? 0] : s.record
+  const stops = rec.frames.flatMap((f) => f.newEvents.filter((e) => e.kind !== 'law').map((e) => ({ tick: f.tick, regionId: e.regionId, kind: e.kind, sig: e.significance ?? e.severity })))
+    .sort((a, b) => b.sig - a.sig).slice(0, 10).sort((a, b) => a.tick - b.tick).map(({ tick, regionId, kind }) => ({ tick, regionId, kind }))
+  if (!stops.length) { s.setNotice('nothing big has happened in this world yet'); return }
+  s.setReel({ stops, i: 0, returnTo: s.playhead, wasPlaying: s.playing })
+}
+export function stopReel() {
+  const s = useStore.getState()
+  const r = s.reel
+  if (!r) return
+  s.setReel(null)
+  s.setCaption(null)
+  s.setPlayhead(r.returnTo)
+  s.setPlaying(r.wasPlaying)
+}
+
+function BranchPicker({ onClose }: { onClose: () => void }) {
+  const agents = useStore((s) => s.agents)
+  const record = useStore((s) => s.record)
+  const playhead = useStore((s) => s.playhead)
+  const [busy, setBusy] = useState<string | null>(null)
+  const branch = async (agentId: string) => {
+    const s = useStore.getState()
+    setBusy(agentId)
+    try {
+      const res = await fetch('/api/branch', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runId: record.runId, tick: Math.floor(playhead), agentId }) })
+      if (!res.ok) throw new Offline(String(res.status))
+      const { runId } = (await res.json()) as { runId: string }
+      s.setRunnerOffline(false)
+      s.setLive(runId)
+      s.setPlaying(true)
+      s.setNotice('branched into a new live world')
+      onClose()
+    } catch {
+      s.setNotice('runner offline, cannot branch')
+    } finally { setBusy(null) }
+  }
+  return (
+    <div className="panel absolute bottom-full right-0 z-30 mb-3 w-72 p-3">
+      <div className="mb-2 flex items-center justify-between"><span className="font-display text-[15px]">branch from here</span><button onClick={onClose} className="text-ink/50 hover:text-ink">×</button></div>
+      <p className="mb-2 text-[11px] text-ink/55">a new live world starts from this moment, governed by:</p>
+      <ul className="scroll-thin max-h-64 space-y-0.5 overflow-y-auto">
+        {agents.filter((a) => !a.retired).map((a) => (
+          <li key={a.id}>
+            <button disabled={!!busy} onClick={() => branch(a.id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left hover:bg-ink/5 disabled:opacity-50">
+              <Emblem seed={a.emblemSeed} size={22} glow={a.champion} /><span className="text-[12.5px]">{a.name}</span>{busy === a.id && <span className="ml-auto text-[10px] text-ink/50">...</span>}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
 
 export default function Timeline() {
   const { record } = useCurrentFrame()
@@ -22,6 +83,12 @@ export default function Timeline() {
     setPlayhead(t0 + Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * (t1 - t0))
   }
   const decisions = record.frames.filter((f) => f.decision)
+  const compare = useStore((s) => s.compare)
+  const reel = useStore((s) => s.reel)
+  const agents = useStore((s) => s.agents)
+  const [split, setSplit] = useState<Divergence | null>(null)
+  const [branching, setBranching] = useState(false)
+  const name = (runId: string) => { const r = compare?.records.find((x) => x.runId === runId); return agents.find((a) => a.id === r?.agentId)?.name ?? r?.agentId ?? runId }
   const dangers = record.frames.filter((f) => f.newEvents.some((e) => e.severity >= 0.7 && ['famine', 'revolt', 'war', 'disaster', 'pandemic'].includes(e.kind)))
   return (
     <div className="panel pointer-events-auto flex items-center gap-4 px-4 py-3">
@@ -52,6 +119,17 @@ export default function Timeline() {
             onPointerEnter={() => setHover({ x: x(f.tick), text: f.decision!.rationale, date: f.date })}
             onPointerLeave={() => setHover(null)} />
         ))}
+        {compare?.divergences.map((d) => (
+          <button key={`${d.runB}-${d.tick}`} onPointerDown={(e) => e.stopPropagation()} onClick={() => setSplit(split === d ? null : d)} title="where they split"
+            className="absolute top-0 h-3 w-3 -translate-x-1/2 -translate-y-1 rotate-45 border-2 border-ink bg-dusk" style={{ left: `${x(d.tick)}%` }} />
+        ))}
+        {split && (
+          <div onPointerDown={(e) => e.stopPropagation()} className="absolute bottom-full z-20 mb-3 w-80 -translate-x-1/2 rounded-xl bg-ink px-3 py-2 text-[12px] leading-snug text-bone shadow-lg" style={{ left: `${Math.max(14, Math.min(86, x(split.tick)))}%` }}>
+            <div className="flex justify-between text-[10px] text-bone/60"><span>where {name(split.runA)} and {name(split.runB)} split</span><button onClick={() => setSplit(null)}>×</button></div>
+            <div className="mt-1">{split.decisionDiff}</div>
+            <div className="mt-1 text-bone/75">{split.consequence}</div>
+          </div>
+        )}
         {overrides.map((o) => (
           <div key={o.id} title={`your ${o.kind.replace('_', ' ')}${o.responded ? ', the core responded' : ''}`}
             className={`absolute top-0 h-2.5 w-2.5 -translate-x-1/2 rotate-45 border border-ink ${o.responded ? 'bg-ink ring-2 ring-ink/30 ring-offset-1' : 'bg-bone'}`}
@@ -66,6 +144,15 @@ export default function Timeline() {
         )}
       </div>
       <Num className="shrink-0 whitespace-nowrap text-right text-[12px] text-ink/60">{record.frames.at(-1)!.date}</Num>
+      <button onClick={startReel} title="highlight reel: the ten biggest moments" className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-[12px] ${reel ? 'border-ink bg-ink text-bone' : 'border-ink/25 hover:bg-ink/5'}`}>
+        {reel ? <>reel <Num>{reel.i + 1}/{reel.stops.length}</Num> · stop</> : 'reel'}
+      </button>
+      {!compare && (
+        <div className="relative shrink-0">
+          <button onClick={() => setBranching(!branching)} className={`whitespace-nowrap rounded-full border px-3 py-1 text-[12px] ${branching ? 'border-ink bg-ink text-bone' : 'border-ink/25 hover:bg-ink/5'}`}>branch</button>
+          {branching && <BranchPicker onClose={() => setBranching(false)} />}
+        </div>
+      )}
     </div>
   )
 }

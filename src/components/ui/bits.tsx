@@ -9,8 +9,8 @@ export const fmt = {
   twh: (n: number) => `${Math.round(n).toLocaleString('en-US')}`,
 }
 
-export function Num({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <span className={`font-mono tabular-nums ${className}`}>{children}</span>
+export function Num({ children, className = '', style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
+  return <span className={`font-mono tabular-nums ${className}`} style={style}>{children}</span>
 }
 
 export function Prov({ p }: { p?: Provenance }) {

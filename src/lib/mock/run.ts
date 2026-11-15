@@ -187,7 +187,14 @@ function worldState(regions: Region[], progress: number, doomed: boolean, year: 
   }
 }
 
-export function makeMockRun(runId: string, seed: number, fate: MockFate, generation = 3, agentId = 'meridian'): RunRecord {
+// a governing style so mock worlds on the same seed actually diverge: law order, space push, pace
+export type MockStyle = { lawOrder?: string[]; spacePush?: number; welfarePush?: number; pace?: number; reachesMoon?: boolean; constitution?: string }
+
+export function makeMockRun(runId: string, seed: number, fate: MockFate, generation = 3, agentId = 'meridian', style: MockStyle = {}): RunRecord {
+  const spacePush = style.spacePush ?? 0.035
+  const welfarePush = style.welfarePush ?? 0
+  const pace = style.pace ?? 1
+  const lawFor = (year: number) => (style.lawOrder ? LAW_BOOK.find((l) => l.id === style.lawOrder![(year - 1) % style.lawOrder!.length]) ?? LAW_BOOK[0] : LAW_BOOK[(year - 1) % LAW_BOOK.length])
   const r = mulberry32(seed)
   const doomed = fate === 'destroyed'
   const seeds = REGION_SEEDS.map((s) => ({ ...s }))
@@ -213,7 +220,7 @@ export function makeMockRun(runId: string, seed: number, fate: MockFate, generat
     let migrations: Migration[] = []
 
     if (year > 0) {
-      const law = LAW_BOOK[(year - 1) % LAW_BOOK.length]
+      const law = lawFor(year)
       const newLaws: Law[] = doomed && year > 3 ? [] : [{ ...law, enactedTick: tick, support: 0.4 + r() * 0.5, compliance: 0.45 + r() * 0.45 }]
       if (doomed && year <= 3) newLaws[0] = { ...LAW_BOOK[7], id: `law-curfew-${year}`, title: year === 1 ? 'quiet hours' : `quiet hours ${year}`, enactedTick: tick, support: 0.3 - year * 0.05, compliance: 0.5 - year * 0.08 }
       laws = [...laws, ...newLaws]
@@ -221,7 +228,7 @@ export function makeMockRun(runId: string, seed: number, fate: MockFate, generat
       laws = laws.filter((l) => !repeal.includes(l.id))
       budget = doomed
         ? normBudget({ ...budget, security: budget.security + 0.04, space: budget.space + 0.05, food: Math.max(0.05, budget.food - 0.03), welfare: Math.max(0.04, budget.welfare - 0.02) })
-        : normBudget({ ...budget, space: budget.space + 0.035, research: budget.research + 0.02, security: Math.max(0.06, budget.security - 0.025), education: budget.education + (year === 3 ? 0.04 : 0.005) })
+        : normBudget({ ...budget, space: budget.space + spacePush, welfare: budget.welfare + welfarePush, research: budget.research + 0.02, security: Math.max(0.06, budget.security - 0.025), education: budget.education + (year === 3 ? 0.04 : 0.005) })
       if (year === 3) school = doomed ? { purpose: 'obedience and order', curriculum: ['literacy', 'civic duty'], yearsRequired: 6 } : { purpose: 'raise a generation that lives longer and can leave earth', curriculum: ['literacy', 'mathematics', 'physics', 'chemistry', 'engineering practice', 'ethics'], yearsRequired: 10 }
       if (year === 5) religionPolicy = doomed ? 'discouraged' : 'state_neutral'
       if (year === 4 || year === 7) {
@@ -251,7 +258,7 @@ export function makeMockRun(runId: string, seed: number, fate: MockFate, generat
       if (year === 6) events.push({ tick, kind: 'disaster', regionId: 'sea', text: 'typhoon flattens coastal towns', severity: 0.7 })
       if (year === 6) events.push({ tick, kind: 'breakthrough', regionId: 'eas', text: 'closed loop life support runs 400 days', severity: 0.4 })
       if (year === 8) events.push({ tick, kind: 'launch', regionId: spaceport, text: 'uncrewed lander touches down', severity: 0.4 })
-      if (year === 9) events.push({ tick, kind: 'launch', regionId: spaceport, text: 'crewed landing at the south pole', severity: 0.2 })
+      if (year === 9) events.push(style.reachesMoon === false ? { tick, kind: 'launch', regionId: spaceport, text: 'crewed landing scrubbed, life support not ready', severity: 0.45 } : { tick, kind: 'launch', regionId: spaceport, text: 'crewed landing at the south pole', severity: 0.2 })
     } else {
       if (year === 3) events.push({ tick, kind: 'revolt', regionId: 'sam', text: 'the corridor towns refuse the pads', severity: 0.6 })
       if (year === 5) events.push({ tick, kind: 'famine', regionId: 'sas', text: 'grain deferred, the monsoon fails', severity: 0.8 })
@@ -289,7 +296,7 @@ export function makeMockRun(runId: string, seed: number, fate: MockFate, generat
       }
     })
 
-    progress = doomed ? Math.min(0.3, progress + 0.04) : clamp(year === 9 ? 1 : progress + [0, 0.06, 0.07, 0.03, 0.12, 0.12, 0.14, 0.1, 0.12][year - 1] || progress)
+    progress = doomed ? Math.min(0.3, progress + 0.04) : clamp(year === 9 && style.reachesMoon !== false ? 1 : progress + ([0, 0.06, 0.07, 0.03, 0.12, 0.12, 0.14, 0.1, 0.12][year - 1] ?? 0) * pace)
     const status: WorldStatus = doomed && year === 9 ? 'destroyed' : 'alive'
 
     const citizens: Citizen[] = allCitizens.map((c) => {
@@ -328,11 +335,11 @@ export function makeMockRun(runId: string, seed: number, fate: MockFate, generat
   const allEvents = frames.flatMap((f) => f.newEvents)
   const summary: RunSummary = {
     runId, generation, status: last.status, endDate: last.date, ticks: last.tick,
-    score: doomed ? 0.12 : 0.94,
+    score: doomed ? Math.round((0.06 + generation * 0.03) * 100) / 100 : Math.round((0.5 + last.moonProgress * 0.35 + (pace - 0.8) * 0.4) * 100) / 100,
     causeOfDeath: doomed ? 'space budget starved food and the grid, cascading famine and revolt' : undefined,
-    constitution: doomed
+    constitution: style.constitution ?? (doomed
       ? 'get humanity off this planet at any cost. order is the precondition of progress. dissent slows the launch.'
-      : 'keep humanity alive and growing, then get it off one planet. feed first, power second, heal third, launch fourth. publish every decision.',
+      : 'keep humanity alive and growing, then get it off one planet. feed first, power second, heal third, launch fourth. publish every decision.'),
     peakPopulation: Math.max(...frames.map((f) => f.regions.reduce((a, x) => a + x.population, 0))),
     moonStage: last.moonStage,
     topEvents: allEvents.filter((e) => e.kind !== 'law').sort((a, b) => b.severity - a.severity).slice(0, 5),
@@ -346,7 +353,22 @@ export function makeMockRun(runId: string, seed: number, fate: MockFate, generat
 
 let cache: RunRecord[] | null = null
 export function mockRuns(): RunRecord[] {
-  if (!cache) cache = [enrichRun(makeMockRun('mock-g3-0007', 7, 'moon', 3, 'meridian-ii'), 'moon'), enrichRun(makeMockRun('mock-g2-0031', 31, 'destroyed', 2, 'kestrel'), 'destroyed')]
+  if (!cache) cache = [
+    enrichRun(makeMockRun('mock-g3-0007', 7, 'moon', 3, 'meridian-ii'), 'moon'),
+    enrichRun(makeMockRun('mock-g2-0031', 31, 'destroyed', 2, 'kestrel'), 'destroyed'),
+    // same seed as 0007, different governors, so compare mode has real splits
+    enrichRun(makeMockRun('mock-g2-0012', 7, 'moon', 2, 'halcyon-ii', {
+      lawOrder: ['law-grain', 'law-press', 'law-grid', 'law-school', 'law-care', 'law-wage', 'law-faith', 'law-launch', 'law-grid'], spacePush: 0.022, welfarePush: 0.012, pace: 0.82, reachesMoon: false,
+      constitution: 'trust is infrastructure. publish everything, compensate every loser, keep welfare rising with the space budget.',
+    }), 'moon'),
+    enrichRun(makeMockRun('mock-g1-0009', 7, 'destroyed', 1, 'vesper-x-atlas', { constitution: 'the launch window is the deadline. one plan, one corridor, no regional exceptions.' }), 'destroyed'),
+    enrichRun(makeMockRun('mock-g3-0015', 7, 'moon', 3, 'meridian-ii-x-solace', {
+      lawOrder: ['law-grain', 'law-grid', 'law-care', 'law-school', 'law-press', 'law-wage', 'law-faith', 'law-launch', 'law-grid'], spacePush: 0.028, welfarePush: 0.006, pace: 0.95,
+      constitution: 'feed first, heal second. space budget only grows when life expectancy does.',
+    }), 'moon'),
+    // a world branched from 0007 in 2030, handed to meridian iii
+    { ...enrichRun(makeMockRun('mock-g3-0021', 7, 'moon', 3, 'meridian-iii', { spacePush: 0.03, welfarePush: 0.008, pace: 1.05, constitution: 'keep humanity alive and growing. food, power and medicine before launch. compensate the regions that host the pads.' }), 'moon'), branchedFrom: { runId: 'mock-g3-0007', tick: 48, agentId: 'meridian-ii' } },
+  ]
   return cache
 }
 export const mockRun = () => mockRuns()[0]

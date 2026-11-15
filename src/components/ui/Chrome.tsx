@@ -3,11 +3,15 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Budget, Frontier } from '@/lib/types'
 import { mockRuns } from '@/lib/mock/run'
 import { LEARNING_CURVE } from '@/lib/mock/v2'
+import { learningByLineage } from '@/lib/mock/agents'
+import type { Agent } from '@/lib/types'
 import { useCurrentFrame, useStore } from '../state/store'
-import { Bar, Num, Section, Sparkline, fmt } from './bits'
+import { Bar, Num, Section, fmt } from './bits'
+import { AGENT_COLORS } from './Compare'
 import { api, Offline } from './api'
 import { DirectorToggle, SoundControls, replayIntro } from './Extras'
 import { formatDay, formatTime, tickToDate } from '../world/time'
+import { openRun } from './worlds'
 
 export function StatusPill({ status }: { status: string }) {
   const danger = status === 'destroyed'
@@ -30,7 +34,7 @@ function Clock() {
 }
 
 export function TopLeft() {
-  const { frame } = useCurrentFrame()
+  const { frame, record } = useCurrentFrame()
   const source = useStore((s) => s.source)
   return (
     <div className="panel pointer-events-auto shrink-0 whitespace-nowrap px-3 py-2 xl:px-4 xl:py-2.5">
@@ -40,6 +44,11 @@ export function TopLeft() {
         {source === 'mock' && <span className="rounded border border-dashed border-ink/40 px-1.5 font-mono text-[10px] tracking-[0.2em] text-ink/60">MOCK</span>}
         {source === 'live' && <span className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.2em]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ink" />live</span>}
       </div>
+      {record.branchedFrom && (
+        <button onClick={() => openRun(record.branchedFrom!.runId, record.branchedFrom!.tick)} className="mt-1 block text-[11px] text-ink/60 underline decoration-ink/25 underline-offset-2 hover:text-ink">
+          branched from <Num>{record.branchedFrom.runId}</Num> at <Num>{formatDay(tickToDate(record.branchedFrom.tick))}</Num>
+        </button>
+      )}
     </div>
   )
 }
@@ -103,6 +112,8 @@ export function TopRight({ onLive }: { onLive: () => void }) {
     <div className="pointer-events-auto flex shrink-0 items-center gap-1.5 whitespace-nowrap">
       <button onClick={() => setPanel(panel === 'offworld' ? null : 'offworld')} className={btn(panel === 'offworld')}>off-world</button>
       <button onClick={() => setPanel(panel === 'longevity' ? null : 'longevity')} className={btn(panel === 'longevity')}>200 years</button>
+      <button onClick={() => setPanel(panel === 'agents' ? null : 'agents')} className={btn(panel === 'agents')}>agents</button>
+      <button onClick={() => setPanel(panel === 'hall' ? null : 'hall')} className={btn(panel === 'hall')}>hall</button>
       <DirectorToggle />
       <SoundControls />
       <button onClick={onLive} className={btn(!!liveRunId)}>{liveRunId ? 'live on' : 'play live'}</button>
@@ -140,6 +151,37 @@ export function AdvancedDrawer() {
   )
 }
 
+// best score per generation, one line per lineage
+function LineageCurve({ rows, agents }: { rows: { generation: number; bestScore: number; lineage?: string }[]; agents: Agent[] }) {
+  const W = 220, H = 46
+  const lineages = [...new Set(rows.map((r) => r.lineage ?? 'all'))]
+  const gMax = Math.max(1, ...rows.map((r) => r.generation))
+  const sMax = Math.max(0.01, ...rows.map((r) => r.bestScore))
+  const x = (g: number) => 3 + (g / gMax) * (W - 6)
+  const y = (v: number) => H - 3 - (v / sMax) * (H - 8)
+  const color = (i: number) => AGENT_COLORS[i % AGENT_COLORS.length]
+  return (
+    <div>
+      <svg width={W} height={H} className="block overflow-visible">
+        {lineages.map((l, i) => {
+          const pts = rows.filter((r) => (r.lineage ?? 'all') === l).sort((a, b) => a.generation - b.generation)
+          return (
+            <g key={l} opacity={agents.length && agents.filter((a) => a.id === l || a.parentIds.includes(l)).every((a) => a.retired) ? 0.35 : 1}>
+              {pts.length > 1 && <polyline points={pts.map((p) => `${x(p.generation)},${y(p.bestScore)}`).join(' ')} fill="none" stroke={color(i)} strokeWidth={1.6} strokeLinejoin="round" />}
+              {pts.map((p) => <circle key={p.generation} cx={x(p.generation)} cy={y(p.bestScore)} r={2.2} fill={color(i)} />)}
+            </g>
+          )
+        })}
+      </svg>
+      {lineages.length > 1 && (
+        <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[9.5px]">
+          {lineages.map((l, i) => <span key={l} style={{ color: color(i) }}>{agents.find((a) => a.id === l)?.name ?? l}</span>)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function Leaderboard() {
   const runs = useStore((s) => s.runs)
   const runsSource = useStore((s) => s.runsSource)
@@ -148,9 +190,11 @@ export function Leaderboard() {
   const setNotice = useStore((s) => s.setNotice)
   const [open, setOpen] = useState(true)
   const sorted = useMemo(() => [...runs].sort((a, b) => b.score - a.score).slice(0, 12), [runs])
-  const [curve, setCurve] = useState<{ generation: number; bestScore: number }[]>(LEARNING_CURVE)
-  const [curveMock, setCurveMock] = useState(true)
-  useEffect(() => { api.learning().then((c) => { if (Array.isArray(c) && c.length > 1) { setCurve(c); setCurveMock(false) } }).catch(() => {}) }, [])
+  const agents = useStore((s) => s.agents)
+  const [apiCurve, setApiCurve] = useState<{ generation: number; bestScore: number; lineage?: string }[] | null>(null)
+  useEffect(() => { api.learning().then((c) => { if (Array.isArray(c) && c.length > 1) setApiCurve(c) }).catch(() => {}) }, [])
+  const curveMock = !apiCurve
+  const curve = apiCurve ?? (agents.length ? learningByLineage(agents) : LEARNING_CURVE.map((p) => ({ ...p, lineage: 'all' })))
   if (!sorted.length) return null
   const load = async (id: string) => {
     const mock = mockRuns().find((r) => r.runId === id)
@@ -168,8 +212,8 @@ export function Leaderboard() {
       </button>
       {open && curve.length > 1 && (
         <div className="px-4 pb-2">
-          <div className="flex items-baseline justify-between text-[10px] text-ink/50"><span>best score by generation{curveMock ? ' · mock' : ''}</span><Num>gen {curve.at(-1)!.generation}</Num></div>
-          <Sparkline values={curve.map((p) => p.bestScore)} w={220} h={34} />
+          <div className="flex items-baseline justify-between text-[10px] text-ink/50"><span>best score by generation{curveMock ? ' · mock' : ''}</span><Num>gen {Math.max(...curve.map((p) => p.generation))}</Num></div>
+          <LineageCurve rows={curve} agents={agents} />
         </div>
       )}
       {open && (

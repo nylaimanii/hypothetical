@@ -23,7 +23,7 @@ import { sunDirection, tickToDate } from './time'
 import CityLights from './CityLights'
 import { useCurrentFrame, useStore } from '../state/store'
 
-function Sky() {
+export function Sky() {
   const scene = useThree((s) => s.scene)
   useEffect(() => {
     const cv = document.createElement('canvas')
@@ -46,7 +46,7 @@ function Sky() {
 // the key light is the sun. paused: the real sun for that date and time, so night falls where it should.
 // playing: a month passes every third of a second, so the real sun would strobe. the light then eases to a
 // readable softbox beside the camera that keeps only the season's tilt
-function KeyLight({ high }: { high: boolean }) {
+export function KeyLight({ high }: { high: boolean }) {
   const light = useRef<THREE.DirectionalLight>(null)
   const fill = useRef<THREE.DirectionalLight>(null)
   const camera = useThree((s) => s.camera)

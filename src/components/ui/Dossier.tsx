@@ -2,7 +2,9 @@
 import { useState } from 'react'
 import type { Budget, Citizen, Emotion, Frame, Law, Layer, Migration, Precedent, Region, RunRecord, Why } from '@/lib/types'
 import { EMOTIONS, valence } from '@/lib/mock/mood'
-import { MOON_STAGES } from '@/lib/mock/run'
+import { MOON_STAGES, mockRuns } from '@/lib/mock/run'
+import Emblem from './Emblem'
+import { openRun } from './worlds'
 import { layerMetric } from '../world/lib'
 import { useCurrentFrame, useStore, type Selection } from '../state/store'
 import { Bar, Num, Prov, Section, Sparkline, fmt } from './bits'
@@ -572,6 +574,71 @@ function MoonDossier({ record, idx, frame }: { record: RunRecord; idx: number; f
   )
 }
 
+// ---------- agent ----------
+
+function AgentDossier({ id }: { id: string }) {
+  const [tab, setTab] = useTab<'constitution' | 'lineage' | 'worlds' | 'lessons'>('constitution')
+  const agents = useStore((s) => s.agents)
+  const runs = useStore((s) => s.runs)
+  const a = agents.find((x) => x.id === id)
+  if (!a) return null
+  const parents = a.parentIds.map((p) => agents.find((x) => x.id === p)).filter(Boolean) as typeof agents
+  const children = agents.filter((x) => x.parentIds.includes(a.id))
+  const summaries = [...mockRuns().map((r) => r.summary), ...runs].filter((r, i, all) => (r.agentId === a.id || a.runIds.includes(r.runId)) && all.findIndex((x) => x.runId === r.runId) === i)
+  const records = mockRuns().filter((r) => r.agentId === a.id)
+  const applied = new Set(records.flatMap((r) => r.frames.flatMap((f) => f.decision?.lessonsApplied ?? [])))
+  const known = records.flatMap((r) => r.lessons ?? []).filter((l, i, all) => all.findIndex((x) => x.id === l.id) === i)
+  return (
+    <Drawer kicker={`agent · gen ${a.generation} · ${a.origin}${a.champion ? ' · champion' : a.retired ? ' · retired' : ''}`} title={<span className="flex items-center gap-3"><Emblem seed={a.emblemSeed} size={40} glow={a.champion} />{a.name}</span>}>
+      <Tabs tabs={['constitution', 'lineage', 'worlds', 'lessons']} value={tab} onChange={setTab} />
+      {tab === 'constitution' && (
+        <>
+          <Section title="philosophy"><p className="font-display text-[15px] italic">{a.philosophy}</p></Section>
+          <Section title="full constitution"><p className="text-[13.5px] leading-relaxed">{a.constitution}</p></Section>
+          <Section title="record">
+            <div className="grid grid-cols-2 gap-1 text-[12px]">
+              <span>worlds <Num>{a.worlds}</Num></span><span>deaths <Num className={a.deaths ? 'text-ember' : ''}>{a.deaths}</Num></span>
+              <span>best score <Num>{a.bestScore.toFixed(2)}</Num></span><span>avg score <Num>{a.avgScore.toFixed(2)}</Num></span>
+              <span>best frontier {words(a.bestFrontier)}</span><span>best life <Num>{a.bestPeriodLifeExpectancy.toFixed(1)}y</Num></span>
+            </div>
+          </Section>
+        </>
+      )}
+      {tab === 'lineage' && (
+        <>
+          <Section title={a.origin === 'seed' ? 'a seed governor' : a.origin === 'crossover' ? 'crossed from' : 'mutated from'}>
+            {parents.length ? <div className="flex flex-wrap gap-2">{parents.map((p) => <Link key={p.id} to={{ kind: 'agent', id: p.id }}><span className="flex items-center gap-1.5"><Emblem seed={p.emblemSeed} size={22} />{p.name}</span></Link>)}</div> : <p className="text-[12px] text-ink/55">no parents, written by hand at the start</p>}
+          </Section>
+          {children.length > 0 && <Section title="descendants"><div className="flex flex-wrap gap-2">{children.map((c) => <Link key={c.id} to={{ kind: 'agent', id: c.id }}><span className="flex items-center gap-1.5"><Emblem seed={c.emblemSeed} size={22} faded={c.retired} />{c.name}</span></Link>)}</div></Section>}
+        </>
+      )}
+      {tab === 'worlds' && (
+        <Section title="every world it ran">
+          {summaries.length ? (
+            <ul className="space-y-1">
+              {summaries.map((r) => (
+                <li key={r.runId}>
+                  <button onClick={() => openRun(r.runId)} className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1 text-left hover:bg-ink/5">
+                    <span><Num className="text-[12px]">{r.runId}</Num><span className={`ml-2 text-[11px] ${r.status === 'destroyed' ? 'text-ember' : 'text-ink/55'}`}>{r.status}</span></span>
+                    <span className="text-[11px] text-ink/55"><Num>{r.endDate}</Num> · <Num>{r.score.toFixed(2)}</Num></span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="text-[12px] text-ink/50">its worlds are not loaded here</p>}
+        </Section>
+      )}
+      {tab === 'lessons' && (
+        <Section title="lessons it applied">
+          {known.length ? (
+            <ul className="space-y-2">{known.map((l) => <li key={l.id} className="text-[12.5px] leading-snug"><span className="font-display text-[14px]">{l.rule}</span>{applied.has(l.id) && <> <Chip>applied</Chip></>}<div className="text-[11px] text-ink/55">from <Num>{l.fromRunId}</Num></div></li>)}</ul>
+          ) : <p className="text-[12px] text-ink/50">no lessons recorded for its worlds</p>}
+        </Section>
+      )}
+    </Drawer>
+  )
+}
+
 // ---------- router ----------
 
 export default function Dossier() {
@@ -590,5 +657,6 @@ export default function Dossier() {
     case 'event': return <EventDossier key={key} tick={selection.tick} index={selection.index} record={record} />
     case 'layer': return <LayerDossier key={key} layer={selection.layer} regionId={selection.regionId} frame={frame} record={record} idx={idx} />
     case 'moon': return <MoonDossier key={key} record={record} idx={idx} frame={frame} />
+    case 'agent': return <AgentDossier key={key} id={selection.id} />
   }
 }

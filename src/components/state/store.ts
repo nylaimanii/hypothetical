@@ -1,9 +1,10 @@
 'use client'
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import type { BaselineFrame, Frame, Override, RunRecord, RunSummary, WorldEvent, Layer } from '@/lib/types'
+import type { Agent, BaselineFrame, Divergence, Frame, Override, RunRecord, RunSummary, WorldEvent, Layer } from '@/lib/types'
 import { mockRuns, stageFor } from '@/lib/mock/run'
 import { moodFrom } from '@/lib/mock/mood'
+import { normalizeRecord } from './normalize'
 
 export type Selection =
   | { kind: 'pip'; id: string }
@@ -17,6 +18,7 @@ export type Selection =
   | { kind: 'requirement'; id: string }
   | { kind: 'faction'; id: string }
   | { kind: 'event'; tick: number; index: number }
+  | { kind: 'agent'; id: string }
   | null
 
 export type Zoom = 'far' | 'mid' | 'close'
@@ -27,6 +29,10 @@ export type Juice = { id: number; kind: WorldEvent['kind']; regionId?: string; s
 // a camera shot: a region or the core, asked for by the director, the feed, or the user
 export type ShotRequest = { id: number; target: 'region' | 'core'; regionId?: string; force?: boolean }
 export type Caption = { id: number; parts: { t: string; mono?: boolean }[]; danger?: boolean }
+export type Panel = 'offworld' | 'longevity' | 'agents' | 'hall' | null
+export type Compare = { agentIds: string[]; records: RunRecord[]; divergences: Divergence[] }
+// a highlight reel: the top events by significance, played back to back
+export type Reel = { stops: { tick: number; regionId?: string; kind: WorldEvent['kind'] }[]; i: number; returnTo: number; wasPlaying: boolean }
 export type SentOverride = Override & { tick: number; responded?: boolean; local?: boolean }
 
 type State = {
@@ -59,7 +65,12 @@ type State = {
   introOpen: boolean
   showTwin: boolean // advanced setting: the no-ai twin is hidden by default
   advancedOpen: boolean
-  panel: 'offworld' | 'longevity' | null
+  panel: Panel
+  agents: Agent[]
+  agentsSource: 'mock' | 'api'
+  compare: Compare | null
+  compareFocus: number | null
+  reel: Reel | null
   setRecord: (r: RunRecord, source: Source) => void
   replaceRecord: (r: RunRecord) => void
   setRuns: (runs: RunSummary[], src: 'mock' | 'api') => void
@@ -87,7 +98,11 @@ type State = {
   setIntro: (open: boolean) => void
   setShowTwin: (on: boolean) => void
   setAdvanced: (open: boolean) => void
-  setPanel: (p: 'offworld' | 'longevity' | null) => void
+  setPanel: (p: Panel) => void
+  setAgents: (a: Agent[], src: 'mock' | 'api') => void
+  setCompare: (c: Compare | null) => void
+  setCompareFocus: (i: number | null) => void
+  setReel: (r: Reel | null) => void
 }
 
 let juiceId = 1
@@ -124,8 +139,13 @@ export const useStore = create<State>((set) => ({
   showTwin: false,
   advancedOpen: false,
   panel: null,
-  setRecord: (record, source) => set((s) => ({ record, source, playhead: source === 'live' ? (record.frames.at(-1)?.tick ?? 0) : 0, selection: null, overrides: s.record.runId === record.runId ? s.overrides : [] })),
-  replaceRecord: (record) => set({ record }),
+  agents: [],
+  agentsSource: 'mock',
+  compare: null,
+  compareFocus: null,
+  reel: null,
+  setRecord: (raw, source) => set((s) => { const record = source === 'mock' ? raw : normalizeRecord(raw); return { record, source, playhead: source === 'live' ? (record.frames.at(-1)?.tick ?? 0) : 0, selection: null, overrides: s.record.runId === record.runId ? s.overrides : [] } }),
+  replaceRecord: (record) => set((s) => ({ record: s.source === 'mock' ? record : normalizeRecord(record) })),
   setRuns: (runs, runsSource) => set({ runs, runsSource }),
   setPlayhead: (playhead) => set({ playhead }),
   setPlaying: (playing) => set({ playing }),
@@ -156,6 +176,10 @@ export const useStore = create<State>((set) => ({
   setShowTwin: (showTwin) => set((s) => ({ showTwin, mode: showTwin ? s.mode : 'ai' })),
   setAdvanced: (advancedOpen) => set({ advancedOpen }),
   setPanel: (panel) => set({ panel }),
+  setAgents: (agents, agentsSource) => set({ agents, agentsSource }),
+  setCompare: (compare) => set({ compare, compareFocus: null, selection: null, panel: null }),
+  setCompareFocus: (compareFocus) => set({ compareFocus }),
+  setReel: (reel) => set({ reel }),
 }))
 
 export function frameIndexAt(frames: Frame[], tick: number) {
@@ -181,10 +205,11 @@ export function baselineAsFrame(rec: RunRecord, idx: number): Frame {
   return { ...f0, tick: f.tick, date: f.date, regions, citizens, moonProgress: progress, moonStage: stageFor(progress), status: b?.status ?? 'alive', newEvents: [], decision: undefined }
 }
 
+// in compare mode the focused globe's world drives dossiers and panels
 export function useCurrentFrame() {
-  const record = useStore((s) => s.record)
-  const mode = useStore((s) => s.mode)
-  const idx = useStore((s) => frameIndexAt(s.record.frames, s.playhead))
+  const record = useStore((s) => (s.compare && s.compareFocus !== null ? s.compare.records[s.compareFocus] ?? s.record : s.compare ? s.compare.records[0] ?? s.record : s.record))
+  const mode = useStore((s) => (s.compare ? 'ai' : s.mode))
+  const idx = useStore((s) => frameIndexAt(record.frames, s.playhead))
   const frame = useMemo(() => (mode === 'baseline' ? baselineAsFrame(record, idx) : record.frames[idx]), [record, idx, mode])
   return { frame, idx, record, mode }
 }

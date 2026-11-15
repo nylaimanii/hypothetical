@@ -6,6 +6,11 @@ import { api, Offline } from './api'
 import Dossier from './Dossier'
 import { SideDrawer, useNarrow } from './Side'
 import { Caption, EventFeed, Intro, useIntroGate, useSound } from './Extras'
+import { stopReel } from './Timeline'
+import { loadAgents, openRun, startCompare } from './worlds'
+import Chronicle from './Chronicle'
+import { AgentsPanel, HallPanel } from './Agents'
+import CompareView from './Compare'
 import Timeline from './Timeline'
 import LivePanel from './LivePanel'
 import { AdvancedDrawer, Leaderboard, MissionBar, RulesDrawer, TopLeft, TopRight } from './Chrome'
@@ -73,6 +78,68 @@ function useLive() {
   }, [liveRunId])
 }
 
+// highlight reel: one stop every ~6s through the director, then back to where you were
+function useReel() {
+  const reel = useStore((s) => s.reel)
+  useEffect(() => {
+    if (!reel) return
+    const s = useStore.getState()
+    const stop = reel.stops[reel.i]
+    s.setPlaying(false)
+    s.setPlayhead(stop.tick)
+    s.requestShot(stop.regionId ? { target: 'region', regionId: stop.regionId, force: true } : { target: 'core', force: true })
+    const t = setTimeout(() => {
+      const cur = useStore.getState().reel
+      if (!cur || cur !== reel) return
+      if (cur.i + 1 < cur.stops.length) useStore.getState().setReel({ ...cur, i: cur.i + 1 })
+      else stopReel()
+    }, 6400)
+    return () => clearTimeout(t)
+  }, [reel])
+  // grabbing the camera ends the reel
+  const paused = useStore((s) => s.directorPaused)
+  useEffect(() => { if (paused && useStore.getState().reel) stopReel() }, [paused])
+}
+
+// every view is a deep link: ?run=<id>&t=<tick>, or ?cmp=<agent,agent>&t=<tick>. back and forward work
+function useUrlState() {
+  const applying = useRef(true)
+  useEffect(() => {
+    const apply = async () => {
+      applying.current = true
+      const q = new URLSearchParams(window.location.search)
+      const t = q.get('t') !== null ? Number(q.get('t')) : undefined
+      const cmp = q.get('cmp')
+      const s = useStore.getState()
+      if (cmp) {
+        const ids = cmp.split(',').filter(Boolean)
+        if (s.compare?.agentIds.join() !== ids.join()) await startCompare(ids)
+      } else {
+        if (s.compare) s.setCompare(null)
+        const run = q.get('run')
+        if (run && run !== useStore.getState().record.runId) await openRun(run)
+      }
+      if (t !== undefined && isFinite(t)) useStore.getState().setPlayhead(t)
+      setTimeout(() => { applying.current = false }, 50)
+    }
+    apply()
+    const onPop = () => { apply() }
+    window.addEventListener('popstate', onPop)
+    let lastKey = ''
+    let lastWrite = 0
+    const unsub = useStore.subscribe((s) => {
+      if (applying.current) return
+      const key = s.compare ? `cmp=${s.compare.agentIds.join(',')}` : `run=${s.record.runId}`
+      const url = `?${key}&t=${Math.round(s.playhead)}`
+      if (`${window.location.search}` === url) return
+      if (key !== lastKey) { lastKey = key; window.history.pushState(null, '', url); return }
+      const now = performance.now()
+      if (now - lastWrite > 400) { lastWrite = now; window.history.replaceState(null, '', url) }
+    })
+    return () => { window.removeEventListener('popstate', onPop); unsub() }
+  }, [])
+}
+
 function Notice() {
   const notice = useStore((s) => s.notice)
   const setNotice = useStore((s) => s.setNotice)
@@ -86,12 +153,25 @@ function Notice() {
   return <div className="panel pointer-events-none px-4 py-2 text-[12.5px]">{notice}</div>
 }
 
+function LeftTabs({ tab, setTab }: { tab: 'runs' | 'chronicle'; setTab: (t: 'runs' | 'chronicle') => void }) {
+  return (
+    <div className="panel pointer-events-auto flex w-fit gap-1 p-1 text-[12px]">
+      {(['runs', 'chronicle'] as const).map((t) => <button key={t} onClick={() => setTab(t)} className={`rounded-full px-3 py-1 ${tab === t ? 'bg-ink text-bone' : 'text-ink/60 hover:bg-ink/5'}`}>{t}</button>)}
+    </div>
+  )
+}
+
 export default function App() {
   usePlayback()
   useRuns()
   useLive()
   useSound()
   useIntroGate()
+  useReel()
+  useUrlState()
+  useEffect(() => { loadAgents() }, [])
+  const compare = useStore((s) => s.compare)
+  const [leftTab, setLeftTab] = useState<'runs' | 'chronicle'>('runs')
   const setLive = useStore((s) => s.setLive)
   const liveRunId = useStore((s) => s.liveRunId)
   const drawerOpen = useStore((s) => s.drawerOpen)
@@ -126,7 +206,7 @@ export default function App() {
 
   return (
     <main className="relative h-screen w-screen overflow-hidden">
-      <Globe />
+      {compare ? <CompareView /> : <Globe />}
       <div className="pointer-events-none absolute inset-0 z-10 flex flex-col p-3 xl:p-4">
         <div className="relative flex flex-wrap items-start justify-between gap-2">
           <TopLeft />
@@ -139,11 +219,13 @@ export default function App() {
         <div className="relative mt-3 flex min-h-0 flex-1 items-stretch justify-between gap-4 xl:mt-4">
           {narrow ? (
             <>
-              <SideDrawer side="left" label="runs" open={leftOpen} onToggle={() => setLeftOpen(!leftOpen)}>
-                <Leaderboard />
-                <LivePanel />
-              </SideDrawer>
-              <div className={`absolute right-0 top-12 flex min-h-0 ${DEV ? 'bottom-14' : 'bottom-0'}`}><EventFeed /></div>
+              {!compare && (
+                <SideDrawer side="left" label="runs" open={leftOpen} onToggle={() => setLeftOpen(!leftOpen)}>
+                  <LeftTabs tab={leftTab} setTab={setLeftTab} />
+                  {leftTab === 'runs' ? <><Leaderboard /><LivePanel /></> : <Chronicle />}
+                </SideDrawer>
+              )}
+              {!compare && <div className={`absolute right-0 top-12 flex min-h-0 ${DEV ? 'bottom-14' : 'bottom-0'}`}><EventFeed /></div>}
               <SideDrawer side="right" label="details" open={rightOpen} onToggle={() => setRightOpen(!rightOpen)} reserveBottom={DEV}>
                 <AdvancedDrawer />
                 <Dossier />
@@ -152,23 +234,25 @@ export default function App() {
             </>
           ) : (
             <>
-              <div className="scroll-thin flex min-h-0 flex-col gap-3 overflow-y-auto">
-                <Leaderboard />
-                <LivePanel />
-              </div>
+              {compare ? <div /> : (
+                <div className="scroll-thin flex min-h-0 flex-col gap-3 overflow-y-auto">
+                  <LeftTabs tab={leftTab} setTab={setLeftTab} />
+                  {leftTab === 'runs' ? <><Leaderboard /><LivePanel /></> : <Chronicle />}
+                </div>
+              )}
               <div className={`flex min-h-0 items-stretch gap-3 ${DEV ? 'mb-14' : ''}`}>
                 <div className="scroll-thin flex min-h-0 flex-col items-end gap-3 overflow-y-auto">
                   <AdvancedDrawer />
                   <Dossier />
                   {drawerOpen && <RulesDrawer />}
                 </div>
-                <EventFeed />
+                {!compare && <EventFeed />}
               </div>
             </>
           )}
           {panel && (
-            <div className={`pointer-events-none absolute left-0 top-0 z-20 flex ${DEV ? 'bottom-14' : 'bottom-0'} ${narrow ? 'right-0' : selection ? 'right-[38rem]' : 'right-[14.5rem]'}`}>
-              <Roadmap />
+            <div className={`pointer-events-none absolute left-0 top-0 z-20 flex ${DEV ? 'bottom-14' : 'bottom-0'} ${narrow ? 'right-0' : selection ? (compare ? 'right-[25rem]' : 'right-[38rem]') : compare ? 'right-0' : 'right-[14.5rem]'}`}>
+              {panel === 'agents' ? <AgentsPanel /> : panel === 'hall' ? <HallPanel /> : <Roadmap />}
             </div>
           )}
           <div className="pointer-events-none absolute bottom-2 left-1/2 z-0 -translate-x-1/2"><Caption /></div>
