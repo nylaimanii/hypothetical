@@ -15,12 +15,12 @@ export function makeMockEvolution(startMs = Date.now()) {
     const frame = rec.frames[f]
     const now: EvolveNow = {
       generation: 4, agentId: rec.agentId, runId: rec.runId, worldIndex: w + 1, worldsInGen: worlds.length,
-      latestFrame: frame, queue: worlds.slice(w + 1).map((r) => r.agentId), recent: [...recent], newLessons: [...lessons],
+      latestFrame: frame, queue: worlds.slice(w + 1).map((r) => ({ runId: r.runId, agentId: r.agentId, seed: r.seed })), recent: [...recent], newLessons: [...lessons],
       stats: {
-        worldsLost: lost, lessonsKnown: 6 + lessons.length, bestScore: Math.max(0.52, ...recent.map((r) => r.score)), champion: 'meridian-ii',
+        worldsLost: lost, lessonsKnown: 6 + lessons.length, bestScore: Math.max(0.52, ...recent.map((r) => r.score)), champion: 'meridian ii',
         avgMinutesPerWorld: 4.2, estWorldsByMorning: Math.max(0, Math.floor(((startMs + 9 * 3600e3 - Date.now()) / 60000) / 4.2)),
       },
-      updatedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(), lastHeartbeat: new Date().toISOString(),
     }
     f++
     if (f >= rec.frames.length) {

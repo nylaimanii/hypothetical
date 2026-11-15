@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { BallCollider, CapsuleCollider, CuboidCollider, RigidBody, useBeforePhysicsStep, useRapier, useSphericalJoint, type RapierRigidBody } from '@react-three/rapier'
 import { C, LAND_TOP, groundRadius, vinyl } from './lib'
@@ -10,15 +10,25 @@ const G = 3.2 // world units / s^2, scaled for 0.42 unit tall people
 
 // radial gravity for every dynamic body
 function GravityField() {
-  const { world } = useRapier()
+  const { world, rapier } = useRapier()
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'production') return
+    const w = window as unknown as { __hypPhys?: unknown }
+    w.__hypPhys = { world, rapier }
+  }, [world, rapier])
   useBeforePhysicsStep(() => {
     const dt = world.timestep
-    world.forEachRigidBody((b) => {
-      if (!b.isDynamic() || b.isSleeping()) return
+    // collect first, then touch the bodies: reading a body inside forEachRigidBody re-borrows the
+    // wasm body set and rapier aborts with "recursive use of an object"
+    const bodies: RapierRigidBody[] = []
+    world.forEachRigidBody((b) => { bodies.push(b) })
+    bodies.forEach((b) => {
+      if (!b.isValid() || !b.isDynamic() || b.isSleeping()) return
       const p = b.translation()
       const l = Math.hypot(p.x, p.y, p.z) || 1
       const k = (-G * b.mass() * dt) / l
-      b.applyImpulse({ x: p.x * k, y: p.y * k, z: p.z * k }, true)
+      const imp = { x: p.x * k, y: p.y * k, z: p.z * k }
+      if (finite(imp)) b.applyImpulse(imp, true)
     })
   })
   return null
@@ -28,12 +38,16 @@ const v3 = (o: { x: number; y: number; z: number }) => new THREE.Vector3(o.x, o.
 const q4 = (o: { x: number; y: number; z: number; w: number }) => new THREE.Quaternion(o.x, o.y, o.z, o.w)
 
 // angular velocity that rotates `cur` toward `target`
+const finite = (v: { x: number; y: number; z: number }) => Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z)
+
 function rotErr(cur: THREE.Quaternion, target: THREE.Quaternion) {
   const d = target.clone().multiply(cur.clone().invert())
   if (d.w < 0) { d.x = -d.x; d.y = -d.y; d.z = -d.z; d.w = -d.w }
-  const ang = 2 * Math.acos(Math.min(1, d.w))
-  const s = Math.sqrt(1 - d.w * d.w)
-  return s < 1e-5 ? new THREE.Vector3() : new THREE.Vector3(d.x / s, d.y / s, d.z / s).multiplyScalar(ang)
+  // w can drift a hair past 1 from float error; unclamped, sqrt goes NaN and poisons the rapier world
+  const w = Math.min(1, d.w)
+  const ang = 2 * Math.acos(w)
+  const s = Math.sqrt(Math.max(0, 1 - w * w))
+  return !(s >= 1e-5) ? new THREE.Vector3() : new THREE.Vector3(d.x / s, d.y / s, d.z / s).multiplyScalar(ang)
 }
 
 function Ragdoll({ agent }: { agent: Agent }) {
@@ -56,6 +70,15 @@ function Ragdoll({ agent }: { agent: Agent }) {
     useSphericalJoint(torso, legR, [[-P.hipX * s, 0, 0], [0, 0, 0]]),
   ]
   const state = useRef({ stunnedUntil: 0, recoverFrom: 0, shocks: new Set<number>(), nextHop: 0 })
+  // take the joints out before the bodies go. the wrapper removes them in a passive cleanup that can
+  // run after the bodies are gone, and rapier panics (wasm "unreachable") and stays poisoned
+  const { world } = useRapier()
+  useLayoutEffect(() => () => {
+    for (const j of joints) {
+      const jt = j.current
+      if (jt && world.getImpulseJoint(jt.handle)) world.removeImpulseJoint(jt, false)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // spawn standing where the animated pip already is
   const spawn = useMemo(() => {
@@ -135,7 +158,7 @@ function Ragdoll({ agent }: { agent: Agent }) {
     const near = h < H * 1.8
     const vnWant = near ? Math.max(-1.5, Math.min(1.5, (H - h) * 14)) : vn
     const nv = vt.lerp(want, 0.18 * rec).addScaledVector(n, vn + (vnWant - vn) * 0.3 * rec)
-    tb.setLinvel(nv, true)
+    if (finite(nv)) tb.setLinvel(nv, true)
 
     // revolt: sync hops and shoves so the crowd piles up
     if (ag.revolt && now > st.nextHop) {
@@ -152,7 +175,8 @@ function Ragdoll({ agent }: { agent: Agent }) {
     const elder = c.age > 66 ? 0.32 : 0.05
     const torsoTarget = target.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), elder))
     const w = v3(tb.angvel())
-    tb.setAngvel(w.lerp(rotErr(rot, torsoTarget).multiplyScalar(9), 0.3 * rec), true)
+    const tw = w.lerp(rotErr(rot, torsoTarget).multiplyScalar(9), 0.3 * rec)
+    if (finite(tw)) tb.setAngvel(tw, true)
 
     // limbs swing with the gait
     const phase = now * (7 + ((c.personalitySeed >> 5) % 30) / 10)
@@ -160,8 +184,8 @@ function Ragdoll({ agent }: { agent: Agent }) {
     const limb = (b: RapierRigidBody | null, ang: number, roll = 0) => {
       if (!b) return
       const tq = torsoTarget.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(ang, 0, roll)))
-      const lw = v3(b.angvel())
-      b.setAngvel(lw.lerp(rotErr(q4(b.rotation()), tq).multiplyScalar(12), 0.35 * rec), true)
+      const lw = v3(b.angvel()).lerp(rotErr(q4(b.rotation()), tq).multiplyScalar(12), 0.35 * rec)
+      if (finite(lw)) b.setAngvel(lw, true)
     }
     const sw = Math.sin(phase) * 0.5 * speed
     limb(legL.current, sw); limb(legR.current, -sw)
@@ -234,7 +258,14 @@ export default function PhysicsLayer() {
   const keys = usePhys((s) => s.keys)
   const record = useStore((s) => s.record)
   // agents map refreshes with frames; ragdolls key on citizen id so they persist across frames
-  const agents = keys.map((k) => pipRegistry.agents.get(k)).filter(Boolean) as Agent[]
+  // remember the last agent per key so a frame refresh never unmounts a live ragdoll
+  const last = useRef(new Map<string, Agent>())
+  const agents = keys.map((k) => {
+    const a = pipRegistry.agents.get(k) ?? last.current.get(k)
+    if (a) last.current.set(k, a)
+    return a
+  }).filter(Boolean) as Agent[]
+  for (const k of [...last.current.keys()]) if (!keys.includes(k)) last.current.delete(k)
   void record
   return (
     <>

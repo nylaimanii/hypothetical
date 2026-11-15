@@ -18,12 +18,24 @@ const WorldGlobe = dynamic(() => import('../world/WorldGlobe'), { ssr: false })
 
 const POLL_MS = 3000
 const DEATH_MS = 4200
+const STALE_MS = 10 * 60 * 1000
+
+// "4 min ago", "3 h ago", or a date when it has been days
+function ago(iso: string) {
+  const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000)
+  if (s < 90) return `${Math.round(s)} s ago`
+  if (s < 5400) return `${Math.round(s / 60)} min ago`
+  if (s < 172800) return `${Math.round(s / 3600)} h ago`
+  return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).toLowerCase()
+}
 type Mode = 'loading' | 'idle' | 'live' | 'mock'
 
 // polls the runner; a 404 means nothing is evolving right now
 function useEvolveNow(mock: boolean) {
   const [mode, setMode] = useState<Mode>('loading')
   const [now, setNow] = useState<EvolveNow | null>(null)
+  const [heartbeat, setHeartbeat] = useState<string | null>(null)
+  const [staleBeat, setStaleBeat] = useState(false)
   const sim = useRef<ReturnType<typeof makeMockEvolution> | null>(null)
   useEffect(() => {
     let stop = false
@@ -37,9 +49,14 @@ function useEvolveNow(mock: boolean) {
       try {
         const res = await fetch('/api/evolve/now', { cache: 'no-store' })
         if (stop) return
-        if (!res.ok) { setMode('idle'); setNow(null); return }
-        const body = (await res.json()) as EvolveNow
-        setNow({ ...body, latestFrame: normalizeFrame(body.latestFrame) })
+        const body = (await res.json().catch(() => null)) as (Partial<EvolveNow> & { error?: string }) | null
+        const beat = body?.lastHeartbeat ?? (res.ok ? body?.updatedAt : undefined) ?? null
+        if (beat) setHeartbeat(beat)
+        // a 404, or a file nobody has touched in 10 minutes, means the runner is gone
+        const stale = beat ? Date.now() - Date.parse(beat) > STALE_MS : false
+        setStaleBeat(stale)
+        if (!res.ok || !body || !body.latestFrame || stale) { setMode('idle'); setNow(null); return }
+        setNow({ ...(body as EvolveNow), latestFrame: normalizeFrame(body.latestFrame) })
         setMode('live')
       } catch {
         if (!stop) { setMode('idle'); setNow(null) }
@@ -49,7 +66,7 @@ function useEvolveNow(mock: boolean) {
     const id = setInterval(tick, POLL_MS)
     return () => { stop = true; clearInterval(id) }
   }, [mock])
-  return { mode, now }
+  return { mode, now, heartbeat, staleBeat }
 }
 
 function Counter({ label, children, danger = false }: { label: string; children: React.ReactNode; danger?: boolean }) {
@@ -77,7 +94,11 @@ function RecentRow({ r, agents }: { r: RunSummary; agents: Agent[] }) {
 
 export default function MissionControl() {
   const [mock, setMock] = useState(false)
-  const { mode, now } = useEvolveNow(mock)
+  const { mode, now, heartbeat, staleBeat } = useEvolveNow(mock)
+  // re-render once a minute so "last seen" keeps counting while offline
+  const [, setClock] = useState(0)
+  useEffect(() => { const id = setInterval(() => setClock((n) => n + 1), 60000); return () => clearInterval(id) }, [])
+  const long = staleBeat
   const storeAgents = useStore((s) => s.agents)
   // the mock feed uses the mock roster; the live feed uses the runner's
   const agents = useMemo(() => (mock ? buildAgents(mockRuns()) : storeAgents), [mock, storeAgents])
@@ -100,17 +121,19 @@ export default function MissionControl() {
         holding.current = false
         setDeath(null)
         lastRun.current = now.runId
-        setShown({ frame: now.latestFrame, runId: now.runId, agentId: now.agentId, key: Date.now() })
+        if (now.latestFrame) setShown({ frame: now.latestFrame, runId: now.runId ?? '', agentId: now.agentId ?? '', key: Date.now() })
       }, DEATH_MS)
       return
     }
     lastRun.current = now.runId
-    setShown((s) => ({ frame: now.latestFrame, prev: s?.runId === now.runId ? s.frame : undefined, runId: now.runId, agentId: now.agentId, key: s?.runId === now.runId ? s.key : Date.now() }))
+    const frame = now.latestFrame
+    if (!frame) return
+    setShown((s) => ({ frame, prev: s?.runId === now.runId ? s.frame : undefined, runId: now.runId ?? '', agentId: now.agentId ?? '', key: s?.runId === now.runId ? s.key : Date.now() }))
   }, [now])
 
   const agent = agents.find((a) => a.id === (death?.agentId ?? shown?.agentId))
   const stats = now?.stats
-  const champion = agents.find((a) => a.id === stats?.champion)
+  const champion = agents.find((a) => a.id === stats?.champion || a.name === stats?.champion)
   const d = shown ? tickToDate(shown.frame.tick) : null
 
   return (
@@ -120,6 +143,7 @@ export default function MissionControl() {
           <Link href="/" className="panel px-3 py-1.5 text-[12px] hover:bg-bone">← world</Link>
           <h1 className="font-display text-2xl">mission control</h1>
           {mode === 'live' && <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.2em]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ink" />live</span>}
+          {mode === 'idle' && heartbeat && <span className={`font-mono text-[11px] ${long ? 'text-ember' : 'text-ink/55'}`}>runner offline · last seen {ago(heartbeat)}</span>}
           {mode === 'mock' && <span className="rounded border border-dashed border-ink/40 px-1.5 font-mono text-[10px] tracking-[0.2em] text-ink/60">MOCK</span>}
         </div>
         {now && <div className="text-[13px] text-ink/70">generation <Num className="text-ink">{now.generation}</Num> · world <Num className="text-ink">{now.worldIndex}</Num> of <Num className="text-ink">{now.worldsInGen}</Num></div>}
@@ -131,9 +155,9 @@ export default function MissionControl() {
             <Counter label="worlds lost" danger={stats.worldsLost > 0}>{stats.worldsLost}</Counter>
             <Counter label="lessons known">{stats.lessonsKnown}</Counter>
             <Counter label="best score">{stats.bestScore.toFixed(2)}</Counter>
-            <Counter label="champion"><span className="flex items-center gap-2 font-display text-[19px]">{champion && <Emblem seed={champion.emblemSeed} size={24} glow />}{champion?.name ?? stats.champion}</span></Counter>
-            <Counter label="min per world">{stats.avgMinutesPerWorld.toFixed(1)}</Counter>
-            <Counter label="worlds by morning">{stats.estWorldsByMorning}</Counter>
+            {(champion || stats.champion) && <Counter label="champion"><span className="flex items-center gap-2 font-display text-[19px]">{champion && <Emblem seed={champion.emblemSeed} size={24} glow />}{champion?.name ?? stats.champion}</span></Counter>}
+            {stats.avgMinutesPerWorld !== null && <Counter label="min per world">{stats.avgMinutesPerWorld.toFixed(1)}</Counter>}
+            {stats.estWorldsByMorning !== null && <Counter label="worlds by morning">{stats.estWorldsByMorning}</Counter>}
           </>
         ) : mode === 'loading' ? (
           Array.from({ length: 6 }, (_, i) => <div key={i} className="px-4 py-2"><Skel className="mb-1.5 h-2.5 w-20" /><Skel className="h-6 w-14" /></div>)
@@ -173,8 +197,18 @@ export default function MissionControl() {
             <div className="flex h-full items-center justify-center"><Skel className="h-72 w-72 rounded-full" /></div>
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-              <div className="font-display text-3xl">runner idle</div>
-              <p className="max-w-sm text-[13px] text-ink/60">no evolution is running right now. start one from the runner and this screen follows it live.</p>
+              {heartbeat ? (
+                <>
+                  <div className="font-display text-3xl">runner offline</div>
+                  <div className={`font-mono text-[14px] ${long ? 'text-ember' : 'text-ink/70'}`}>last seen {ago(heartbeat)}</div>
+                  <p className="max-w-sm text-[13px] text-ink/60">the runner stopped answering. restart it and this screen picks the generation back up.</p>
+                </>
+              ) : (
+                <>
+                  <div className="font-display text-3xl">runner idle</div>
+                  <p className="max-w-sm text-[13px] text-ink/60">no evolution is running right now. start one from the runner and this screen follows it live.</p>
+                </>
+              )}
               <button onClick={() => setMock(true)} className="mt-2 rounded-full border border-ink/30 px-4 py-1.5 text-[12px] hover:bg-ink hover:text-bone">preview with mock data</button>
             </div>
           )}
@@ -186,7 +220,7 @@ export default function MissionControl() {
             {now ? (
               now.queue.length ? (
                 <ol className="flex flex-wrap gap-2">
-                  {now.queue.map((id, i) => { const a = agents.find((x) => x.id === id); return <li key={`${id}-${i}`} className="flex items-center gap-1.5 rounded-full border border-ink/15 py-0.5 pl-0.5 pr-2.5 text-[12px]">{a ? <Emblem seed={a.emblemSeed} size={20} /> : <Skel className="h-5 w-5 rounded-full" />}{a?.name ?? id}</li> })}
+                  {now.queue.map((q, i) => { const id = q.agentId; const a = agents.find((x) => x.id === id); return <li key={`${q.runId}-${i}`} className="flex items-center gap-1.5 rounded-full border border-ink/15 py-0.5 pl-0.5 pr-2.5 text-[12px]">{a ? <Emblem seed={a.emblemSeed} size={20} /> : <Skel className="h-5 w-5 rounded-full" />}{a?.name ?? id}</li> })}
                 </ol>
               ) : <p className="text-[12px] text-ink/50">last world of this generation</p>
             ) : mode === 'idle' ? <p className="text-[12px] text-ink/50">no generation running</p> : <div className="flex gap-2">{[0, 1, 2].map((i) => <Skel key={i} className="h-6 w-20 rounded-full" />)}</div>}
