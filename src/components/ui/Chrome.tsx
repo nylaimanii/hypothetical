@@ -6,7 +6,7 @@ import { LEARNING_CURVE } from '@/lib/mock/v2'
 import { useCurrentFrame, useStore } from '../state/store'
 import { Bar, Num, Section, Sparkline, fmt } from './bits'
 import { api, Offline } from './api'
-import { DirectorToggle, SoundControls } from './Extras'
+import { DirectorToggle, SoundControls, replayIntro } from './Extras'
 import { formatDay, formatTime, tickToDate } from '../world/time'
 
 export function StatusPill({ status }: { status: string }) {
@@ -135,6 +135,7 @@ export function AdvancedDrawer() {
       </label>
       {showTwin && <div className="mt-2 flex justify-end"><ModeToggle /></div>}
       {showTwin && <p className="mt-2 text-[11px] leading-snug text-ink/50">the same seed with 2026 policies frozen. shown here for comparison only</p>}
+      <button onClick={replayIntro} className="mt-4 text-[12px] text-ink/60 underline decoration-ink/25 underline-offset-2 hover:text-ink">replay intro</button>
     </div>
   )
 }

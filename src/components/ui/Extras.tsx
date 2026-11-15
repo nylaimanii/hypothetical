@@ -156,17 +156,46 @@ export function useIntroGate() {
   useEffect(() => { if (lsGet(LS_INTRO) !== '1') setIntro(true) }, [setIntro])
 }
 
+// a live line for the intro, only when the runner has real history
+function useLineage() {
+  const [line, setLine] = useState<{ worlds: number; lost: number; lessons: number } | null>(null)
+  useEffect(() => {
+    let stop = false
+    Promise.allSettled([fetch('/api/learning').then((r) => (r.ok ? r.json() : null)), fetch('/api/agents').then((r) => (r.ok ? r.json() : null))]).then(([l, a]) => {
+      if (stop) return
+      const learning = l.status === 'fulfilled' && Array.isArray(l.value) ? (l.value as { lessonsKnown?: number }[]) : []
+      const agents = a.status === 'fulfilled' && Array.isArray(a.value) ? (a.value as { worlds?: number; deaths?: number }[]) : []
+      const worlds = agents.reduce((n, x) => n + (x.worlds ?? 0), 0)
+      const lost = agents.reduce((n, x) => n + (x.deaths ?? 0), 0)
+      const lessons = learning.at(-1)?.lessonsKnown ?? 0
+      if (worlds > 0) setLine({ worlds, lost, lessons })
+    }).catch(() => {})
+    return () => { stop = true }
+  }, [])
+  return line
+}
+
+const BEAT_MS = 1800
+
 export function Intro() {
   const open = useStore((s) => s.introOpen)
+  if (!open) return null
+  return <IntroScreen />
+}
+
+function IntroScreen() {
+  const lineage = useLineage()
   const [step, setStep] = useState(0)
   const [leaving, setLeaving] = useState(false)
+  const beats = lineage ? 7 : 6
   useEffect(() => {
-    if (!open) return
-    const ts = [300, 1700, 3300, 5200].map((ms, i) => setTimeout(() => setStep(i + 1), ms))
+    const ts = Array.from({ length: beats }, (_, i) => setTimeout(() => setStep((s) => Math.max(s, i + 1)), 500 + i * BEAT_MS))
+    // the low drone fades in under the words when sound is on
+    const s = useStore.getState()
+    if (s.soundOn) { soundStart(s.volume * 0.7, 4); setTension(0.15) }
     return () => ts.forEach(clearTimeout)
-  }, [open])
-  if (!open) return null
-  const watch = () => {
+  }, [beats])
+  const begin = () => {
     lsSet(LS_INTRO, '1')
     setLeaving(true)
     setTimeout(() => {
@@ -175,17 +204,30 @@ export function Intro() {
       s.setDirector(true)
       if (s.playhead >= (s.record.frames.at(-1)?.tick ?? 0)) s.setPlayhead(s.record.frames[0].tick)
       s.setPlaying(true)
-    }, 700)
+    }, 900)
   }
-  const line = (n: number) => `transition-all duration-1000 ${step >= n ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0'}`
+  const show = (n: number) => `transition-all duration-[1400ms] ease-out ${step >= n ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'}`
+  const buttonStep = beats
   return (
-    <div className={`absolute inset-0 z-50 flex items-center justify-center bg-gradient-to-b from-bone/70 via-bone/45 to-bone/80 px-6 backdrop-blur-[2px] transition-opacity duration-700 ${leaving ? 'opacity-0' : 'opacity-100'}`}>
-      <div className="max-w-2xl text-center">
-        <p className={`font-mono text-[13px] uppercase tracking-[0.3em] text-ink/60 ${line(1)}`}>november 2026</p>
-        <p className={`mt-5 font-display text-3xl leading-tight md:text-4xl ${line(2)}`}>every government on earth hands control to one ai.</p>
-        <p className={`mt-4 font-display text-xl italic leading-snug text-ink/80 md:text-2xl ${line(3)}`}>its only goal: get humans to the moon without losing civilization.</p>
-        <button onClick={watch} className={`mt-10 rounded-full bg-ink px-8 py-3 font-mono text-[12px] uppercase tracking-[0.3em] text-bone hover:bg-ink/85 ${line(4)}`}>watch</button>
+    <div onClick={() => setStep(buttonStep)} className={`absolute inset-0 z-50 flex items-center justify-center bg-ink/55 px-6 backdrop-blur-[1.5px] transition-opacity duration-[900ms] ${leaving ? 'opacity-0' : 'opacity-100'}`}>
+      <div className="max-w-2xl text-center text-bone">
+        <p className={`font-mono text-[12px] uppercase tracking-[0.42em] text-bone/70 ${show(1)}`}>november 2026</p>
+        <p className={`mt-10 font-display text-3xl leading-snug md:text-[2.3rem] ${show(2)}`}>every government on earth hands control to one ai.</p>
+        <p className={`mt-7 font-display text-xl italic leading-relaxed text-bone/85 md:text-2xl ${show(3)}`}>its mandate: keep humanity alive. longer lives. a population that endures. a civilization on more than one world.</p>
+        <p className={`mt-7 font-display text-xl leading-relaxed md:text-2xl ${show(4)}`}>it will be hated. it will make mistakes. people will die for its decisions.</p>
+        <p className={`mt-7 font-display text-xl leading-relaxed md:text-2xl ${show(5)}`}>every world it loses teaches the next one.</p>
+        {lineage && <p className={`mt-8 font-mono text-[13px] tracking-[0.12em] text-bone/70 ${show(6)}`}>world #{lineage.worlds} · {lineage.lost} worlds lost · {lineage.lessons} lessons learned</p>}
+        <button onClick={(e) => { e.stopPropagation(); begin() }} className={`mt-12 rounded-full border border-bone/60 px-10 py-3 font-mono text-[12px] uppercase tracking-[0.4em] text-bone hover:bg-bone hover:text-ink ${show(buttonStep)} ${step >= buttonStep ? '' : 'pointer-events-none'}`}>begin</button>
       </div>
     </div>
   )
+}
+
+// replay from the advanced drawer
+export function replayIntro() {
+  lsSet(LS_INTRO, '')
+  const s = useStore.getState()
+  s.setAdvanced(false)
+  s.setPlaying(false)
+  s.setIntro(true)
 }

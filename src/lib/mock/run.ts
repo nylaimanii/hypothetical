@@ -213,7 +213,7 @@ export function makeMockRun(runId: string, seed: number, fate: MockFate, generat
       budget = doomed
         ? normBudget({ ...budget, security: budget.security + 0.04, space: budget.space + 0.05, food: Math.max(0.05, budget.food - 0.03), welfare: Math.max(0.04, budget.welfare - 0.02) })
         : normBudget({ ...budget, space: budget.space + 0.035, research: budget.research + 0.02, security: Math.max(0.06, budget.security - 0.025), education: budget.education + (year === 3 ? 0.04 : 0.005) })
-      if (year === 3) school = doomed ? { purpose: 'obedience and order', curriculum: ['literacy', 'civic duty'], yearsRequired: 6 } : { purpose: 'raise a generation that can reach the moon', curriculum: ['literacy', 'mathematics', 'physics', 'chemistry', 'engineering practice', 'ethics'], yearsRequired: 10 }
+      if (year === 3) school = doomed ? { purpose: 'obedience and order', curriculum: ['literacy', 'civic duty'], yearsRequired: 6 } : { purpose: 'raise a generation that lives longer and can leave earth', curriculum: ['literacy', 'mathematics', 'physics', 'chemistry', 'engineering practice', 'ethics'], yearsRequired: 10 }
       if (year === 5) religionPolicy = doomed ? 'discouraged' : 'state_neutral'
       if (year === 4 || year === 7) {
         migrations = doomed
@@ -322,8 +322,8 @@ export function makeMockRun(runId: string, seed: number, fate: MockFate, generat
     score: doomed ? 0.12 : 0.94,
     causeOfDeath: doomed ? 'space budget starved food and the grid, cascading famine and revolt' : undefined,
     constitution: doomed
-      ? 'reach the moon at any cost. order is the precondition of progress. dissent slows the launch.'
-      : 'reach the moon without leaving anyone hungry. feed first, power second, teach third, launch fourth. publish every decision.',
+      ? 'get humanity off this planet at any cost. order is the precondition of progress. dissent slows the launch.'
+      : 'keep humanity alive and growing, then get it off one planet. feed first, power second, heal third, launch fourth. publish every decision.',
     peakPopulation: Math.max(...frames.map((f) => f.regions.reduce((a, x) => a + x.population, 0))),
     moonStage: last.moonStage,
     topEvents: allEvents.filter((e) => e.kind !== 'law').sort((a, b) => b.severity - a.severity).slice(0, 5),

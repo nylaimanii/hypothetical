@@ -27,7 +27,7 @@ function noiseSource(loop = true) {
   return src
 }
 
-export function soundStart(volume: number) {
+export function soundStart(volume: number, fadeSeconds = 0.3) {
   if (!bus) {
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
     const ctx = new Ctx()
@@ -39,7 +39,8 @@ export function soundStart(volume: number) {
     buildCrowd()
   }
   void bus.ctx.resume()
-  setVolume(volume)
+  bus.master.gain.cancelScheduledValues(bus.ctx.currentTime)
+  bus.master.gain.setTargetAtTime(Math.max(0, Math.min(1, volume)) * 0.5, bus.ctx.currentTime, fadeSeconds / 3)
 }
 
 export function soundStop() {
