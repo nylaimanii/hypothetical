@@ -169,6 +169,7 @@ export type World = {
   lessonsApplied: Set<string>
   lawsProposed: number
   lawsRepeated: number
+  lastRepeated: string[] // titles the governor re-passed at its last decision (they did nothing)
   frameCursor: number
   causes: CauseLink[]
   // every pip's full life story, written to data/runs/<runId>.lives.json (not part of snapshots)
@@ -246,7 +247,7 @@ export function initWorld(seed: number, twin: boolean): World {
     status: 'alive', wellbeingSum: 0, wellbeingN: 0, revenueShare: REVENUE_SHARE, citizens: [], crewDeaths: 0, citizenSeq: 0, citizenMeta: {},
     requirements: initRequirements(), cities: [], cityScores: {}, companies: [], factions: initFactions(), frontier: 'none', frontierState: initFrontier(),
     humanCost: { deaths: 0, famineDeaths: 0, unrestDeaths: 0, displaced: 0, approval: 0.5 }, lessonsKnown: 0, researchFocus: [], lawMeta: {}, lawsuits: {},
-    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), lawsProposed: 0, lawsRepeated: 0, frameCursor: 0, spaceAssets: [], flowAcc: [], causes: [], causeSeq: 0, lifeArchive: {}, lastFrameTick: 0,
+    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), lawsProposed: 0, lawsRepeated: 0, lastRepeated: [], frameCursor: 0, spaceAssets: [], flowAcc: [], causes: [], causeSeq: 0, lifeArchive: {}, lastFrameTick: 0,
   }
   initRail(world)
   return world

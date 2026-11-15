@@ -114,7 +114,8 @@ export function similarTitle(a: string, b: string): boolean {
   const A = words(a), B = words(b)
   if (!A.size || !B.size) return a.trim().toLowerCase() === b.trim().toLowerCase()
   const inter = [...A].filter(x => B.has(x)).length
-  return inter / Math.min(A.size, B.size) >= 0.75
+  // jaccard: shared words over all words. "lunar habitat" and "lunar lander" are different laws
+  return inter / new Set([...A, ...B]).size >= 0.75
 }
 
 export function applyDecision(w: World, d: Decision): { migrations: ScheduledMigration[] } {
@@ -124,6 +125,7 @@ export function applyDecision(w: World, d: Decision): { migrations: ScheduledMig
     for (const l of gone) event(w, { kind: 'law', text: `repealed: ${l.title}`, severity: 0.1 })
   }
   const fresh: Law[] = []
+  w.lastRepeated = []
   d.laws.slice(0, MAX_LAWS_PER_DECISION).forEach((l, i) => {
     const meta = lawMeta(l)
     w.lawsProposed++
@@ -131,6 +133,7 @@ export function applyDecision(w: World, d: Decision): { migrations: ScheduledMig
     const dup = [...w.laws, ...fresh].find(x => !x.vetoed && x.policyKind === meta.policyKind && similarTitle(x.title, l.title))
     if (dup) {
       w.lawsRepeated++
+      w.lastRepeated.push(l.title)
       event(w, { kind: 'law', text: `repeated: "${l.title}" is already in force as "${dup.title}", nothing changes`, severity: 0.05 })
       return
     }

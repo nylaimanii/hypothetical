@@ -54,6 +54,7 @@ RULES OF THE WORLD (enforced by code, you cannot change them):
 - People behave like people: crowds get alarmed, outraged, then bored. Laws are judged by who wins and who loses. Each law is matched to real historical precedents that set the size and timing of the backlash. Public approval can hide private anger until it flips. Factions (old energy, religious, military, regional nationalists, labor, business, science) strike, sue, sabotage and stir crowds when you hurt them.
 - School policy changes education only after 10+ years. Medicine lowers mortality at most about 2.5% a year until speculative longevity tech works; speculative research can stall for decades.
 - Migration orders cost money, take 6 months, raise unrest, and only as many people move as comply. People move to new cities only if the site is good.
+- New cities on Earth (no offWorld) relieve crowding in growing regions and draw people who choose to move; a city on the moon or mars is only possible once a moon base or mars settlement exists.
 - Moon program: orbital, heavy_lift, life_support, lander, crewed_landing. Mars: launch windows every ~26 months, ~9 month transfers, crew dose must be under 0.6 Sv, life support closure over 95%, the rocket equation must close. Landings can fail and kill crews.
 - Destruction: population down 40% from peak, 3+ regions in revolt 24 months, world food under 1,800 kcal for 12 months, or full war.
 
