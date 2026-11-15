@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { z } from 'zod'
-import { dirs, readLeaderboard, writeJson } from '@/lib/evolve/store'
+import { dirs, isReadOnly, readLeaderboard, runnerOffline, writeJson } from '@/lib/evolve/store'
 import { liveFile, liveRecord } from '@/lib/evolve/live'
 import { SEEDS } from '@/lib/evolve/seeds'
 
@@ -11,6 +11,7 @@ const Body = z.object({ constitution: z.string().min(20).max(8000).optional(), s
 
 export async function POST(req: Request) {
   await connection()
+  if (isReadOnly()) return runnerOffline()
   const parsed = Body.safeParse(await req.json().catch(() => ({})))
   if (!parsed.success) return Response.json({ error: 'invalid body', issues: parsed.error.issues }, { status: 400 })
 

@@ -2,7 +2,7 @@ import { connection } from 'next/server'
 import fs from 'node:fs'
 import path from 'node:path'
 import { z } from 'zod'
-import { SAFE_ID, writeJson } from '@/lib/evolve/store'
+import { isReadOnly, runnerOffline, SAFE_ID, writeJson } from '@/lib/evolve/store'
 import { injectDir, liveFile } from '@/lib/evolve/live'
 
 const frac = z.number().min(0).max(1)
@@ -20,6 +20,7 @@ const Body = z.object({ runId: z.string().regex(SAFE_ID), override: OverrideSche
 
 export async function POST(req: Request) {
   await connection()
+  if (isReadOnly()) return runnerOffline()
   const parsed = Body.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return Response.json({ error: 'invalid body', issues: parsed.error.issues }, { status: 400 })
   const { runId, override } = parsed.data

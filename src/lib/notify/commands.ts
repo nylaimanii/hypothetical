@@ -1,19 +1,39 @@
 // long-polls telegram getUpdates while evolve runs. answers only TELEGRAM_CHAT_ID.
 import { control } from '../evolve/evolve'
-import { readLeaderboard } from '../evolve/store'
+import { loadRecord, readLeaderboard } from '../evolve/store'
+import { askCore, CORE_REAL } from '../evolve/core'
+import { readDay } from '../evolve/usage'
 import { send, telegramEnv, tg } from './telegram'
 
 type Update = { update_id: number; message?: { chat: { id: number }; text?: string } }
 
-function reply(cmd: string): string | null {
+async function ask(question: string): Promise<string> {
+  if (!CORE_REAL) return 'core offline'
+  if (!question) return 'usage: /ask <question>'
+  const best = readLeaderboard()[0]
+  const record = best && loadRecord(best.best.runId)
+  if (!record) return 'no best world yet'
+  try {
+    return (await askCore(record, question)).slice(0, 3500)
+  } catch (e) {
+    return `ask failed: ${(e as Error).message}`
+  }
+}
+
+async function reply(cmd: string, rest: string): Promise<string | null> {
   switch (cmd) {
     case '/status': {
       const best = readLeaderboard()[0]
+      const day = readDay()
+      const limited = control.limitPausedUntil > Date.now() ? `, limit pause till ${new Date(control.limitPausedUntil).toTimeString().slice(0, 5)}` : ''
       return [
-        `gen ${control.generation}: ${control.worldsDone}/${control.worldsTotal} worlds done${control.paused ? ', PAUSED' : ''}`,
+        `gen ${control.generation}: ${control.worldsDone}/${control.worldsTotal} worlds done${control.paused ? ', PAUSED' : ''}${limited}`,
+        `today: ${day.calls} llm calls${day.tokens ? `, ${day.tokens} tokens` : ''}, ${day.worldsFinished} worlds finished, ${day.worldsInterrupted} interrupted`,
         best ? `best all time: ${best.name} (gen ${best.generation}) score ${best.score}` : '',
       ].filter(Boolean).join('\n')
     }
+    case '/ask':
+      return ask(rest)
     case '/best': {
       const best = readLeaderboard()[0]
       if (!best) return 'no finished generation yet'
@@ -46,8 +66,9 @@ export function startCommands(): () => void {
       for (const u of updates) {
         offset = u.update_id + 1
         if (String(u.message?.chat.id) !== env.chatId) continue
-        const cmd = (u.message?.text ?? '').trim().split(/[\s@]/)[0].toLowerCase()
-        const text = reply(cmd)
+        const raw = (u.message?.text ?? '').trim()
+        const cmd = raw.split(/[\s@]/)[0].toLowerCase()
+        const text = await reply(cmd, raw.replace(/^\S+\s*/, ''))
         if (text) await send(text)
       }
     }

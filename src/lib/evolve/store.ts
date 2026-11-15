@@ -35,6 +35,8 @@ export type Candidate = {
   constitution: string
   score?: number
   runs?: RunSummary[]
+  // times a world of this candidate was interrupted by limits or network (never scored)
+  interrupted?: number
 }
 export type GenerationFile = {
   generation: number
@@ -74,3 +76,20 @@ export function loadRecord(id: string): RunRecord | null {
   }
   return null
 }
+
+// deployed (vercel) or READ_ONLY=1: only committed showcase worlds are served, runner routes are off
+let readOnly: boolean | undefined
+export function isReadOnly(): boolean {
+  if (process.env.READ_ONLY === '1') return true
+  if (readOnly === undefined) {
+    try {
+      fs.mkdirSync(path.join(process.cwd(), 'data'), { recursive: true })
+      fs.accessSync(path.join(process.cwd(), 'data'), fs.constants.W_OK)
+      readOnly = false
+    } catch {
+      readOnly = true
+    }
+  }
+  return readOnly
+}
+export const runnerOffline = () => Response.json({ error: 'runner offline, local only' }, { status: 503 })

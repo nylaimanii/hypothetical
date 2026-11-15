@@ -1,6 +1,7 @@
 // npm run evolve -- --gens 10 --concurrency 2 [--pop 6]
-import { config } from 'dotenv'
-config({ path: '.env.local', quiet: true })
+// env first, then the fetch counter, so both are in place before the sim modules load
+import '../src/lib/evolve/env'
+import '../src/lib/evolve/usage'
 import { evolve, control } from '../src/lib/evolve/evolve'
 import { startCommands } from '../src/lib/notify/commands'
 import { arg } from './args'

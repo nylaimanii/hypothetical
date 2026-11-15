@@ -1,7 +1,7 @@
 // npm run live -- --runId <id> --seed <n> --constitution-file <path>
 import fs from 'node:fs'
-import { config } from 'dotenv'
-config({ path: '.env.local', quiet: true })
+// env first, so keys are set before the sim modules load
+import '../src/lib/evolve/env'
 import type { Frame, RunRecord } from '../src/lib/types'
 import { runWorld } from '../src/lib/evolve/core'
 import { dirs, readJson, writeJson, SAFE_ID } from '../src/lib/evolve/store'

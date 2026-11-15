@@ -10,10 +10,20 @@ import {
   dirs, leaderboardFile, readJson, readLeaderboard, writeJson,
   type Candidate, type GenerationFile, type LeaderboardEntry,
 } from './store'
-import { notifyGeneration, notifyMoon, notifyWorldDied } from '../notify/telegram'
+import { notifyGeneration, notifyMoon, notifyWorldDied, send } from '../notify/telegram'
+import { isTransient, realClock, runQueue, type Clock } from './queue'
+import { trackWorld } from './usage'
 import { sendDigest, sendMoonReport } from '../notify/email'
 
-export type EvolveOptions = { gens: number; concurrency: number; popSize?: number; log?: (line: string) => void }
+export type EvolveOptions = {
+  gens: number
+  concurrency: number
+  popSize?: number
+  log?: (line: string) => void
+  // test seams
+  runWorld?: typeof runWorld
+  clock?: Clock
+}
 
 // shared with telegram commands
 export const control = {
@@ -22,10 +32,11 @@ export const control = {
   generation: 0,
   worldsDone: 0,
   worldsTotal: 0,
+  worldsInterrupted: 0,
+  limitPausedUntil: 0,
   stopRequested: false,
 }
 
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 const genFile = (n: number) => path.join(dirs.generations, `gen-${n}.json`)
 // each generation gets its own pair of seeds, shared by every candidate in it
 const seedsFor = (n: number) => [1000 + n * 2, 1001 + n * 2]
@@ -86,27 +97,46 @@ function firstGeneration(): GenerationFile {
   }
 }
 
-// prefer the record runWorld persisted; fall back to frames collected through onFrame
+// runWorld owns data/runs. evolve only reads what it wrote, and writes a record itself only when runWorld throws
 function recordFor(runId: string, seed: number, gen: number, constitution: string, frames: Frame[], summary: RunSummary): RunRecord {
-  const saved = readJson<RunRecord>(path.join(dirs.runs, `${runId}.json`))
-  if (saved) return saved
-  const rec: RunRecord = { runId, generation: gen, seed, constitution, frames, baseline: [], summary }
-  writeJson(path.join(dirs.runs, `${runId}.json`), rec)
-  return rec
+  return readJson<RunRecord>(path.join(dirs.runs, `${runId}.json`)) ?? { runId, generation: gen, seed, constitution, frames, baseline: [], summary }
 }
 
-async function runOne(g: GenerationFile, c: Candidate, seed: number, log: (l: string) => void): Promise<{ summary: RunSummary; record: RunRecord }> {
-  while (control.paused) await sleep(1000)
+function crashedSummary(runId: string, gen: number, constitution: string, frames: Frame[], err: Error): RunSummary {
+  const last = frames[frames.length - 1]
+  return {
+    runId, generation: gen, status: 'destroyed', endDate: last?.date ?? '2026-11', ticks: last?.tick ?? 0, score: 0,
+    causeOfDeath: `runner error: ${err.message}`, constitution,
+    peakPopulation: Math.max(0, ...frames.map(f => f.regions.reduce((a, r) => a + r.population, 0))),
+    moonStage: last?.moonStage ?? 'none', topEvents: [], baselineStatus: 'alive', baselineEndDate: last?.date ?? '2026-11',
+  }
+}
+
+type RunWorld = typeof runWorld
+
+async function runOne(g: GenerationFile, c: Candidate, seed: number, log: (l: string) => void, run: RunWorld): Promise<{ summary: RunSummary; record: RunRecord }> {
   const runId = `${c.id}-s${seed}`
   const frames: Frame[] = []
-  const summary = await runWorld({
-    runId, generation: g.generation, seed, constitution: c.constitution, frameEvery: 12,
-    onFrame: f => { if (f.tick % 12 === 0 || f.status !== 'alive') frames.push(f) },
-  })
-  const record = recordFor(runId, seed, g.generation, c.constitution, frames, summary)
+  let summary: RunSummary
+  let record: RunRecord
+  try {
+    summary = await trackWorld(runId, g.generation, () => run({
+      runId, generation: g.generation, seed, constitution: c.constitution, frameEvery: 12,
+      onFrame: f => { if (f.tick % 12 === 0 || f.status !== 'alive') frames.push(f) },
+    }), r => (r.ok ? 'finished' : isTransient(r.err) ? 'interrupted' : 'crashed'))
+    record = recordFor(runId, seed, g.generation, c.constitution, frames, summary)
+  } catch (e) {
+    // rate limits, timeouts and network errors are not deaths: hand back to the queue unscored
+    if (isTransient(e)) throw e
+    log(`gen ${g.generation} ${runId} runWorld threw: ${(e as Error).message}`)
+    summary = crashedSummary(runId, g.generation, c.constitution, frames, e as Error)
+    record = { runId, generation: g.generation, seed, constitution: c.constitution, frames, baseline: [], summary }
+    writeJson(path.join(dirs.runs, `${runId}.json`), record)
+  }
   control.worldsDone++
   log(`gen ${g.generation} ${runId.padEnd(22)} ${summary.status.padEnd(9)} ${summary.endDate}  score ${summary.score}  twin ${summary.baselineStatus}${summary.causeOfDeath ? `  (${summary.causeOfDeath})` : ''}`)
-  if (summary.status === 'destroyed') await notifyWorldDied(summary, record, g.generation)
+  // a runner crash is a bug, not a death worth a telegram
+  if (summary.status === 'destroyed' && !summary.causeOfDeath?.startsWith('runner error')) await notifyWorldDied(summary, record, g.generation)
   if (summary.status === 'moon') {
     fs.mkdirSync(dirs.showcase, { recursive: true })
     writeJson(path.join(dirs.showcase, `${runId}.json`), record)
@@ -116,13 +146,7 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, log: (l: st
   return { summary, record }
 }
 
-// tiny promise pool
-async function pool<T>(items: T[], concurrency: number, fn: (t: T) => Promise<void>) {
-  let i = 0
-  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, async () => {
-    while (i < items.length) { const t = items[i++]; await fn(t) }
-  }))
-}
+const hhmm = (t: number) => new Date(t).toTimeString().slice(0, 5)
 
 function updateLeaderboard(g: GenerationFile): LeaderboardEntry[] {
   const all = [...readLeaderboard()]
@@ -142,7 +166,7 @@ function updateLeaderboard(g: GenerationFile): LeaderboardEntry[] {
   return top
 }
 
-async function runGeneration(g: GenerationFile, concurrency: number, log: (l: string) => void) {
+async function runGeneration(g: GenerationFile, concurrency: number, log: (l: string) => void, run: RunWorld, clock: Clock) {
   const file = genFile(g.generation)
   writeJson(file, g)
   const records = new Map<string, RunRecord>()
@@ -151,13 +175,30 @@ async function runGeneration(g: GenerationFile, concurrency: number, log: (l: st
   control.worldsTotal = g.population.length * g.seeds.length
   control.worldsDone = control.worldsTotal - tasks.length
 
-  await pool(tasks, concurrency, async ({ c, s }) => {
-    if (control.stopRequested) return
-    const { summary, record } = await runOne(g, c, s, log)
-    records.set(summary.runId, record)
-    c.runs = [...(c.runs ?? []), summary].sort((a, b) => a.runId.localeCompare(b.runId))
-    if (c.runs.length === g.seeds.length) c.score = Math.round((c.runs.reduce((a, r) => a + r.score, 0) / c.runs.length) * 10) / 10
-    writeJson(file, g)
+  await runQueue(tasks, {
+    concurrency,
+    clock,
+    shouldStop: () => control.stopRequested,
+    isPaused: () => control.paused,
+    run: async ({ c, s }) => {
+      const { summary, record } = await runOne(g, c, s, log, run)
+      records.set(summary.runId, record)
+      c.runs = [...(c.runs ?? []), summary].sort((a, b) => a.runId.localeCompare(b.runId))
+      if (c.runs.length === g.seeds.length) c.score = Math.round((c.runs.reduce((a, r) => a + r.score, 0) / c.runs.length) * 10) / 10
+      writeJson(file, g)
+    },
+    onInterrupted: ({ c, s }, err, attempt, retryAt) => {
+      control.worldsInterrupted++
+      c.interrupted = (c.interrupted ?? 0) + 1
+      writeJson(file, g)
+      log(`gen ${g.generation} ${`${c.id}-s${s}`.padEnd(22)} interrupted (${(err as Error).message}), attempt ${attempt}, retry at ${hhmm(retryAt)}`)
+    },
+    onLimitPause: async resumeAt => {
+      control.limitPausedUntil = resumeAt
+      const msg = `paused: groq limits, resuming at ${hhmm(resumeAt)}`
+      log(msg)
+      await send(msg)
+    },
   })
   if (control.stopRequested) return
 
@@ -193,7 +234,7 @@ export async function evolve(opts: EvolveOptions) {
 
     for (let done = 0; done < opts.gens && !control.stopRequested; done++) {
       log(`gen ${current.generation} start: ${current.population.length} constitutions x seeds ${current.seeds.join(', ')}`)
-      await runGeneration(current, opts.concurrency, log)
+      await runGeneration(current, opts.concurrency, log, opts.runWorld ?? runWorld, opts.clock ?? realClock)
       if (control.stopRequested || done === opts.gens - 1) break
       last = current
       current = { generation: last.generation + 1, seeds: seedsFor(last.generation + 1), status: 'running', startedAt: new Date().toISOString(), population: await breed(last, popSize, log) }
