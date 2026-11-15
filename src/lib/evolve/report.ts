@@ -6,6 +6,7 @@ import { readAgents } from './agents'
 import { matchesKnownLesson, readLessons } from './lessons'
 import { readRunIndex } from './store'
 import { featuresOf, readSteps } from './steps'
+import { agentRanges } from './uncertainty'
 import { epitaphOf } from '../notify/epitaph'
 
 export type Ref = { tick?: number; date?: string; url?: string; runId?: string }
@@ -162,6 +163,9 @@ function ending(rec: RunRecord): ReportSection {
     claims.push({ text: `${yearOf(e.tick)}: ${e.headline ? `${e.headline}. ` : ''}${e.text.replace(/\s*\[[^\]]*\]/g, '')}.`, refs: [at(e.tick), ...(url ? [{ url }] : [])] })
   }
   claims.push({ text: `furthest frontier: ${words(s.frontier)}. peak period life expectancy: ${s.peakPeriodLifeExpectancy.toFixed(1)} years. population at the end: ${pop(s.finalPopulation)}.`, refs: [at(s.ticks)] })
+  // the same agent across its other full runs: ranges, not single numbers
+  const r = agentRanges(rec.agentId)
+  if (r) claims.push({ text: `across ${r.runs} full runs, this agent: ${r.lines.join('; ')}.`, refs: [] })
   return { id: 'ending', title: s.status === 'destroyed' ? 'what killed it' : 'how far it got', claims }
 }
 

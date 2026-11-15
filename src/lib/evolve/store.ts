@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
-import type { HallEntry, Lesson, RunRecord, RunSummary } from '../types'
+import type { Frontier, HallEntry, Lesson, RunRecord, RunSummary } from '../types'
 
 export const DATA = path.join(process.cwd(), 'data')
 // paths resolve at call time (statically scoped under data/ so deploy file tracing stays narrow)
@@ -44,6 +44,8 @@ export type Candidate = {
   protected?: boolean
   // its full 100-year run, when it was a finalist
   full?: RunSummary
+  // extra full runs on the uncertainty seeds (version top 3 only)
+  extra?: RunSummary[]
 }
 export type GenerationFile = {
   generation: number
@@ -56,6 +58,8 @@ export type GenerationFile = {
   population: Candidate[]
   // the top 2 by screening, who get a full 100-year run
   finalists?: string[]
+  // version top-3 agents not in this population that ran their uncertainty seeds this generation
+  guests?: Candidate[]
   // learning this generation: deaths, deaths that repeated a known lesson, lessons added
   stats?: { deaths: number; repeatDeaths: number; newLessons: Lesson[]; newHall?: HallEntry[] }
 }
@@ -115,13 +119,14 @@ export function removeShowcase(runId: string) {
 
 // summaries of every local run, so agents and compare never parse the big records
 const runIndexFile = () => path.join(process.cwd(), 'data', 'runs', 'index.json')
-export type IndexedRun = RunSummary & { seed: number; simVersion?: string }
+// milestones: the year each frontier stage was first reached (for ranges across runs)
+export type IndexedRun = RunSummary & { seed: number; simVersion?: string; milestones?: Partial<Record<Frontier, number>> }
 export function readRunIndex(): IndexedRun[] {
   return readJson<IndexedRun[]>(runIndexFile()) ?? []
 }
-export function indexRun(summary: RunSummary, seed: number, simVersion?: string) {
+export function indexRun(summary: RunSummary, seed: number, simVersion?: string, milestones?: IndexedRun['milestones']) {
   const all = readRunIndex().filter(r => r.runId !== summary.runId)
-  all.push({ ...summary, seed, ...(simVersion ? { simVersion } : {}) })
+  all.push({ ...summary, seed, ...(simVersion ? { simVersion } : {}), ...(milestones ? { milestones } : {}) })
   writeJson(runIndexFile(), all)
 }
 

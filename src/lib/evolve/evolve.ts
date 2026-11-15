@@ -27,6 +27,7 @@ import { trackWorld } from './usage'
 import { lineageRoots, recordAgentRun, registerPopulation, settleGeneration } from './agents'
 import { indexFeatures, recomputeSteps } from './steps'
 import { enterVersion, simVersionOnDisk, verifyLessons } from './version'
+import { agentRanges, EXTRA_SEEDS, markUncertaintyDone, milestoneYears, readUncertainty, versionTopAgents } from './uncertainty'
 import { checkHall } from './hall'
 import { sendDigest, sendGoalReport } from '../notify/email'
 
@@ -70,11 +71,12 @@ export const control = {
 const genFile = (n: number) => path.join(dirs.generations, `gen-${n}.json`)
 // each generation gets its own pair of seeds, shared by every candidate in it
 const seedsFor = (n: number) => [1000 + n * 2, 1001 + n * 2]
-export type Stage = 'screen' | 'full'
+// extra: full 100-year runs on the uncertainty seeds for the version's top 3 agents
+export type Stage = 'screen' | 'full' | 'extra'
 export const SCREEN_TICKS = 600
 export const FULL_TICKS = 1200
 const FINALISTS = 2
-const runIdFor = (g: GenerationFile, c: Candidate, seed: number, stage: Stage = 'screen') => `g${g.generation}-${c.id}${stage === 'full' ? '-full' : ''}-s${seed}`
+const runIdFor = (g: GenerationFile, c: Candidate, seed: number, stage: Stage = 'screen') => `g${g.generation}-${c.id}${stage === 'screen' ? '' : '-full'}-s${seed}`
 export const isFullRun = (runId: string) => /-full-s\d+$/.test(runId)
 
 function mulberry32(a: number) {
@@ -230,10 +232,10 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, stage: Stag
     record = { runId, generation: g.generation, seed, constitution: c.constitution, frames, baseline: [], summary, agentId: c.id, snapshots: [] }
     writeJson(path.join(dirs.runs, `${runId}.json`), record)
   }
-  indexRun(summary, seed, control.simVersion)
+  indexRun(summary, seed, control.simVersion, stage === 'screen' ? undefined : milestoneYears(record))
   // applying a lesson and surviving confirms it on this sim version
   if (summary.status !== 'destroyed') verifyLessons([...new Set(record.frames.flatMap(f => f.decision?.lessonsApplied ?? []))], control.simVersion)
-  recordAgentRun(summary, stage)
+  recordAgentRun(summary, stage === 'screen' ? 'screen' : 'full')
   // feature row for the steps recipe (real llm runs only)
   try { indexFeatures(record) } catch (e) { deps.log(`  steps: could not index ${runId}: ${(e as Error).message}`) }
   const learning = readLearning()
@@ -242,7 +244,7 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, stage: Stag
   control.worldsDone++
   control.recent = [summary, ...control.recent.filter(r => r.runId !== summary.runId)].slice(0, 5)
   control.lastWorldAt = Date.now()
-  deps.log(`gen ${g.generation} #${learning.worldsRun} ${stage === 'full' ? 'full  ' : 'screen'} ${runId.padEnd(34)} ${summary.status.padEnd(13)} ${summary.endDate}  score ${summary.score}  frontier ${summary.frontier}${summary.causeOfDeath ? `  (${summary.causeOfDeath})` : ''}`)
+  deps.log(`gen ${g.generation} #${learning.worldsRun} ${stage.padEnd(6)} ${runId.padEnd(34)} ${summary.status.padEnd(13)} ${summary.endDate}  score ${summary.score}  frontier ${summary.frontier}${summary.causeOfDeath ? `  (${summary.causeOfDeath})` : ''}`)
 
   // a runner crash is a bug, not a death worth a lesson or a telegram
   if (summary.status === 'destroyed' && !summary.causeOfDeath?.startsWith('runner error')) {
@@ -250,7 +252,7 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, stage: Stag
     await notifyWorldDied(summary, record, { generation: g.generation, worldNo: learning.worldsRun, agentName: c.name, added, repeat })
   }
   // hall of history and showcase come from full 100-year runs only. hall is sent as one telegram per generation
-  if (stage === 'full' && !summary.causeOfDeath?.startsWith('runner error')) {
+  if (stage !== 'screen' && !summary.causeOfDeath?.startsWith('runner error')) {
     const entries = checkHall(record, c.name, control.simVersion)
     if (entries.length) {
       g.stats = g.stats ?? { deaths: 0, repeatDeaths: 0, newLessons: [] }
@@ -328,6 +330,7 @@ async function runStage(g: GenerationFile, stage: Stage, tasks: { c: Candidate; 
       const { summary, record } = await runOne(g, c, s, stage, deps)
       records.set(summary.runId, record)
       if (stage === 'full') c.full = summary
+      else if (stage === 'extra') c.extra = [...(c.extra ?? []).filter(r => r.runId !== summary.runId), summary]
       else {
         c.runs = [...(c.runs ?? []), summary].sort((a, b) => a.runId.localeCompare(b.runId))
         if (c.runs.length === g.seeds.length) c.score = round4(c.runs.reduce((a, r) => a + r.score, 0) / c.runs.length)
@@ -343,6 +346,39 @@ async function runStage(g: GenerationFile, stage: Stage, tasks: { c: Candidate; 
     },
     beforeEach: deps.gate,
   })
+}
+
+async function runUncertainty(g: GenerationFile, concurrency: number, deps: Deps, clock: Clock, records: Map<string, RunRecord>) {
+  const done = readUncertainty().done
+  const pending = versionTopAgents().filter(id => !done[id])
+  if (!pending.length) return
+  const agents = readAgents()
+  const who = pending.map(id => {
+    const inPop = g.population.find(c => c.id === id)
+    if (inPop) return inPop
+    const known = g.guests?.find(c => c.id === id)
+    if (known) return known
+    const a = agents.find(x => x.id === id)
+    if (!a) return null
+    const guest: Candidate = { id: a.id, name: a.name, origin: 'elite', parents: [], constitution: a.constitution, ...(a.protected ? { protected: true } : {}) }
+    g.guests = [...(g.guests ?? []), guest]
+    return guest
+  }).filter((c): c is Candidate => !!c)
+  const indexed = new Set(readRunIndex().map(r => r.runId))
+  const tasks = who.flatMap(c => EXTRA_SEEDS.filter(s => !indexed.has(runIdFor(g, c, s, 'extra'))).map(s => ({ c, s })))
+  if (tasks.length) {
+    deps.log(`gen ${g.generation} uncertainty: ${who.map(c => c.name).join(', ')} run ${EXTRA_SEEDS.length} extra seeds`)
+    control.worldsTotal += tasks.length
+    writeJson(genFile(g.generation), g)
+    await runStage(g, 'extra', tasks, concurrency, deps, clock, records)
+    if (control.stopRequested) return
+  }
+  for (const c of who) {
+    const runIds = EXTRA_SEEDS.map(s => runIdFor(g, c, s, 'extra'))
+    markUncertaintyDone(c.id, runIds)
+    const r = agentRanges(c.id)
+    if (r) { deps.log(`  ${c.name} across ${r.runs} full runs: ${r.lines.join('; ')}`); await send(`${c.name} across ${r.runs} full runs:\n${r.lines.join('\n')}`) }
+  }
 }
 
 async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps, clock: Clock) {
@@ -369,6 +405,10 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
   await runStage(g, 'full', finals, concurrency, deps, clock, records)
   if (control.stopRequested) return
 
+  // uncertainty: the version's top 3 agents (by best full run) each run 5 extra seeds once per version
+  await runUncertainty(g, concurrency, deps, clock, records)
+  if (control.stopRequested) return
+
   g.status = 'done'
   g.finishedAt = new Date().toISOString()
   writeJson(file, g)
@@ -376,8 +416,9 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
 
   const ranked = [...g.population].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
   const best = ranked[0]
-  const allRuns = g.population.flatMap(c => [...(c.runs ?? []), ...(c.full ? [c.full] : [])])
-  const fullRuns = g.population.flatMap(c => (c.full ? [c.full] : []))
+  const everyone = [...g.population, ...(g.guests ?? [])]
+  const allRuns = everyone.flatMap(c => [...(c.runs ?? []), ...(c.full ? [c.full] : []), ...(c.extra ?? [])])
+  const fullRuns = everyone.flatMap(c => [...(c.full ? [c.full] : []), ...(c.extra ?? [])])
   const bestRun = [...(fullRuns.length ? fullRuns : allRuns)].sort((a, b) => b.score - a.score)[0]
   const stats = g.stats ?? { deaths: 0, repeatDeaths: 0, newLessons: [] }
   const lessonsKnown = readLessons().length
@@ -413,6 +454,8 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
     topStep ? `top step so far: ${topStep.text} (effect +${topStep.effect}, ${topStep.helpedWorlds.length} worlds helped)` : '',
     deadliest ? `deadliest step so far: ${deadliest.text} (in ${deadliest.hurtWorlds.length} worlds that did worse${deadliest.hurtWorlds.some(id => allRuns.some(r => r.runId === id && r.status === 'destroyed')) ? ' or died' : ''})` : '',
   ].filter(Boolean)
+  const champRange = champion ? agentRanges(champion.id) : null
+  if (champRange) stepLines.unshift(`champion across ${champRange.runs} full runs: ${champRange.lines.slice(0, 2).join('; ')}`)
   const line = `gen ${g.generation} done: champion ${champion?.name ?? best.name} | best screening ${best.name} avg ${best.score} | best 100-year world ${round4(bestRun?.score ?? 0)} | lessons known ${lessonsKnown} | repeat-mistake rate ${Math.round(repeatRate * 100)}% (${stats.repeatDeaths}/${stats.deaths} deaths)${goals ? ` | ${goals} goal achieved` : ''}`
   log(line)
   for (const l of stepLines) log(`  ${l}`)

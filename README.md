@@ -51,6 +51,7 @@ If any of these is missing, that feature logs once and is skipped. Nothing crash
 - **Two-stage evaluation, every generation:**
   - **Screening:** every constitution runs the same 2 seeds for 50 years (to tick 600) and is scored by its average.
   - **Finals:** the top 2 also get one full 100-year run (to tick 1200). The champion, the hall of history and the showcase come from those full runs.
+- **Uncertainty:** each agent that enters its sim version's top 3 (by best full run) also runs 5 extra seeds, as full 100-year runs on the same seeds for every agent. Wherever an agent has several full runs, reports, telegram and `/api/agents/[id]` show ranges, e.g. "mars crewed by 2068-2081 in 4 of 5 runs", instead of single numbers.
 - The top 2 constitutions carry over unchanged. The rest of the population is refilled with:
   - **mutations**: the LLM rewrites a parent, given what killed it, its biggest events and the known lessons. It fixes what failed and keeps what worked.
   - **crossovers**: section by section splices of two parents (values, religion, school, migration, priorities).
@@ -133,7 +134,7 @@ PDFs styled like the site go out over gmail and are always saved to `data/report
 | `GET /api/runs` | `RunSummary[]` (leaderboard best worlds and showcase) |
 | `GET /api/learning` | one row per generation: best score, lessons known, repeat-mistake rate |
 | `GET /api/agents` | `Agent[]` |
-| `GET /api/agents/[id]` | `{ agent, runs }` |
+| `GET /api/agents/[id]` | `{ agent, runs, ranges? }`. `ranges` covers the agent's full runs on the current version, when it has 2 or more |
 | `GET /api/compare?agents=a,b,c,d` | `{ seed, runs, divergences, pending, note? }`: each agent's best world on their most shared seed, slim (`SlimRun`: summary, one stat row per year, decision rows), plus divergences for every pair. Missing worlds are started in the background (local only) |
 | `GET /api/evolve/now` | mission control: the running generation, current world and its latest frame, `lastHeartbeat` (refreshed every minute), the queue, the last 5 worlds, new lessons, stats (worlds lost, lessons known, best score, champion, minutes per world, worlds by morning), with `running: true`. When idle: 200 `{ running: false, lastHeartbeat }` |
 | `GET /api/runs/[id]/frames?from=&to=` | `FramesResponse` `{ runId, from, to, frames }`: full frames in an inclusive tick range, for lazy loading |

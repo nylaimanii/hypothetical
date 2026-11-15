@@ -94,12 +94,13 @@ test('evolve: interrupted worlds are retried, never scored or reported as deaths
   const { placeholderSummary } = await import('./store')
   let calls = 0
   const horizons: number[] = []
-  const fake = async (o: RunOptions & { untilTick?: number }): Promise<RunSummary> => {
+  const fake = async (o: RunOptions & { untilTick?: number; agentId?: string }): Promise<RunSummary> => {
     if (++calls <= 2) throw rateLimit()
     horizons.push(o.untilTick ?? 1200)
+    // like the real runWorld, stamp the agent the world belongs to
     return placeholderSummary({
       runId: o.runId, generation: o.generation, status: 'complete', endDate: '2126-11', ticks: 1200, score: 50,
-      constitution: o.constitution, peakPopulation: 8e9, moonStage: 'orbital',
+      constitution: o.constitution, peakPopulation: 8e9, moonStage: 'orbital', agentId: o.agentId,
     })
   }
   const lines: string[] = []
@@ -108,10 +109,16 @@ test('evolve: interrupted worlds are retried, never scored or reported as deaths
   const gen = JSON.parse(fs.readFileSync(path.join(dir, 'data/generations/gen-1.json'), 'utf8'))
   assert.equal(gen.status, 'done')
   assert.equal(gen.population.length, 7, 'six philosophies plus the long now charter')
-  assert.equal(calls, 14 + 2 + 2, '14 screening worlds, 2 full finals, plus 2 retries')
-  // two-stage evaluation: 50-year screening for everyone, a 100-year final for the top 2
+  assert.equal(calls, 14 + 2 + 10 + 2, '14 screening worlds, 2 full finals, 2 x 5 uncertainty seeds, plus 2 retries')
+  // two-stage evaluation: 50-year screening for everyone, a 100-year final for the top 2,
+  // then the version's top agents (only 2 have full runs yet) run 5 extra seeds each
   assert.equal(horizons.filter(h => h === 600).length, 14)
-  assert.equal(horizons.filter(h => h === 1200).length, 2)
+  assert.equal(horizons.filter(h => h === 1200).length, 2 + 10)
+  const { agentRanges } = await import('./uncertainty')
+  const ranged = gen.finalists.map((id: string) => agentRanges(id)).filter(Boolean)
+  assert.equal(ranged.length, 2)
+  assert.equal(ranged[0].runs, 6, 'the final plus 5 extra seeds')
+  assert.ok(ranged[0].lines.some((l: string) => l === 'survived all 6 runs'))
   assert.equal(gen.finalists.length, 2)
   for (const c of gen.population) {
     assert.equal(c.runs.length, 2)
@@ -125,7 +132,7 @@ test('evolve: interrupted worlds are retried, never scored or reported as deaths
   assert.equal(lines.filter(l => l.includes('interrupted')).length, 2)
   const day = readDay()
   assert.equal(day.worldsInterrupted, 2)
-  assert.equal(day.worldsFinished, 16)
+  assert.equal(day.worldsFinished, 26)
   assert.ok(fs.existsSync(path.join(dir, 'data/leaderboard.json')))
   // mission control file exists only while evolve runs
   assert.ok(!fs.existsSync(path.join(dir, 'data/evolve-now.json')), 'evolve-now is removed when evolve exits')

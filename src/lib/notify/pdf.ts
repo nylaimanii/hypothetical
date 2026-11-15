@@ -10,6 +10,7 @@ import type { StepsFile } from '../evolve/steps'
 import { learningReport, worldReport, type LearningReport, type Ref, type ReportSection, type WorldReport } from '../evolve/report'
 import { epitaphOf } from './epitaph'
 import { familyTree, readAgents } from '../evolve/agents'
+import { agentRanges } from '../evolve/uncertainty'
 
 const C = { bone: '#EFE9DD', ink: '#1C1A17', muted: '#6B655B', rule: '#CFC6B4', ember: '#C2410C' }
 const FONTS = path.join(process.cwd(), 'fonts')
@@ -368,6 +369,10 @@ export async function digestPdf({ generation: g, leaderboard, bestRecord, allRun
     table(doc, ['agent', 'avg', 'best', 'worlds', 'died', 'frontier', 'life exp', ''],
       agents.slice(0, 15).map(a => [a.name, a.avgScore, a.bestScore, a.worlds, a.deaths, words(a.bestFrontier), a.bestPeriodLifeExpectancy ? a.bestPeriodLifeExpectancy.toFixed(1) : '', [a.champion ? 'champion' : '', a.retired ? 'retired' : '', a.protected ? 'protected' : ''].filter(Boolean).join(', ')]),
       [2.2, 0.8, 0.8, 0.7, 0.6, 1.4, 0.8, 1.2])
+    for (const a of agents.slice(0, 5)) {
+      const r = agentRanges(a.id)
+      if (r) { h3(doc, `${a.name} across ${r.runs} full runs`); for (const l of r.lines) mono(doc, l, C.ink) }
+    }
     const tree = familyTree()
     if (tree.length) { h3(doc, 'family tree'); for (const line of tree) mono(doc, line, C.ink) }
   }
