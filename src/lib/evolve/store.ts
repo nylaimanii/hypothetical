@@ -93,3 +93,17 @@ export function isReadOnly(): boolean {
   return readOnly
 }
 export const runnerOffline = () => Response.json({ error: 'runner offline, local only' }, { status: 503 })
+
+// v1 sims end on 'moon' / 'stagnated', v2 sims on 'goal_achieved' / 'complete'. both count as a win here.
+export const isWin = (s: { status: string }) => s.status === 'goal_achieved' || s.status === 'moon'
+
+// a full summary for worlds runWorld never returned one for (crashes, live placeholders)
+export function placeholderSummary(p: Pick<RunSummary, 'runId' | 'generation' | 'status' | 'endDate' | 'ticks' | 'constitution' | 'peakPopulation' | 'moonStage'> & Partial<RunSummary>): RunSummary {
+  return {
+    score: 0, topEvents: [], baselineStatus: 'alive', baselineEndDate: p.endDate,
+    frontier: 'none', peakPeriodLifeExpectancy: 0, finalPopulation: p.peakPopulation, citiesFounded: 0, diseasesEradicated: [],
+    humanCost: { deaths: 0, famineDeaths: 0, unrestDeaths: 0, displaced: 0, approval: 0 }, lessonsLearned: [], lessonsApplied: 0,
+    agentId: 'unassigned',
+    ...p,
+  }
+}

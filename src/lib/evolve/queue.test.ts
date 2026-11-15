@@ -1,4 +1,5 @@
 // npx tsx --test src/lib/evolve/queue.test.ts
+// store paths resolve from cwd at import time: never import store (or anything using it) statically here
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -89,13 +90,14 @@ test('evolve: interrupted worlds are retried, never scored or reported as deaths
     // store paths resolve from cwd at import time
     const { evolve, control } = await import('./evolve')
     const { readDay } = await import('./usage')
+    const { placeholderSummary } = await import('./store')
     let calls = 0
     const fake = async (o: RunOptions): Promise<RunSummary> => {
       if (++calls <= 2) throw rateLimit()
-      return {
-        runId: o.runId, generation: o.generation, status: 'stagnated', endDate: '2076-11', ticks: 600, score: 50,
-        constitution: o.constitution, peakPopulation: 8e9, moonStage: 'orbital', topEvents: [], baselineStatus: 'stagnated', baselineEndDate: '2076-11',
-      }
+      return placeholderSummary({
+        runId: o.runId, generation: o.generation, status: 'complete', endDate: '2126-11', ticks: 1200, score: 50,
+        constitution: o.constitution, peakPopulation: 8e9, moonStage: 'orbital',
+      })
     }
     const lines: string[] = []
     await evolve({ gens: 1, concurrency: 1, runWorld: fake, clock: fakeClock(), log: l => lines.push(l) })
@@ -106,7 +108,7 @@ test('evolve: interrupted worlds are retried, never scored or reported as deaths
     for (const c of gen.population) {
       assert.equal(c.runs.length, 2)
       assert.equal(c.score, 50)
-      assert.ok(c.runs.every((r: RunSummary) => r.status === 'stagnated'))
+      assert.ok(c.runs.every((r: RunSummary) => r.status === 'complete'))
     }
     assert.equal(gen.population.reduce((a: number, c: { interrupted?: number }) => a + (c.interrupted ?? 0), 0), 2)
     assert.equal(control.worldsInterrupted, 2)

@@ -19,7 +19,8 @@ export type WorldUsage = {
   tokenSource: 'runWorld' | 'groq-responses' | 'none'
   at: string
 }
-export type DayUsage = { date: string; calls: number; tokens: number; worldsFinished: number; worldsInterrupted: number; worlds: WorldUsage[] }
+// calls = successful llm calls. rejected = groq said no (429 rate limits, quota), not counted as calls
+export type DayUsage = { date: string; calls: number; tokens: number; rejected?: number; worldsFinished: number; worldsInterrupted: number; worlds: WorldUsage[] }
 
 const today = () => new Date().toISOString().slice(0, 10)
 const dayFile = (date: string) => path.join(dirs.reports, `usage-${date}.json`)
@@ -48,10 +49,14 @@ export function installFetchCounter() {
   globalThis.fetch = async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const res = await orig(input, init)
     if (!isGroq(input)) return res
+    if (!res.ok) {
+      bumpDay(d => { d.rejected = (d.rejected ?? 0) + 1 })
+      return res
+    }
     const ctx = als.getStore()
     let tokens = 0
     try {
-      if (res.ok) tokens = ((await res.clone().json()) as { usage?: { total_tokens?: number } }).usage?.total_tokens ?? 0
+      tokens = ((await res.clone().json()) as { usage?: { total_tokens?: number } }).usage?.total_tokens ?? 0
     } catch {}
     if (ctx) { ctx.calls++; ctx.tokens += tokens }
     // calls outside a world (mutations) still count toward the day

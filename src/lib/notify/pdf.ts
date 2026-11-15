@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import PDFDocument from 'pdfkit'
 import type { RunRecord, RunSummary, WorldEvent } from '../types'
-import type { GenerationFile, LeaderboardEntry } from '../evolve/store'
+import { isWin, type GenerationFile, type LeaderboardEntry } from '../evolve/store'
 
 const C = { bone: '#EFE9DD', ink: '#1C1A17', muted: '#6B655B', rule: '#CFC6B4', ember: '#C2410C' }
 const FONTS = path.join(process.cwd(), 'fonts')
@@ -139,7 +139,7 @@ export async function digestPdf({ generation: g, leaderboard, bestRecord, allRun
   const { doc, done } = makeDoc(`generation ${g.generation} digest`)
   const ranked = [...g.population].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
   const best = ranked[0]
-  const moons = allRuns.filter(r => r.status === 'moon').length
+  const moons = allRuns.filter(isWin).length
   const deaths = allRuns.filter(r => r.status === 'destroyed')
   cover(doc, 'hypothetical / generation digest', `generation ${g.generation}`,
     `${g.population.length} constitutions on seeds ${g.seeds.join(' and ')}. ${moons} reached the moon, ${deaths.length} were destroyed.`)

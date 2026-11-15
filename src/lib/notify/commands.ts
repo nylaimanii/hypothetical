@@ -28,7 +28,7 @@ async function reply(cmd: string, rest: string): Promise<string | null> {
       const limited = control.limitPausedUntil > Date.now() ? `, limit pause till ${new Date(control.limitPausedUntil).toTimeString().slice(0, 5)}` : ''
       return [
         `gen ${control.generation}: ${control.worldsDone}/${control.worldsTotal} worlds done${control.paused ? ', PAUSED' : ''}${limited}`,
-        `today: ${day.calls} llm calls${day.tokens ? `, ${day.tokens} tokens` : ''}, ${day.worldsFinished} worlds finished, ${day.worldsInterrupted} interrupted`,
+        `today: ${day.calls} llm calls${day.tokens ? `, ${day.tokens} tokens` : ''}${day.rejected ? `, ${day.rejected} rejected by groq` : ''}, ${day.worldsFinished} worlds finished, ${day.worldsInterrupted} interrupted`,
         best ? `best all time: ${best.name} (gen ${best.generation}) score ${best.score}` : '',
       ].filter(Boolean).join('\n')
     }

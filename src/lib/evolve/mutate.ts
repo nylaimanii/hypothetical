@@ -4,7 +4,9 @@ import type { RunSummary } from '../types'
 import type { Candidate } from './store'
 import { wordCount } from './seeds'
 
-const MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
+// llama 3.3 70b is the spec'd model; accounts without it fall through to the next one
+const MODELS = process.env.GROQ_MODEL ? [process.env.GROQ_MODEL] : ['llama-3.3-70b-versatile', 'openai/gpt-oss-120b']
+const missingModels = new Set<string>()
 const SECTIONS = ['Values', 'Religion', 'School', 'Migration', 'Priorities']
 
 let client: Groq | null | undefined
@@ -34,25 +36,28 @@ function trimWords(text: string, max = 250) {
 async function chat(prompt: string): Promise<string | null> {
   const g = groq()
   if (!g) return null
-  for (let attempt = 0; attempt < 5; attempt++) {
-    try {
-      const res = await g.chat.completions.create({
-        model: MODEL,
-        temperature: 0.8,
-        response_format: { type: 'json_object' },
-        messages: [{ role: 'user', content: prompt }],
-      })
-      return res.choices[0]?.message?.content ?? null
-    } catch (e) {
-      const err = e as { status?: number; headers?: Record<string, string> }
-      if (err.status === 429 || (err.status ?? 0) >= 500) {
-        const retry = Number(err.headers?.['retry-after']) || 2 ** attempt * 4
-        console.log(`[evolve] groq ${err.status}, retrying in ${retry}s`)
-        await sleep(retry * 1000)
-        continue
+  for (const model of MODELS.filter(m => !missingModels.has(m))) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const res = await g.chat.completions.create({
+          model,
+          temperature: 0.8,
+          response_format: { type: 'json_object' },
+          messages: [{ role: 'user', content: prompt }],
+        })
+        return res.choices[0]?.message?.content ?? null
+      } catch (e) {
+        const err = e as { status?: number; headers?: Record<string, string>; message?: string }
+        if (err.status === 404 || /model_not_found|does not exist/.test(String(err.message))) { missingModels.add(model); break }
+        if (err.status === 429 || (err.status ?? 0) >= 500) {
+          const retry = Number(err.headers?.['retry-after']) || 2 ** attempt * 4
+          console.log(`[evolve] groq ${err.status}, retrying in ${retry}s`)
+          await sleep(retry * 1000)
+          continue
+        }
+        console.log(`[evolve] groq error: ${err.message}`)
+        return null
       }
-      console.log(`[evolve] groq error: ${(e as Error).message}`)
-      return null
     }
   }
   return null

@@ -7,7 +7,7 @@ import { runWorld } from './core'
 import { SEEDS } from './seeds'
 import { crossover, mutate } from './mutate'
 import {
-  dirs, leaderboardFile, readJson, readLeaderboard, writeJson,
+  dirs, isWin, leaderboardFile, placeholderSummary, readJson, readLeaderboard, writeJson,
   type Candidate, type GenerationFile, type LeaderboardEntry,
 } from './store'
 import { notifyGeneration, notifyMoon, notifyWorldDied, send } from '../notify/telegram'
@@ -99,17 +99,17 @@ function firstGeneration(): GenerationFile {
 
 // runWorld owns data/runs. evolve only reads what it wrote, and writes a record itself only when runWorld throws
 function recordFor(runId: string, seed: number, gen: number, constitution: string, frames: Frame[], summary: RunSummary): RunRecord {
-  return readJson<RunRecord>(path.join(dirs.runs, `${runId}.json`)) ?? { runId, generation: gen, seed, constitution, frames, baseline: [], summary }
+  return readJson<RunRecord>(path.join(dirs.runs, `${runId}.json`)) ?? { runId, generation: gen, seed, constitution, frames, baseline: [], summary, agentId: summary.agentId, snapshots: [] }
 }
 
 function crashedSummary(runId: string, gen: number, constitution: string, frames: Frame[], err: Error): RunSummary {
   const last = frames[frames.length - 1]
-  return {
-    runId, generation: gen, status: 'destroyed', endDate: last?.date ?? '2026-11', ticks: last?.tick ?? 0, score: 0,
+  return placeholderSummary({
+    runId, generation: gen, status: 'destroyed', endDate: last?.date ?? '2026-11', ticks: last?.tick ?? 0,
     causeOfDeath: `runner error: ${err.message}`, constitution,
     peakPopulation: Math.max(0, ...frames.map(f => f.regions.reduce((a, r) => a + r.population, 0))),
-    moonStage: last?.moonStage ?? 'none', topEvents: [], baselineStatus: 'alive', baselineEndDate: last?.date ?? '2026-11',
-  }
+    moonStage: last?.moonStage ?? 'none',
+  })
 }
 
 type RunWorld = typeof runWorld
@@ -130,14 +130,14 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, log: (l: st
     if (isTransient(e)) throw e
     log(`gen ${g.generation} ${runId} runWorld threw: ${(e as Error).message}`)
     summary = crashedSummary(runId, g.generation, c.constitution, frames, e as Error)
-    record = { runId, generation: g.generation, seed, constitution: c.constitution, frames, baseline: [], summary }
+    record = { runId, generation: g.generation, seed, constitution: c.constitution, frames, baseline: [], summary, agentId: summary.agentId, snapshots: [] }
     writeJson(path.join(dirs.runs, `${runId}.json`), record)
   }
   control.worldsDone++
   log(`gen ${g.generation} ${runId.padEnd(22)} ${summary.status.padEnd(9)} ${summary.endDate}  score ${summary.score}  twin ${summary.baselineStatus}${summary.causeOfDeath ? `  (${summary.causeOfDeath})` : ''}`)
   // a runner crash is a bug, not a death worth a telegram
   if (summary.status === 'destroyed' && !summary.causeOfDeath?.startsWith('runner error')) await notifyWorldDied(summary, record, g.generation)
-  if (summary.status === 'moon') {
+  if (isWin(summary)) {
     fs.mkdirSync(dirs.showcase, { recursive: true })
     writeJson(path.join(dirs.showcase, `${runId}.json`), record)
     await notifyMoon(summary, g.generation)
@@ -212,7 +212,7 @@ async function runGeneration(g: GenerationFile, concurrency: number, log: (l: st
   const bestRun = [...(best.runs ?? [])].sort((a, b) => b.score - a.score)[0]
   const allRuns = g.population.flatMap(c => c.runs ?? [])
   const deaths = allRuns.filter(r => r.status === 'destroyed').length
-  const moons = allRuns.filter(r => r.status === 'moon').length
+  const moons = allRuns.filter(isWin).length
   const line = `gen ${g.generation} done: best ${best.name} avg ${best.score}, ${moons} moon, ${deaths} destroyed of ${allRuns.length}`
   log(line)
   await notifyGeneration(line)
