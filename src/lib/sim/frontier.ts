@@ -21,7 +21,9 @@ function achieve(w: World, f: Frontier, text: string) {
   if (has(w, f)) return
   w.frontierState.achieved.push(f)
   if (frontierIndex(f) > frontierIndex(w.frontier)) w.frontier = f
-  event(w, { kind: 'breakthrough', text, severity: 1 })
+  // the event carries the exact tick the milestone happened (w.tick, the month it was reached) and a
+  // parseable marker, so history can be built from events rather than from coarse frame ticks
+  event(w, { kind: 'breakthrough', text: `${text} [frontier: ${f}]`, severity: 1 })
   for (const r of w.regions) { r.prideShock += 0.25; r.aweShock += 0.35 }
 }
 

@@ -6,6 +6,8 @@ export const HEADLINE_MIN = 0.6
 const pickBy = (seed: number, arr: string[]) => arr[Math.abs(seed) % arr.length]
 
 export function headlineFor(e: WorldEvent, regionName: string | undefined, year: number): string {
+  // markers like [frontier: x] are for machines, not headlines
+  e = { ...e, text: e.text.replace(/ \[[a-z ]+: [^\]]+\]$/, '') }
   const t = e.text.toLowerCase()
   const where = regionName ? regionName.toLowerCase() : 'world'
   const h = e.tick * 31 + e.text.length
@@ -39,6 +41,7 @@ export function headlineFor(e: WorldEvent, regionName: string | undefined, year:
       if (/settlement passes/.test(t)) return `the mars settlement, ${year}`
       if (/asteroid reaches orbit/.test(t)) return `the first asteroid ore, ${year}`
       if (/jupiter/.test(t)) return `the outer outpost, ${year}`
+      if (/eradicated/.test(t)) return `the end of ${t.split(' is eradicated')[0]}, ${year}`
       if (/chartered/.test(t)) return `the founding of ${e.text.split(' chartered')[0].toLowerCase()}, ${year}`
       return `the breakthrough of ${year}`
     case 'migration': return `the ${where} exodus of ${year}`

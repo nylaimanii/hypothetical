@@ -1,15 +1,16 @@
 // lessons: what one world's death teaches the next governors.
-// extractLessons reads a finished run and writes 1-3 lessons with one llm call (fallback: a rule-based lesson).
+// extractLessons reads a finished run and writes 1-3 lessons with one llm call through llm.ts
+// (schema-constrained json; fallback: a rule-based lesson).
 // relevantLessons picks the most relevant known lessons for the current situation (data/lessons.json, kept by C).
 import fs from 'node:fs'
 import path from 'node:path'
 import { z } from 'zod'
 import type { Lesson, RunRecord } from '../types'
-import { chat, groqAvailable } from './groq'
-
-const MODEL = ['llama-3.3-70b-versatile', 'openai/gpt-oss-120b']
+import { chat, llmEnabled } from './llm'
 
 const LessonSchema = z.object({ lessons: z.array(z.object({ mistake: z.string().min(5).max(300), consequence: z.string().min(5).max(300), rule: z.string().min(5).max(160) })).min(1).max(3) })
+
+export const LESSON_JSON_SCHEMA = z.toJSONSchema(LessonSchema, { io: 'input', unrepresentable: 'any' }) as Record<string, unknown>
 
 export async function extractLessons(record: RunRecord): Promise<Lesson[]> {
   const make = (l: { mistake: string; consequence: string; rule: string }, i: number): Lesson => ({
@@ -18,10 +19,10 @@ export async function extractLessons(record: RunRecord): Promise<Lesson[]> {
   })
   const decisions = record.frames.filter(f => f.decision).slice(-6).map(f => ({ date: f.date, rationale: f.decision!.rationale.slice(0, 600), laws: f.decision!.laws.map(l => `${l.title} (support ${l.support.toFixed(2)})`), budget: f.decision!.budget, religionPolicy: f.decision!.religionPolicy }))
   const events = record.frames.flatMap(f => f.newEvents).filter(e => e.severity >= 0.3).slice(-40).map(e => `${e.kind}: ${e.text}`)
-  if (groqAvailable()) {
+  if (llmEnabled()) {
     try {
       const raw = await chat({
-        model: MODEL, json: true, temperature: 0.3, maxTokens: 3000,
+        schema: LESSON_JSON_SCHEMA, schemaName: 'lessons', temperature: 0.3, maxTokens: 3000,
         system: 'You review a failed or finished simulated world run by an AI world government. Write 1 to 3 lessons for future governors. Each: mistake (what the governor did), consequence (what the simulation did as a result, grounded only in the events given), rule (one imperative line, max 20 words). No em-dashes. Return JSON {"lessons":[{"mistake":"","consequence":"","rule":""}]}.',
         user: JSON.stringify({ status: record.summary.status, endDate: record.summary.endDate, causeOfDeath: record.summary.causeOfDeath ?? null, decisions, events }),
       })

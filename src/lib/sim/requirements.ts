@@ -129,7 +129,7 @@ export function stepRequirements(w: World, researchUsd: number, focus: string[],
     r.progress = clamp(Math.min(r.progress + dp, Math.max(capBySpend, before)))
     if (before < 1 && r.progress >= 1) {
       r.unlockedTick = w.tick
-      event(w, { kind: 'breakthrough', text: `breakthrough: ${r.name}`, severity: r.tier === 'speculative' ? 0.8 : 0.5 })
+      event(w, { kind: 'breakthrough', text: `breakthrough: ${r.name} [requirement: ${r.id}]`, severity: r.tier === 'speculative' ? 0.8 : 0.5 })
     }
   })
 }

@@ -1,16 +1,14 @@
-// the governor: llama-3.3-70b on groq (falls back to gpt-oss-120b if the account lacks it). it only chooses
-// policy. zod validates every decision, budget is normalized to 1, every override since the last decision
-// must be acknowledged. 2 retries, then the last decision is reused. with no GROQ_API_KEY the deterministic
-// offline governor decides instead.
+// the governor: one llm call per decision through llm.ts (local ollama by default). it only chooses policy.
+// the reply is constrained by a json schema, then zod validates it, budget is normalized to 1, every override
+// since the last decision must be acknowledged. 2 retries, then the last decision is reused.
+// the deterministic offline governor runs only when LLM_PROVIDER=offline is set explicitly.
 import { z } from 'zod'
 import type { Decision, Lesson, Override } from '../types'
 import { normalizeBudget, type World } from '../sim/state'
-import { buildBrief } from './brief'
+import { briefText, buildBrief } from './brief'
 import { offlineDecision } from './fallback'
-import { chat, groqAvailable } from './groq'
+import { chat, llmEnabled } from './llm'
 import { relevantLessons } from './lessons'
-
-const MODEL = ['llama-3.3-70b-versatile', 'openai/gpt-oss-120b']
 const REGION_IDS = ['na', 'latam', 'europe', 'rus_ca', 'mideast', 'nafrica', 'ssa', 'sasia', 'easia', 'seasia', 'oceania', 'carib_pac'] as const
 const SECTORS = ['energy', 'food', 'transit', 'medicine', 'longevity', 'launch', 'materials', 'housing', 'computing'] as const
 
@@ -34,6 +32,9 @@ const DecisionSchema = z.object({
   respondedToOverrides: z.array(z.string()).default([]),
   lessonsApplied: z.array(z.string()).default([]),
 })
+
+// json schema handed to the model so its reply is always parseable (ollama structured outputs)
+export const DECISION_JSON_SCHEMA = z.toJSONSchema(DecisionSchema, { io: 'input', unrepresentable: 'any' }) as Record<string, unknown>
 
 export function systemPrompt(constitution: string, lessons: Lesson[]): string {
   return `You are the sole government of Earth, starting 2026-11. You decide once a year for 30 years, then every 2 years, until 2126.
@@ -59,8 +60,7 @@ ${lessons.length ? lessons.map(l => `- [${l.id}] mistake: ${l.mistake}. result: 
 
 A HUMAN OBSERVER may veto your laws, inject events, or force your budget. These appear in overridesSinceLastDecision. List every override id in respondedToOverrides and explain your response in the rationale. Do not re-enact a vetoed law under the same title.
 
-Reply with JSON only:
-{"laws":[{"title":"","text":"","layer":"physics|biology|government|economy|tech|religion|media|family"}],"repeal":["law id"],"migrations":[{"from":"region id","to":"region id","people":0,"reason":""}],"budget":{"food":0,"energy":0,"education":0,"space":0,"security":0,"welfare":0,"research":0},"religionPolicy":"free|state_neutral|state_faith|discouraged","schoolPolicy":{"purpose":"","curriculum":[""],"yearsRequired":12},"foundCities":[{"name":"","regionId":"","lat":0,"lon":0,"reason":""}],"charterCompanies":[{"name":"","sector":"${SECTORS.join('|')}","regionId":"","purpose":""}],"researchFocus":["requirement id or track"],"publicStatement":"what you tell the people, plain words","rationale":"first person, plain words, no em-dashes","respondedToOverrides":["override id"],"lessonsApplied":["lesson id"]}
+Reply with one JSON decision (laws, repeal, migrations, budget, religionPolicy, schoolPolicy, foundCities, charterCompanies, researchFocus as requirement ids or tracks, publicStatement in plain words, rationale in first person with no em-dashes, respondedToOverrides, lessonsApplied). Company sectors: ${SECTORS.join(', ')}.
 At most 5 new laws, 3 cities and 3 companies per decision. Names must be original. Region ids: ${REGION_IDS.join(', ')}.`
 }
 
@@ -84,14 +84,15 @@ function situation(w: World): string[] {
 export async function decide(w: World, constitution: string, overrides: Override[], mem: GovernorMemory): Promise<Decision> {
   const brief = buildBrief(w, overrides, mem.last?.rationale)
   const ids = overrides.map(o => o.id)
-  const lessons = relevantLessons(mem.lessons, situation(w), 10)
-  if (!groqAvailable()) return finish(offlineDecision(brief, overrides, mem.vetoedTitles), w)
+  const lessons = relevantLessons(mem.lessons, situation(w), 5)
+  if (!llmEnabled()) return finish(offlineDecision(brief, overrides, mem.vetoedTitles), w)
 
   const system = systemPrompt(constitution, lessons)
-  let user = JSON.stringify(brief)
+  const text = briefText(w, brief)
+  let user = text
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const raw = await chat({ model: MODEL, system, user, json: true, temperature: 0.5, maxTokens: 8000 })
+      const raw = await chat({ system, user, schema: DECISION_JSON_SCHEMA, schemaName: 'decision', temperature: 0.5, maxTokens: 6000 })
       const parsed = DecisionSchema.parse(JSON.parse(raw))
       const missing = ids.filter(id => !parsed.respondedToOverrides.includes(id))
       if (missing.length) throw new Error(`respondedToOverrides is missing override ids: ${missing.join(', ')}`)
@@ -113,7 +114,8 @@ export async function decide(w: World, constitution: string, overrides: Override
       }
       return finish(d, w)
     } catch (e) {
-      user = `${JSON.stringify(brief)}\n\nYOUR PREVIOUS REPLY WAS REJECTED: ${(e as Error).message.slice(0, 600)}\nReply again with valid JSON only.`
+      if ((e as Error).name === 'LlmUnavailable' || /ollama not running/.test((e as Error).message)) throw e
+      user = `${text}\n\nYOUR PREVIOUS REPLY WAS REJECTED: ${(e as Error).message.slice(0, 600)}\nReply again with valid JSON only.`
     }
   }
   // two retries failed: keep governing with the last decision (no new laws, cities, companies or migrations)

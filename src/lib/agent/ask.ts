@@ -1,9 +1,7 @@
 // askCore: the governing core answers questions about its own world, in first person, grounded only in
 // what the run record contains (its decisions, rationales, laws and events).
 import type { RunRecord } from '../types'
-import { chat, groqAvailable } from './groq'
-
-const MODEL = ['llama-3.3-70b-versatile', 'openai/gpt-oss-120b']
+import { chat, llmEnabled } from './llm'
 
 function recordContext(record: RunRecord): string {
   const decisions = record.frames.filter(f => f.decision).map(f => ({
@@ -35,10 +33,10 @@ function recordContext(record: RunRecord): string {
 
 export async function askCore(record: RunRecord, question: string): Promise<string> {
   const q = question.slice(0, 1000)
-  if (!groqAvailable()) return offlineAnswer(record, q)
+  if (!llmEnabled()) return offlineAnswer(record, q)
   try {
     const out = await chat({
-      model: MODEL, temperature: 0.3, maxTokens: 2000,
+      temperature: 0.3, maxTokens: 2000,
       system: 'You are the governing core of this simulated world. Answer in first person as the core. Ground every claim only in the RECORD below: your decisions, rationales, laws and events. If the record does not say, answer that you do not know. Never invent numbers. Plain language, no em-dashes, under 180 words.\n\nRECORD:\n' + recordContext(record),
       user: q,
     })

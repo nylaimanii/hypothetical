@@ -51,7 +51,10 @@ export function stepWorld(w: World) {
   stepCities(w)
   stepTravel(w, sectors.transit)
   stepRequirements(w, research * TREE_SHARE, w.researchFocus, popWeighted(w, r => r.r.education), sectors)
-  for (const [id, name] of ERADICATION) if (reqProgress(w, id) >= 1 && !w.diseasesEradicated.includes(name)) w.diseasesEradicated.push(name)
+  for (const [id, name] of ERADICATION) if (reqProgress(w, id) >= 1 && !w.diseasesEradicated.includes(name)) {
+    w.diseasesEradicated.push(name)
+    event(w, { kind: 'breakthrough', text: `${name} is eradicated [milestone: eradicated ${name}]`, severity: 0.7 })
+  }
   // launch companies make the moon program cheaper to absorb and less failure prone
   stepSpace(w, space * (1 + 0.3 * sectors.launch), research)
   stepFrontier(w, space, research, sectors.launch)

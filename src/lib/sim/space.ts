@@ -115,9 +115,9 @@ export function stepSpace(w: World, spaceUsd: number, researchUsd: number): bool
   s.stageSpend = 0
   s.stageMonths = 0
   if (spec.stage === 'crewed_landing') {
-    event(w, { kind: 'launch', text: 'crewed landing on the moon succeeded, the crew is home safe', severity: 1 })
+    event(w, { kind: 'launch', text: 'crewed landing on the moon succeeded, the crew is home safe [moon stage: crewed_landing]', severity: 1 })
     return true
   }
-  event(w, { kind: 'launch', text: `${spec.label} flight test succeeded`, severity: 0.5 })
+  event(w, { kind: 'launch', text: `${spec.label} flight test succeeded [moon stage: ${spec.stage}]`, severity: 0.5 })
   return false
 }

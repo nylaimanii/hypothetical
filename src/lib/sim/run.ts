@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { BaselineFrame, Decision, Frame, Lesson, Override, RunOptions, RunRecord, RunSummary, Snapshot, WorldEvent } from '../types'
 import { decide, type GovernorMemory } from '../agent/governor'
-import { withUsage, type Usage } from '../agent/groq'
+import { assertLlmReady, withUsage, type Usage } from '../agent/llm'
 import { BASELINE_BUDGET, BASELINE_RELIGION, BASELINE_SCHOOL, dateOf, decisionDue } from './constants'
 import { extractLessons, loadLessons } from '../agent/lessons'
 import { globalPLE } from './end'
@@ -76,9 +76,12 @@ function applyOverride(w: World, o: Override, mem: GovernorMemory) {
 export type RunOpts = RunOptions & { agentId?: string; startFrom?: { runId: string; tick: number } }
 
 export async function runWorld(opts: RunOpts): Promise<RunSummary> {
+  // fail fast: a real run never quietly drops to the offline governor
+  await assertLlmReady()
   const usage: Usage = { llmCalls: 0, tokens: 0 }
+  const t0 = Date.now()
   const summary = await withUsage(usage, () => runInner(opts, usage))
-  console.log(`[usage] ${opts.runId}: ${usage.llmCalls} llm calls, ${usage.tokens} tokens`)
+  console.log(`[usage] ${opts.runId}: ${usage.llmCalls} llm calls, ${usage.tokens} tokens, ${((Date.now() - t0) / 1000).toFixed(1)}s wall`)
   return summary
 }
 

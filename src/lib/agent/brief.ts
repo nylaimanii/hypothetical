@@ -77,3 +77,40 @@ export function buildBrief(w: World, overridesSinceLast: Override[], lastRationa
     lastRationale: lastRationale ?? null,
   }
 }
+
+// ---------- compact text brief for the llm (~2k tokens) ----------
+const p2 = (x: number) => x.toFixed(2).replace(/^0\./, '.').replace(/^-0\./, '-.')
+const usd = (x: number) => (x >= 1e12 ? `$${(x / 1e12).toFixed(1)}T` : x >= 1e9 ? `$${(x / 1e9).toFixed(0)}B` : `$${(x / 1e6).toFixed(0)}M`)
+const ppl = (x: number) => (x >= 1e9 ? `${(x / 1e9).toFixed(2)}B` : x >= 1e6 ? `${(x / 1e6).toFixed(0)}M` : `${Math.round(x)}`)
+
+export function briefText(w: World, b: Brief): string {
+  const L: string[] = []
+  const wd = b.world
+  L.push(`date ${b.date} (tick ${b.tick}), ${b.monthsLeft} months to the 2126 horizon. revenue ${usd(wd.yearlyRevenueUsd)}/yr.`)
+  L.push(`world: pop ${ppl(wd.population)} (peak ${ppl(wd.peakPopulation)}, 10y trend ${(wd.populationTrend10y * 100).toFixed(1)}%), food ${wd.foodKcalPerCapita} kcal, unrest ${p2(wd.unrest)}, approval ${p2(wd.approval)}, tech ${p2(wd.techLevel)}, life expectancy ${wd.periodLifeExpectancy}, war tension ${p2(wd.warTension)}, in revolt: ${wd.regionsInRevolt.join(' ') || 'none'}, seceded: ${wd.seceded.join(' ') || 'none'}. human cost so far: ${ppl(wd.humanCost.deaths)} excess deaths (${ppl(wd.humanCost.famineDeaths)} hunger), ${ppl(wd.humanCost.displaced)} displaced.`)
+  L.push(`budget now: ${Object.entries(b.budget).map(([k, v]) => `${k} ${p2(v)}`).join(' ')}. religion ${b.religionPolicy}. school: ${b.schoolPolicy.purpose} (${b.schoolPolicy.yearsRequired} yrs: ${b.schoolPolicy.curriculum.join(', ')}).`)
+  L.push('regions: id pop kcal unrest approval lifeExp fertility edu tech compliance powerMet | loudest crowd')
+  for (const r of b.regions) {
+    const rs = w.regions.find(x => x.r.id === r.id)!
+    const crowd = rs.crowds.filter(c => c.phase !== 'unaware').sort((x, y) => y.intensity - x.intensity)[0]
+    L.push(`${r.id} ${ppl(r.population)} ${r.foodKcalPerCapita} ${p2(r.unrest)} ${p2(r.approval)} ${r.periodLifeExpectancy} ${r.fertility.toFixed(1)} ${p2(r.education)} ${p2(r.techLevel)} ${p2(r.compliance)} ${p2(r.energyDemandMet)}${r.inRevolt ? ' REVOLT' : ''}${r.seceded ? ' SECEDED' : ''} | ${crowd ? `${crowd.topic} (${crowd.phase})` : '-'}`)
+  }
+  const m = b.moon
+  L.push(`moon program: ${m.stage}${m.nextStageNeeds ? `, next ${m.nextStage} needs tech ${m.nextStageNeeds.techLevel} (world ${p2(wd.techLevel)}), ${usd(m.nextStageNeeds.stageSpendUsd)} (spent ${usd(m.nextStageNeeds.spentSoFarUsd)}), ${m.nextStageNeeds.minMonths} months (${m.nextStageNeeds.monthsSoFar} so far)` : ''}. useful space spend max ${usd(m.maxUsefulSpaceSpendUsdPerYear)}/yr before the landing. launch failures ${m.launchFailures}, crew killed ${m.crewKilled}.`)
+  const f = b.frontier
+  L.push(`frontier: ${f.reached} (achieved: ${f.achieved.join(', ') || 'none'}). fund ${usd(f.fundUsd)}, mars pop ${f.marsPopulation}, next mars window in ${f.nextMarsWindowInMonths} months, crew dose ${f.crewDoseSv} Sv (limit ${f.doseLimitSv}), life support closure ${(f.lifeSupportClosure * 100).toFixed(1)}%.`)
+  const open = b.requirements.slice().sort((x, y) => y.progress - x.progress).slice(0, 14)
+  L.push(`open requirements (id tier progress): ${open.map(r => `${r.id} ${r.tier[0]} ${p2(r.progress)}${r.stalled ? ' STALLED' : ''}`).join('; ')}`)
+  L.push(`done: ${b.requirementsDone.join(', ') || 'none'}`)
+  if (b.cities.length) L.push(`cities: ${b.cities.map(c => `${c.name} (${c.offWorld ?? c.region}, ${ppl(c.population)})`).join('; ')}`)
+  if (b.companies.length) L.push(`companies: ${b.companies.map(c => `${c.name} ${c.sector} ${c.region} ${ppl(c.workers)}`).join('; ')}`)
+  L.push(`factions power/hostility: ${b.factions.map(x => `${x.id} ${p2(x.power)}/${p2(x.hostility)}`).join(', ')}`)
+  L.push('laws (id | title | kind | support | compliance):')
+  for (const l of b.laws) L.push(`${l.id} | ${l.title} | ${l.policyKind} | ${p2(l.support)} | ${p2(l.compliance)}${l.vetoed ? ' | VETOED' : ''}`)
+  const ev = w.events.filter(e => e.tick >= w.tick - 12 && e.significance >= 0.4 && e.kind !== 'law').slice(-12)
+  L.push(`events, last 12 months, significance >= .4: ${ev.length ? '' : 'none'}`)
+  for (const e of ev) L.push(`${dateOf(e.tick)} ${e.kind}${e.regionId ? ` ${e.regionId}` : ''}: ${e.text}`)
+  L.push(`overrides since last decision: ${b.overridesSinceLastDecision.length ? JSON.stringify(b.overridesSinceLastDecision) : 'none'}`)
+  if (b.lastRationale) L.push(`your last rationale: ${b.lastRationale.slice(0, 500)}`)
+  return L.join('\n')
+}

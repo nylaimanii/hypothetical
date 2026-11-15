@@ -3,7 +3,7 @@
 // new citizens draw their ancestry from the region's current origin mix, so migration mixes regions over time.
 // thoughts are flavor text: they never feed back into any sim number.
 import type { Citizen, Law } from '../types'
-import { chat, groqAvailable } from '../agent/groq'
+import { chat, llmEnabled } from '../agent/llm'
 import { hashString, mulberry32, normal, pick, pickWeighted, type Rng } from './rng'
 import { BAND_MID, DEMOGRAPHICS, clamp, incomeIdx, regionPop, type RegionState, type World } from './state'
 import { addLifeEvent, citizenGroup, pickArchetype, satiricalThought, stepCitizens, valence } from './behavior'
@@ -11,13 +11,13 @@ import { addLifeEvent, citizenGroup, pickArchetype, satiricalThought, stepCitize
 export const PEOPLE_PER_PIP = 40e6
 export const MIN_PIPS = 3
 export const MAX_PIPS = 48
-// only this many pips per region get a fresh llm thought each year, the most recently affected ones
-export const LLM_THOUGHTS_PER_REGION = 8
+// thoughts are templates by default; only the most recently affected pips per region get a fresh llm thought
+// each year: 3 per region, or 8 with LLM_THOUGHTS=1
+export const llmThoughtsPerRegion = () => (process.env.LLM_THOUGHTS === '1' ? 8 : 3)
 
 export function pipCount(population: number): number {
   return Math.max(MIN_PIPS, Math.min(MAX_PIPS, Math.round(population / PEOPLE_PER_PIP)))
 }
-const THOUGHT_MODEL = ['llama-3.1-8b-instant', 'openai/gpt-oss-20b']
 
 const HAIR = ['bald', 'buzz', 'short_straight', 'short_wavy', 'short_coily', 'afro', 'locs', 'braids', 'long_straight', 'long_wavy', 'bun', 'ponytail'] as const
 type Hair = Citizen['hair']
@@ -249,7 +249,7 @@ export async function refreshThoughts(w: World, useLlm: boolean) {
       .sort((a, b) => (w.citizenMeta[b.id]?.affectedTick ?? 0) - (w.citizenMeta[a.id]?.affectedTick ?? 0)
         || Math.abs(valence(b.mood) - (w.citizenMeta[b.id]?.prevMood ?? 0.5)) - Math.abs(valence(a.mood) - (w.citizenMeta[a.id]?.prevMood ?? 0.5))
         || Number(a.id.slice(1)) - Number(b.id.slice(1)))
-      .slice(0, LLM_THOUGHTS_PER_REGION)
+      .slice(0, llmThoughtsPerRegion())
       .forEach(c => chosen.add(c.id))
   }
   for (const c of w.citizens) {
@@ -257,7 +257,7 @@ export async function refreshThoughts(w: World, useLlm: boolean) {
     const m = w.citizenMeta[c.id]
     if (m) m.prevMood = valence(c.mood)
   }
-  if (!useLlm || !groqAvailable()) return
+  if (!useLlm || !llmEnabled()) return
   const regionBrief = w.regions.map(rs => ({
     id: rs.r.id, name: rs.r.name, foodKcal: Math.round(rs.r.foodKcalPerCapita), unrest: +rs.r.unrest.toFixed(2), inRevolt: rs.inRevolt,
     laws: lawsHitting(w, rs.r.id).map(x => ({ title: x.law.title, localSupport: +x.support.toFixed(2) })),
@@ -267,7 +267,7 @@ export async function refreshThoughts(w: World, useLlm: boolean) {
   try {
     // one batched call per year for every chosen pip in every region
     const out = await chat({
-      model: THOUGHT_MODEL, json: true, temperature: 0.8, maxTokens: 8000,
+      json: true, temperature: 0.8, maxTokens: 4000,
       system: 'You write one short first-person thought (max 25 words) for each ordinary person living under a single world government. Dry, deadpan, satirical, in an original voice: react to their actual situation, the laws that hit their region, the crowd topic of the moment, their archetype and what they are doing. Satirize behaviors and institutions, never race, ethnicity, religion as identity, sex or disability. Match their mood (0 miserable, 1 thriving). Plain everyday language, no em-dashes, no real politicians. Return JSON {"thoughts": {"<id>": "<thought>"}}.',
       user: JSON.stringify({ tick: w.tick, religionPolicy: w.religionPolicy, regions: regionBrief.map(r => ({ ...r, crowds: w.regions.find(x => x.r.id === r.id)!.crowds.map(c => `${c.topic} (${c.phase})`) })), people }),
     })
