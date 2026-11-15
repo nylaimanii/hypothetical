@@ -55,6 +55,8 @@ input[type="range"] { accent-color: var(--ink); }
 .sheet-in { animation: sheet-in 0.2s ease-out both; }
 @keyframes fade-line { 0% { opacity: 0; } 8% { opacity: 1; } 85% { opacity: 1; } 100% { opacity: 0; } }
 .fade-line { animation: fade-line 6s ease-out both; }
+@keyframes sheet-up { from { transform: translateY(100%); } to { transform: none; } }
+.sheet-up { animation: sheet-up 0.24s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes skel { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
 .skel { background: linear-gradient(90deg, color-mix(in srgb, var(--ink) 6%, transparent) 25%, color-mix(in srgb, var(--ink) 12%, transparent) 50%, color-mix(in srgb, var(--ink) 6%, transparent) 75%); background-size: 200% 100%; animation: skel 1.4s ease-in-out infinite; }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }

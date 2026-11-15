@@ -6,7 +6,8 @@ import { useCurrentFrame, useStore } from '../state/store'
 import { Num, Sparkline, fmt } from './bits'
 import { regionPlaceStats } from '../world/modes'
 import { StoryLine, useLinks } from './chains'
-import { resolveAdmin, resolveCountry, seaInfo, type Crumb } from '../world/geo/resolve'
+import type { Crumb } from '../world/geo/resolve'
+import { geoNow, useGeo } from '../world/geo/lazy'
 
 // crumbs sit above the name ("texas · united states · north america"); tap one to jump up
 type Place = { kind: 'country' | 'admin' | 'city'; id: string; name: string; stats: PlaceStats; crumbs: Crumb[]; meta: string[]; note?: string; popEstimate?: boolean; regionId?: string }
@@ -19,6 +20,9 @@ const WORDS: Partial<Record<keyof PlaceStats, string>> = { happiness: 'happiness
 
 // find a place in a frame, whichever kind it is. untracked states and countries roll up their numbers and say so
 export function findPlace(f: Frame, kind: Place['kind'], id: string): Place | null {
+  const geo = geoNow()
+  if (!geo) return null
+  const { resolveAdmin, resolveCountry } = geo
   if (kind === 'country' || kind === 'admin') {
     const r = kind === 'country' ? resolveCountry(f, id) : resolveAdmin(f, id)
     return r ? { kind, id, name: r.name, stats: r.stats, crumbs: r.crumbs, meta: [], note: r.note, popEstimate: r.popEstimate, regionId: r.region?.id } : null
@@ -72,15 +76,16 @@ function Bar({ label, v }: { label: string; v: number }) {
 }
 
 export function PlaceCard({ kind, id }: { kind: Place['kind']; id: string }) {
+  const geo = useGeo()
   const { frame, record, idx } = useCurrentFrame()
   const links = useLinks(record, idx)
-  const place = useMemo(() => findPlace(frame, kind, id), [frame, kind, id])
-  const before = useMemo(() => placeAt(record, frame.tick - 12, kind, id), [record, frame.tick, kind, id])
+  const place = useMemo(() => (geo ? findPlace(frame, kind, id) : null), [frame, kind, id, geo])
+  const before = useMemo(() => (geo ? placeAt(record, frame.tick - 12, kind, id) : null), [record, frame.tick, kind, id, geo])
   if (!place) return null
   const s = place.stats
   const st = useStore.getState()
   return (
-    <div className="sheet-in panel pointer-events-auto w-[20rem] max-w-full p-4">
+    <div className="sheet-in panel pointer-events-auto w-[20rem] max-w-full p-4 [.phone-sheet_&]:w-full [.phone-sheet_&]:rounded-none [.phone-sheet_&]:border-0 [.phone-sheet_&]:shadow-none">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           {place.crumbs.length > 0 && (
@@ -109,13 +114,14 @@ export function PlaceCard({ kind, id }: { kind: Place['kind']; id: string }) {
 
 // the full report: every number, how it moved, where it comes from
 export function PlaceReport({ kind, id }: { kind: Place['kind']; id: string }) {
+  const geo = useGeo()
   const { frame, record } = useCurrentFrame()
   const place = findPlace(frame, kind, id)
   const series = useMemo(() => {
     const keys: (keyof PlaceStats)[] = ['happiness', 'economy', 'livability', 'foodSecurity', 'safety', 'health', 'jobs', 'airQuality']
     const rows = record.frames.filter((f) => f.tick <= frame.tick && f.tick % 12 === 0).map((f) => findPlace(f, kind, id)?.stats).filter(Boolean) as PlaceStats[]
     return keys.map((k) => ({ k, values: rows.map((r) => r[k] as number) }))
-  }, [record, frame.tick, kind, id])
+  }, [record, frame.tick, kind, id, geo]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!place) return null
   const country = kind === 'country' ? frame.countries?.find((c) => c.id === id) : undefined
   return (
@@ -144,10 +150,12 @@ export function PlaceReport({ kind, id }: { kind: Place['kind']; id: string }) {
 
 // a sea: its name, shipping, and the chokepoint if this is one
 export function SeaCard({ ocean, chokepoint }: { ocean: number; chokepoint?: string }) {
+  const geo = useGeo()
   const { frame } = useCurrentFrame()
-  const info = seaInfo(frame, { ocean, chokepoint })
+  if (!geo) return null
+  const info = geo.seaInfo(frame, { ocean, chokepoint })
   return (
-    <div className="sheet-in panel pointer-events-auto w-[20rem] max-w-full p-4">
+    <div className="sheet-in panel pointer-events-auto w-[20rem] max-w-full p-4 [.phone-sheet_&]:w-full [.phone-sheet_&]:rounded-none [.phone-sheet_&]:border-0 [.phone-sheet_&]:shadow-none">
       <div className="flex items-start justify-between gap-2">
         <div>
           {info.chokepoint && <div className="mb-0.5 text-[11px] text-ink/50">{info.name}</div>}

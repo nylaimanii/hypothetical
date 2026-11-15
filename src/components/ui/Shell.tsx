@@ -19,6 +19,7 @@ import { EpitaphCard } from './WorldViews'
 import { agentOf, prettyAgent, worldNumber } from './WorldTabs'
 import { openRun } from './worlds'
 import { PlaceCard, PlaceReport, SeaCard } from './PlaceCard'
+import { usePhone } from './usePhone'
 import { StoryLine, useLinks } from './chains'
 
 const DEV = process.env.NODE_ENV === 'development'
@@ -77,11 +78,13 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 export function SideMenu({ onLive }: { onLive: () => void }) {
   const menu = useStore((s) => s.menu)
   const liveRunId = useStore((s) => s.liveRunId)
+  const phone = usePhone()
   if (!menu) return null
   const s = useStore.getState()
   const view = (v: View) => () => s.setView(v)
   return (
-    <aside className="sheet-in pointer-events-auto absolute bottom-0 right-0 top-0 z-40 flex w-72 flex-col border-l border-ink/10 bg-bone/96 px-2 py-4 shadow-2xl" aria-label="menu">
+    <aside className={`pointer-events-auto absolute z-40 flex flex-col bg-bone/96 px-2 shadow-2xl ${phone ? 'sheet-up inset-x-0 bottom-0 max-h-[78vh] rounded-t-3xl border-t border-ink/10 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2' : 'sheet-in bottom-0 right-0 top-0 w-72 border-l border-ink/10 py-4'}`} aria-label="menu">
+      {phone && <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-ink/20" aria-hidden />}
       <div className="flex items-center justify-between px-3">
         <span className="font-display text-[18px]">hypothetical</span>
         <button onClick={() => s.setMenu(false)} aria-label="close menu" className="text-[18px] leading-none text-ink/50 hover:text-ink">×</button>
@@ -125,7 +128,7 @@ export function StatsLine() {
   if (cost.approval > 0) parts.push(<span key="a">approval <Num>{fmt.pct(cost.approval)}</Num></span>)
   if (mode === 'ai' && cost.deaths > 0) parts.push(<span key="d" className="text-ember"><Num>{fmt.people(cost.deaths)}</Num> dead</span>)
   return (
-    <div className="pointer-events-auto flex items-center gap-2 whitespace-nowrap rounded-full bg-bone/75 px-3 py-0.5 text-[11.5px] text-ink/75">
+    <div className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-x-2 rounded-full bg-bone/75 px-3 py-0.5 text-[10.5px] text-ink/75 sm:flex-nowrap sm:whitespace-nowrap sm:text-[11.5px]">
       {parts.map((p, i) => <span key={i} className="flex items-center gap-2">{i > 0 && <span className="text-ink/25">·</span>}{p}</span>)}
     </div>
   )
@@ -217,7 +220,7 @@ export function RegionCard({ r, frame, prev, links }: { r: Region; frame: Frame;
   const trend = delta > 0.03 ? 'rising' : delta < -0.03 ? 'declining' : 'stable'
   void frame
   return (
-    <div className="sheet-in panel pointer-events-auto w-[20rem] max-w-full p-4">
+    <div className="sheet-in panel pointer-events-auto w-[20rem] max-w-full p-4 [.phone-sheet_&]:w-full [.phone-sheet_&]:rounded-none [.phone-sheet_&]:border-0 [.phone-sheet_&]:shadow-none">
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2 font-display text-[19px] leading-tight">{r.name} <Arrow t={trend} /></div>
@@ -246,7 +249,7 @@ function LayersSheet() {
   const legend = legendFor(overlay, frame)
   const s = useStore.getState()
   return (
-    <div className="sheet-in panel pointer-events-auto w-[20rem] p-4 text-[12.5px]">
+    <div className="sheet-in panel pointer-events-auto w-[20rem] max-w-full p-4 text-[12.5px] [.phone-sheet_&]:w-full [.phone-sheet_&]:rounded-none [.phone-sheet_&]:border-0 [.phone-sheet_&]:shadow-none">
       <div className="font-display text-[17px]">map layers</div>
       <div className="mt-2 flex flex-wrap gap-1">
         {OVERLAYS.map((o) => <button key={o} onClick={() => s.setOverlay(o)} className={`rounded-full px-2.5 py-1 ${overlay === o ? 'bg-ink text-bone' : 'border border-ink/15 text-ink/70 hover:bg-ink/5'}`}>{OVERLAY_LABEL[o] ?? o}</button>)}
@@ -284,7 +287,7 @@ function SettingsSheet() {
   const s = useStore.getState()
   const row = 'mt-3 flex items-center justify-between gap-3'
   return (
-    <div className="sheet-in panel pointer-events-auto w-[20rem] p-4 text-[12.5px]">
+    <div className="sheet-in panel pointer-events-auto w-[20rem] max-w-full p-4 text-[12.5px] [.phone-sheet_&]:w-full [.phone-sheet_&]:rounded-none [.phone-sheet_&]:border-0 [.phone-sheet_&]:shadow-none">
       <div className="font-display text-[17px]">settings</div>
       <label className={row}><span>sound</span><input type="checkbox" checked={soundOn} onChange={(e) => s.setSound(e.target.checked)} className="h-4 w-4 accent-[var(--ink)]" /></label>
       {soundOn && <input type="range" min={0} max={1} step={0.05} value={volume} onChange={(e) => s.setVolume(Number(e.target.value))} className="mt-2 w-full accent-[var(--ink)]" aria-label="volume" />}
@@ -316,6 +319,7 @@ export function PanelHost() {
   const drawerOpen = useStore((s) => s.drawerOpen)
   const advanced = useStore((s) => s.advancedOpen)
   const { frame, record, idx } = useCurrentFrame()
+  const phone = usePhone()
   const prev = record.frames[Math.max(0, idx - 12)]
   const links = useLinks(record, idx)
   let right: React.ReactNode = null
@@ -335,7 +339,9 @@ export function PanelHost() {
   else if (advanced) right = <SettingsSheet />
   return (
     <>
-      {right && <div className="scroll-thin pointer-events-none absolute bottom-0 right-0 top-0 z-30 flex flex-col items-end overflow-y-auto">{right}</div>}
+      {right && (phone
+        ? <div className="phone-sheet sheet-up scroll-thin pointer-events-auto fixed inset-x-0 bottom-0 z-40 max-h-[72vh] overflow-y-auto rounded-t-3xl bg-bone shadow-2xl"><div className="mx-auto mt-2 h-1 w-10 rounded-full bg-ink/20" aria-hidden />{right}</div>
+        : <div className="scroll-thin pointer-events-none absolute bottom-0 right-0 top-0 z-30 flex flex-col items-end overflow-y-auto">{right}</div>)}
       {panel && (
         <div className="pointer-events-none absolute inset-0 z-30 flex">
           {panel === 'agents' ? <AgentsPanel /> : panel === 'hall' ? <HallPanel /> : <Roadmap />}
@@ -376,7 +382,7 @@ export function CityBar() {
   // set a local hour: convert back to utc
   const setLocal = (h: number) => useStore.getState().setHour(h - city.lon / 15, true)
   return (
-    <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-bone/90 px-3 py-1 text-[12.5px] shadow-sm">
+    <div className="pointer-events-auto flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl bg-bone/90 px-3 py-1 text-[12.5px] shadow-sm sm:rounded-full">
       <button onClick={() => useStore.getState().setCityView(null)} className="text-ink/60 hover:text-ink">← globe</button>
       <span className="font-display text-[14px]">{city.name}{country && <span className="text-ink/50">, {country.name}</span>}</span>
       <Num className="text-ink/70">{formatHour(local)} local</Num>

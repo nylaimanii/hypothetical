@@ -1,20 +1,17 @@
 'use client'
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as THREE from 'three'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Environment, Lightformer, OrbitControls, PerformanceMonitor, SoftShadows, Stats } from '@react-three/drei'
 import { Bloom, EffectComposer, N8AO, SMAA, ToneMapping, Vignette } from '@react-three/postprocessing'
 import { ToneMappingMode } from 'postprocessing'
-import { Physics } from '@react-three/rapier'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { C, LAND_TOP, MAX_DIST, MIN_DIST, R, ZOOM_CLOSE, ZOOM_FAR, latLonToVec3, sceneRefs } from './lib'
 import Planet from './Planet'
-import Pips from './Pips'
 import Core from './Core'
 import Moon from './Moon'
 import Symbols, { spaceportId } from './Symbols'
 import Launches from './Launches'
-import PhysicsLayer from './PhysicsLayer'
 import Director from './Director'
 import { soundState } from '../sound/engine'
 import { MigrationLines } from './Overlays'
@@ -23,17 +20,38 @@ import { sunDirection, worldDate } from './time'
 import CityLights from './CityLights'
 import { Atmosphere, Clouds, DisasterFx } from './Weather'
 import { useCurrentFrame, useStore } from '../state/store'
-import Structures from './Structures'
-import CityView from './city/CityView'
-import CrowdDots from './CrowdDots'
-import CityMarkers from './geo/CityMarkers'
-import CountryNames from './geo/CountryNames'
-import BorderRidges from './geo/BorderRidges'
-import StateRidges from './geo/StateRidges'
-import TrendArrows from './geo/TrendArrows'
-import Orrery from './Orrery'
+// load budget: the planet itself paints first; every other layer is its own chunk, mounted just after
+// (physics only on the first close zoom, the city diorama only on the first visit)
+import { loadGeo } from './geo/lazy'
+import { isPhoneNow } from '../ui/usePhone'
+const Pips = lazy(() => import('./Pips'))
+const Structures = lazy(() => import('./Structures'))
+const CityView = lazy(() => import('./city/CityView'))
+const CrowdDots = lazy(() => import('./CrowdDots'))
+const CityMarkers = lazy(() => import('./geo/CityMarkers'))
+const CountryNames = lazy(() => import('./geo/CountryNames'))
+const BorderRidges = lazy(() => import('./geo/BorderRidges'))
+const StateRidges = lazy(() => import('./geo/StateRidges'))
+const TrendArrows = lazy(() => import('./geo/TrendArrows'))
+const Orrery = lazy(() => import('./Orrery'))
+const PhysicsRoot = lazy(() => import('./PhysicsRoot'))
+const MovementStreams = lazy(() => import('./V3Layers').then((m) => ({ default: m.MovementStreams })))
+const RegionModeLabels = lazy(() => import('./V3Layers').then((m) => ({ default: m.RegionModeLabels })))
+const EmotionPulse = lazy(() => import('./V3Layers').then((m) => ({ default: m.EmotionPulse })))
+const ExplainLayer = lazy(() => import('./V3Layers').then((m) => ({ default: m.ExplainLayer })))
+
+// mounts its children a moment after the first frame, so the planet paints before the detail arrives
+function Prefetch() {
+  useEffect(() => { const id = setTimeout(() => { loadGeo() }, 300); return () => clearTimeout(id) }, [])
+  return null
+}
+
+function Later({ children, ms = 120 }: { children: ReactNode; ms?: number }) {
+  const [on, setOn] = useState(false)
+  useEffect(() => { const id = setTimeout(() => setOn(true), ms); return () => clearTimeout(id) }, [ms])
+  return on ? <Suspense fallback={null}>{children}</Suspense> : null
+}
 import DeadWorld, { CoreShards, useDeathMood } from './DeadWorld'
-import { EmotionPulse, ExplainLayer, MovementStreams, RegionModeLabels } from './V3Layers'
 import { setDeathMuffle } from '../sound/engine'
 
 export function Sky({ grey = 0 }: { grey?: number }) {
@@ -277,6 +295,9 @@ export default function Globe() {
   const overlay = useStore((s) => s.overlay)
   const view = useStore((s) => s.view)
   const cityView = useStore((s) => s.cityView)
+  const zoom = useStore((s) => s.zoom)
+  const [physicsWanted, setPhysicsWanted] = useState(false)
+  if (zoom === 'close' && !physicsWanted) setPhysicsWanted(true)
   // leaving a city: fly back to it on the globe
   const lastCity = useRef<string | null>(null)
   useEffect(() => {
@@ -297,7 +318,7 @@ export default function Globe() {
 
   return (
     // isolate: html labels inside the canvas can never stack above the ui panels
-    <div className="absolute inset-0 isolate z-0" style={{
+    <div className="absolute inset-0 isolate z-0 touch-none select-none" style={{
       filter: destroyed ? 'grayscale(1) brightness(0.92)' : 'none',
       // switching tabs: a quick zoom out, the world swaps, then back in
       transform: swapping ? 'scale(0.78)' : 'scale(1)', opacity: swapping ? 0 : 1,
@@ -329,9 +350,10 @@ export default function Globe() {
           <Lightformer form="rect" intensity={0.6} color={C.bone} position={[0, -9, 0]} rotation-x={Math.PI / 2} scale={[24, 24, 1]} />
         </Environment>
         <Suspense fallback={null}>
-          <ExplainLayer />
+          <Prefetch />
+          <Later ms={400}><ExplainLayer /></Later>
           {/* v4: visiting a city swaps the planet for its diorama (sky, light, environment and effects stay) */}
-          {cityView ? <CityView cityId={cityView} frame={frame} agent={agent} /> : <>
+          {cityView ? <Suspense fallback={null}><CityView cityId={cityView} frame={frame} agent={agent} /></Suspense> : <>
           <Planet frame={frame} />
           <CityLights frame={frame} />
           <Atmosphere tint={frame.atmosphere?.tint} haze={frame.atmosphere?.haze ?? 0} />
@@ -339,37 +361,42 @@ export default function Globe() {
           <DisasterFx frame={frame} />
           {shattered ? <CoreShards active /> : <Core frame={frame} prev={prev} idx={idx} />}
           <Moon frame={frame} />
-          <Symbols frame={frame} spaceport={spaceport} />
-          <Structures frame={frame} agent={agent} />
-          <DeadWorld frame={frame} />
-          <Orrery frame={frame} />
-          <MovementStreams frame={frame} />
-          <RegionModeLabels frame={frame} />
-          <EmotionPulse frame={frame} />
+          <Later>
+            <Symbols frame={frame} spaceport={spaceport} />
+            <Structures frame={frame} agent={agent} />
+            <DeadWorld frame={frame} />
+            <MovementStreams frame={frame} />
+            <RegionModeLabels frame={frame} />
+            <EmotionPulse frame={frame} />
+          </Later>
+          <Later ms={1500}><Orrery frame={frame} /></Later>
           {/* names: 5 countries at far, 5 cities at mid (the old region labels are retired) */}
-          <CountryNames frame={frame} />
-          <CityMarkers frame={frame} />
-          <BorderRidges frame={frame} />
-          <StateRidges frame={frame} />
-          <TrendArrows frame={frame} />
+          <Later ms={250}>
+            <CountryNames frame={frame} />
+            <CityMarkers frame={frame} />
+            <BorderRidges frame={frame} />
+            <StateRidges frame={frame} />
+            <TrendArrows frame={frame} />
+          </Later>
           {overlay === 'real' && <MigrationLines frame={frame} />}
-          <Pips frame={frame} />
-          <CrowdDots frame={frame} />
+          <Later ms={600}>
+            <Pips frame={frame} />
+            <CrowdDots frame={frame} />
+          </Later>
           <Launches frame={frame} spaceport={spaceport} />
           </>}
         </Suspense>
-        {high && !dbg('nophys') && !cityView && (
+        {/* rapier (the biggest chunk by far) loads on the first close zoom, and stays once loaded */}
+        {high && !dbg('nophys') && !cityView && physicsWanted && (
           <Suspense fallback={null}>
-            <Physics gravity={[0, 0, 0]} timeStep={1 / 60}>
-              <PhysicsLayer />
-            </Physics>
+            <PhysicsRoot />
           </Suspense>
         )}
         <JuiceDriver />
         {!cityView && <CameraRig destroyed={destroyed} />}
         {!cityView && <Director />}
         <Effects high={high} />
-        {dev && <Stats className="!left-auto !right-4 !top-auto !bottom-[92px]" />}
+        {dev && !isPhoneNow() && <Stats className="!left-auto !right-4 !top-auto !bottom-[92px]" />}
       </Canvas>
     </div>
   )

@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef } from 'react'
+import { isPhoneNow, usePhone } from './usePhone'
 import dynamic from 'next/dynamic'
 import { TICKS_PER_SECOND, useStore } from '../state/store'
 import { api, Offline } from './api'
@@ -199,6 +200,14 @@ export default function App() {
   const setLive = useStore((s) => s.setLive)
   const liveRunId = useStore((s) => s.liveRunId)
   useEscape()
+  // phones start on fast quality unless the person picked one; a saved choice wins everywhere
+  useEffect(() => {
+    let saved: string | null = null
+    try { saved = localStorage.getItem('hyp.quality') } catch { /* private mode */ }
+    if (saved === 'high' || saved === 'fast') useStore.setState({ quality: saved })
+    else if (isPhoneNow()) useStore.setState({ quality: 'fast' })
+  }, [])
+  const phone = usePhone()
 
   const startLive = async () => {
     const s = useStore.getState()
@@ -224,13 +233,14 @@ export default function App() {
       {globeOnly && (
         <button onClick={() => toggleGlobeOnly(false)} className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-full bg-bone/70 px-3 py-1 text-[11px] text-ink/60 hover:text-ink">press f or esc for the ui</button>
       )}
-      <div className={`pointer-events-none absolute inset-0 z-10 flex flex-col px-4 pb-3 pt-3 transition-opacity duration-300 ${globeOnly ? 'invisible opacity-0' : ''}`}>
+      <div className={`pointer-events-none absolute inset-0 z-10 flex flex-col transition-opacity duration-300 ${phone ? 'px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-[max(0.5rem,env(safe-area-inset-top))]' : 'px-4 pb-3 pt-3'} ${globeOnly ? 'invisible opacity-0' : ''}`}>
         {/* top: the world, its tabs, the one menu */}
         <div className="flex items-start gap-4">
-          <div className="w-56 shrink-0"><WorldTitle /></div>
-          <div className="flex min-w-0 flex-1 flex-col items-center gap-2"><WorldTabs onLive={startLive} /><CityBar /></div>
-          <div className="flex w-56 shrink-0 justify-end"><MenuButton /></div>
+          <div className={phone ? 'min-w-0 flex-1' : 'w-56 shrink-0'}><WorldTitle /></div>
+          {!phone && <div className="flex min-w-0 flex-1 flex-col items-center gap-2"><WorldTabs onLive={startLive} /><CityBar /></div>}
+          <div className={phone ? 'shrink-0' : 'flex w-56 shrink-0 justify-end'}><MenuButton /></div>
         </div>
+        {phone && <div className="mt-2 flex min-w-0 flex-col gap-2"><WorldTabs onLive={startLive} /><CityBar /></div>}
         {/* middle: the globe, and at most one panel */}
         <div className="relative mt-3 min-h-0 flex-1">
           <div className="pointer-events-none absolute left-1/2 top-0 z-20 flex -translate-x-1/2 flex-col items-center gap-2"><Loading /><Notice /></div>

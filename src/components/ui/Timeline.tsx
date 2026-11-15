@@ -106,12 +106,12 @@ export default function Timeline() {
           <svg width="12" height="12" viewBox="0 0 12 12"><path d="M3 1.5v9l7.5-4.5z" fill="currentColor" /></svg>
         )}
       </button>
-      <div className="flex shrink-0 whitespace-nowrap rounded-full p-0.5 font-mono text-[10px]">
+      <div className="hidden shrink-0 whitespace-nowrap rounded-full p-0.5 font-mono text-[10px] sm:flex">
         {([1, 4, 16] as const).map((s) => (
           <button key={s} onClick={() => setSpeed(s)} className={`rounded-full px-2 py-0.5 ${speed === s ? 'bg-ink text-bone' : 'text-ink/60'}`}>{s}x</button>
         ))}
       </div>
-      <Num className="shrink-0 whitespace-nowrap text-[11px] text-ink/50">{firstDate}</Num>
+      <Num className="hidden shrink-0 whitespace-nowrap text-[11px] text-ink/50 sm:block">{firstDate}</Num>
       <div ref={bar} className="relative h-7 flex-1 cursor-pointer select-none"
         onPointerDown={(e) => { (e.target as HTMLElement).setPointerCapture(e.pointerId); setPlaying(false); scrub(e.clientX) }}
         onPointerMove={(e) => { if (e.buttons === 1) scrub(e.clientX) }}>
@@ -150,7 +150,7 @@ export default function Timeline() {
           </div>
         )}
       </div>
-      <Num className="shrink-0 whitespace-nowrap text-right text-[11px] text-ink/50">{lastDate}</Num>
+      <Num className="hidden shrink-0 whitespace-nowrap text-right text-[11px] text-ink/50 sm:block">{lastDate}</Num>
       <button onClick={startReel} title={reel ? 'stop the highlight reel' : 'highlight reel: the ten biggest moments'} aria-label="highlight reel" className={`flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 text-[11px] ${reel ? 'bg-ink text-bone' : 'text-ink/60 hover:bg-ink/5 hover:text-ink'}`}>
         <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden><rect x="1.5" y="3" width="11" height="8" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.3" /><path d="M6 5.3v3.4l3-1.7z" fill="currentColor" /></svg>
         {reel && <Num>{reel.i + 1}/{reel.stops.length}</Num>}

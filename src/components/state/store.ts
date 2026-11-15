@@ -239,7 +239,7 @@ export const useStore = create<State>((set) => ({
   setSpeed: (speed) => set({ speed }),
   setMode: (mode) => set({ mode }),
   setZoom: (zoom) => set({ zoom }),
-  setQuality: (quality) => set({ quality, adaptive: 0 }),
+  setQuality: (quality) => { try { localStorage.setItem('hyp.quality', quality) } catch { /* private mode */ } set({ quality, adaptive: 0 }) },
   setAdaptive: (adaptive) => set({ adaptive }),
   select: (selection) => set((s) => (selection ? { ...closed(s), selection } : { selection: null, report: false })),
   setDrawer: (drawerOpen) => set((s) => (drawerOpen ? { ...closed(s), drawerOpen } : { drawerOpen })),

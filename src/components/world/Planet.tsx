@@ -5,13 +5,12 @@ import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import type { Frame } from '@/lib/types'
 import type { Biome } from './geodata'
-import { buildTiles, C, LAND_TOP, OCEAN_TOP, R, STEP, latLonToVec3, toonGradient } from './lib'
+import { buildTiles, C, LAND_TOP, OCEAN_TOP, R, STEP, toonGradient } from './lib'
 import { tickToDate } from './time'
 import { useStore } from '../state/store'
 import { ChunkSet } from './chunks'
 import { isStatMode, regionModeColor, statColor } from './modes'
-import { COUNTRY_TABLE, tileCountries } from './geo/countries'
-import { hoverLine, placeForTile as resolvePlace } from './geo/resolve'
+import { useGeo } from './geo/lazy'
 
 const TILE_H = 0.5
 
@@ -66,6 +65,8 @@ export default function Planet({ frame }: { frame: Frame }) {
   // seasons move monthly: recolor when the month changes, not every frame
   const month = useStore((s) => Math.floor(s.playhead))
   const overlay = useStore((s) => s.overlay)
+  // place data (states, seas, country shapes) arrives just after the first paint
+  const places = useGeo()
   // population mode: land rises with the people on it
   const popKey = overlay === 'population' ? frame.regions.map((r) => Math.round(r.population / 1e7)).join() : ''
   const lift = useMemo(() => {
@@ -167,8 +168,8 @@ export default function Planet({ frame }: { frame: Frame }) {
     const modeCols = frame.regions.map((r) => { const h = regionModeColor(overlay, frame, r); return h ? new THREE.Color(h) : null })
     // v4: the place-stat overlays use the tile's real country when the sim tracks it
     const byIso = new Map((frame.countries ?? []).map((c) => [c.id, c]))
-    const countryCols = isStatMode(overlay) ? COUNTRY_TABLE.map((ct) => { const c = byIso.get(ct.iso3); return c ? new THREE.Color(statColor(overlay, c.stats)) : null }) : null
-    const tc = countryCols ? tileCountries(tiles) : null
+    const countryCols = isStatMode(overlay) && places ? places.COUNTRY_TABLE.map((ct) => { const c = byIso.get(ct.iso3); return c ? new THREE.Color(statColor(overlay, c.stats)) : null }) : null
+    const tc = countryCols && places ? places.tileCountries(tiles) : null
     const surface = (ti: number, level: number) => {
       const t = tiles[ti]
       const cc = tc && countryCols && tc[ti] >= 0 ? countryCols[tc[ti]] : null
@@ -207,7 +208,7 @@ export default function Planet({ frame }: { frame: Frame }) {
       O.setColorAt(k, col)
     })
     for (const m of [L, S, O, G]) m.commitColors()
-  }, [frame, tiles, layout, month, overlay, sets])
+  }, [frame, tiles, layout, month, overlay, sets, places])
 
   useFrame(({ clock, camera }) => {
     ocean.uniforms.uTime.value = clock.elapsedTime
@@ -229,7 +230,7 @@ export default function Planet({ frame }: { frame: Frame }) {
     else if (t.region >= 0) select({ kind: 'region', id: frame.regions[t.region].id })
   }
   // the most specific real place a tile belongs to (see geo/resolve.ts)
-  const placeForTile = (ti: number) => resolvePlace(frame, ti, useStore.getState().zoom)
+  const placeForTile = (ti: number) => (places ? places.placeForTile(frame, ti, useStore.getState().zoom) : null)
   const stackTiles = useMemo(() => layout.stacks.map((s) => s.tile), [layout])
   // hovering land names its region in one plain line: the labels only show the biggest few
   const tipFor = (list: number[], set: ChunkSet) => (e: ThreeEvent<PointerEvent>) => {
@@ -237,7 +238,7 @@ export default function Planet({ frame }: { frame: Frame }) {
     if (k === undefined) return
     // one line: the place's name and population (or the sea's name)
     const sel = placeForTile(list[k])
-    const line = sel ? hoverLine(frame, sel) : null
+    const line = sel && places ? places.hoverLine(frame, sel) : null
     if (line) useStore.getState().setTip({ ...line, x: e.nativeEvent.clientX, y: e.nativeEvent.clientY })
   }
   const hoverOn = (list: number[], set: ChunkSet) => ({

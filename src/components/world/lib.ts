@@ -6,6 +6,9 @@ import type { Feature, MultiPolygon, Polygon } from 'geojson'
 import landTopo from 'world-atlas/land-110m.json'
 import type { Region } from '@/lib/types'
 import { biomeAt, landBand, oceanBand, type Biome } from './geodata'
+import STATIC_RAW from './tile-static.json'
+
+const STATIC = STATIC_RAW as { n: number; biomes: string[]; land: string; band: string; depth: string; biome: string }
 
 export const R = 10
 export const LAND_TOP = R + 0.22
@@ -167,8 +170,12 @@ export function buildTiles(regions: Pick<Region, 'id' | 'lat' | 'lon'>[], n = TI
         const d = pa.length() * R
         const normal = p.clone()
         const [lat, lon] = vec3ToLatLon(normal)
-        const ice = lat < -62
-        const land = ice || isLand(lat, lon)
+        // perf: the standard grid reads land, elevation, depth and biome from a baked table (tile-static.json)
+        // instead of testing every tile against natural earth polygons at startup
+        const k = tiles.length
+        const baked = n === TILES_N ? STATIC : null
+        const ice = baked ? baked.land[k] === '2' : lat < -62
+        const land = baked ? baked.land[k] !== '0' : ice || isLand(lat, lon)
         let region = -1
         if (land && !ice) {
           let best = -2
@@ -178,18 +185,30 @@ export function buildTiles(regions: Pick<Region, 'id' | 'lat' | 'lon'>[], n = TI
         const z = new THREE.Vector3().crossVectors(xdir, y).normalize()
         const x = new THREE.Vector3().crossVectors(y, z)
         const quat = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z))
-        tiles.push({ pos: normal.clone(), normal, quat, w, d, land, ice, region, lat, lon, band: land && !ice ? landBand(lat, lon) : ice ? 1 : 0, depth: land ? 0 : oceanBand(lat, lon), biome: ice ? 'ice' : biomeAt(lat, lon) })
+        tiles.push(baked
+          ? { pos: normal.clone(), normal, quat, w, d, land, ice, region, lat, lon, band: Number(baked.band[k]), depth: Number(baked.depth[k]), biome: baked.biomes[Number(baked.biome[k])] as Biome }
+          : { pos: normal.clone(), normal, quat, w, d, land, ice, region, lat, lon, band: land && !ice ? landBand(lat, lon) : ice ? 1 : 0, depth: land ? 0 : oceanBand(lat, lon), biome: ice ? 'ice' : biomeAt(lat, lon) })
       }
     }
   }
-  // neighbors by distance, for border glow
+  // neighbors by distance, for border glow. perf: a spatial hash on the unit normals instead of testing
+  // every land tile against every tile (13M dot products on the standard grid)
   const neighbors: Int32Array[] = []
-  const lim = Math.cos(((Math.PI / 2 / n) * 1.6))
+  const ang = (Math.PI / 2 / n) * 1.6
+  const lim = Math.cos(ang)
+  const cell = ang * 1.05
+  const key3 = (x: number, y: number, z: number) => `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`
+  const grid = new Map<string, number[]>()
+  tiles.forEach((t, i) => { const kk = key3(t.normal.x, t.normal.y, t.normal.z); const b = grid.get(kk); if (b) b.push(i); else grid.set(kk, [i]) })
   for (let i = 0; i < tiles.length; i++) {
     const list: number[] = []
     if (!tiles[i].land) { neighbors.push(Int32Array.from(list)); continue }
     const ni = tiles[i].normal
-    for (let j = 0; j < tiles.length; j++) if (j !== i && ni.dot(tiles[j].normal) > lim) list.push(j)
+    const cx = Math.floor(ni.x / cell), cy = Math.floor(ni.y / cell), cz = Math.floor(ni.z / cell)
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+      for (const j of grid.get(`${cx + dx},${cy + dy},${cz + dz}`) ?? []) if (j !== i && ni.dot(tiles[j].normal) > lim) list.push(j)
+    }
+    list.sort((a, b) => a - b)
     neighbors.push(Int32Array.from(list))
   }
   const res = { tiles, neighbors }

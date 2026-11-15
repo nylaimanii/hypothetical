@@ -44,7 +44,7 @@ function Tabs<T extends string>({ tabs, value, onChange }: { tabs: T[]; value: T
 function Drawer({ kicker, title, children }: { kicker: string; title: React.ReactNode; children: React.ReactNode }) {
   const select = useStore((s) => s.select)
   return (
-    <div className="panel dossier-in scroll-thin pointer-events-auto max-h-full w-[24rem] shrink-0 overflow-y-auto px-5 pb-5 pt-4">
+    <div className="panel dossier-in scroll-thin pointer-events-auto max-h-full w-[24rem] max-w-full shrink-0 overflow-y-auto px-5 pb-5 pt-4 [.phone-sheet_&]:w-full [.phone-sheet_&]:rounded-none [.phone-sheet_&]:border-0 [.phone-sheet_&]:shadow-none">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-[11px] uppercase tracking-[0.16em] text-ink/45">{kicker}</div>
