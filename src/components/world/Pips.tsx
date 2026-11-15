@@ -7,6 +7,7 @@ import type { Frame } from '@/lib/types'
 import { C, HAIR_HEX, LAND_TOP, MONK, latLonToVec3, sceneRefs, shade, surfaceQuat, tangentBasis, vinyl } from './lib'
 import { HAIRS, P, buildW, hairGeometries, headScale, partGeometries, pipRegistry, pipScale, shoulderX, usePhys, type Agent } from './pipShared'
 import { useStore } from '../state/store'
+import { valence } from '@/lib/mock/mood'
 
 const N = 180
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0)
@@ -37,7 +38,7 @@ export function buildAgents(frame: Frame, extraRevolt: string[] = [], extraFamin
     agents.push({
       key: c.id, citizen: c, home: latLonToVec3(r.lat, r.lon, 1), color: r.color, revolt,
       famine: famineIds.has(r.id) || r.foodKcalPerCapita < 2150,
-      angry: revolt || c.mood < 0.3,
+      angry: revolt || valence(c.mood) < 0.3,
     })
   }
   // lines of migrants walking between regions
@@ -50,7 +51,7 @@ export function buildAgents(frame: Frame, extraRevolt: string[] = [], extraFamin
       const c = pool[k % pool.length]
       agents.push({
         key: `mig-${m.from}-${m.to}-${k}`, citizen: { ...c, id: c.id }, home: latLonToVec3(b.lat, b.lon, 1), color: a.color,
-        revolt: false, famine: false, angry: c.mood < 0.3, migrant: { from: latLonToVec3(a.lat, a.lon, 1), to: latLonToVec3(b.lat, b.lon, 1), k, n },
+        revolt: false, famine: false, angry: valence(c.mood) < 0.3, migrant: { from: latLonToVec3(a.lat, a.lon, 1), to: latLonToVec3(b.lat, b.lon, 1), k, n },
       })
     }
   }
@@ -243,7 +244,7 @@ export default function Pips({ frame }: { frame: Frame }) {
         const syncBounce = a.revolt ? Math.abs(Math.sin(t * 7.5)) * 0.12 : 0
         const bob = Math.abs(Math.cos(phase)) * 0.025 + syncBounce
         const wobble = Math.sin(phase * 0.5 + sd) * 0.07
-        const pitch = (elder ? 0.36 : 0.06) + (c.mood < 0.35 ? 0.08 : 0) + (a.revolt ? -0.05 : 0)
+        const pitch = (elder ? 0.36 : 0.06) + (valence(c.mood) < 0.35 ? 0.08 : 0) + (a.revolt ? -0.05 : 0)
         _m.compose(pos, quat, new THREE.Vector3(s, s, s))
         // procedural knockdown: fall back, lie, get up
         const k0 = pipRegistry.knockAt.get(a.key)
@@ -280,7 +281,7 @@ export default function Pips({ frame }: { frame: Frame }) {
       }
       // face: eyes blink, brows carry mood
       const blink = (t + (sd % 7)) % 4.3 < 0.12 ? 0.15 : 1
-      const m = c.mood
+      const m = valence(c.mood)
       const browY = a.angry ? -0.008 : m > 0.62 ? 0.022 : 0
       const tilt = a.angry ? 0.4 : m > 0.62 ? -0.08 : 0
       for (const k of [0, 1]) {

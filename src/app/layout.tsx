@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { Fraunces, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -10,7 +11,7 @@ export const metadata: Metadata = {
   description: "one ai, one world government, one goal: a crewed moon landing",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="en" className={`${fraunces.variable} ${jetbrains.variable} h-full antialiased`}>
       <body className="h-full">{children}</body>

@@ -20,7 +20,7 @@ export default function Moon({ frame }: { frame: Frame }) {
     const v = new THREE.Vector3(Math.sin(i * 2.4) * Math.cos(i * 1.3), Math.cos(i * 2.4), Math.sin(i * 2.4) * Math.sin(i * 1.3)).normalize()
     return { p: v.clone().multiplyScalar(1.55), q: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), v), r: 0.18 + (i % 3) * 0.1 }
   }), [])
-  const landed = frame.status === 'moon'
+  const landed = frame.moonStage === 'crewed_landing'
   useFrame(({ clock }) => {
     const a = clock.elapsedTime * 0.04 + 0.6
     const x = Math.cos(a) * ORBIT, z = Math.sin(a) * ORBIT

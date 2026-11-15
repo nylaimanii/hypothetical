@@ -1,9 +1,10 @@
 // MOCK data for the ui. every number here is an ESTIMATE placeholder, not a real stat.
 // the real sim (agent B) replaces this. kept deterministic with a local mulberry32.
 import type {
-  BaselineFrame, Budget, Citizen, Decision, Frame, Law, Migration, MoonStage, Region,
-  ReligionPolicy, RunRecord, RunSummary, SchoolPolicy, WorldEvent, WorldStatus,
+  Archetype, BaselineFrame, Budget, Citizen, Decision, Frame, Law, Migration, MoonStage, Region,
+  ReligionPolicy, RunRecord, RunSummary, SchoolPolicy, WorldEvent, WorldState, WorldStatus,
 } from '@/lib/types'
+import { moodFrom, valence } from './mood'
 
 function mulberry32(seed: number) {
   let a = seed >>> 0
@@ -31,7 +32,7 @@ function shuffle<T>(r: Rng, xs: readonly T[]): T[] {
 const EST = { kind: 'ESTIMATE' as const }
 const STAT_KEYS = ['population', 'share65plus', 'gdpUsd', 'energyTWh', 'foodKcalPerCapita', 'education', 'faith', 'unrest', 'techLevel', 'compliance'] as const
 
-type Seed = Omit<Region, 'provenance'>
+type Seed = Pick<Region, 'id' | 'name' | 'lat' | 'lon' | 'color' | 'population' | 'share65plus' | 'gdpUsd' | 'energyTWh' | 'foodKcalPerCapita' | 'education' | 'faith' | 'unrest' | 'techLevel' | 'compliance'>
 const REGION_SEEDS: Seed[] = [
   { id: 'nam', name: 'north america', lat: 42, lon: -100, color: '#7F98D6', population: 380e6, share65plus: 0.18, gdpUsd: 31e12, energyTWh: 5200, foodKcalPerCapita: 3700, education: 0.84, faith: 0.52, unrest: 0.24, techLevel: 0.82, compliance: 0.58 },
   { id: 'mes', name: 'mesoamerica', lat: 20, lon: -100, color: '#D9A456', population: 230e6, share65plus: 0.09, gdpUsd: 2.6e12, energyTWh: 480, foodKcalPerCapita: 3050, education: 0.62, faith: 0.71, unrest: 0.38, techLevel: 0.45, compliance: 0.55 },
@@ -52,6 +53,7 @@ const NAMES_M = ['kofi', 'mateo', 'arjun', 'jonas', 'tariq', 'kenji', 'diego', '
 const SURNAMES = ['okafor', 'silva', 'nakamura', 'haddad', 'larsen', 'mensah', 'kowalski', 'reyes', 'nair', 'tanaka', 'ibrahim', 'moreau', 'banda', 'castillo', 'novak', 'ahmed', 'walker', 'kim', 'osei', 'park', 'ferreira', 'singh', 'petrov', 'abara']
 const JOBS = ['farmer', 'nurse', 'welder', 'teacher', 'coder', 'miner', 'shopkeeper', 'driver', 'engineer', 'cook', 'student', 'retired', 'electrician', 'fisher', 'doctor', 'builder', 'clerk', 'mechanic']
 const HAIRS: Citizen['hair'][] = ['bald', 'buzz', 'short_straight', 'short_wavy', 'short_coily', 'afro', 'locs', 'braids', 'long_straight', 'long_wavy', 'bun', 'ponytail']
+const ARCHETYPES: Archetype[] = ['loud_uncle', 'true_believer', 'hustler', 'conspiracy_guy', 'bureaucrat', 'sharp_kid', 'influencer', 'quiet_worker', 'elder', 'activist', 'contrarian', 'scientist', 'worrier', 'gossip']
 const HAIR_COLORS: Citizen['hairColor'][] = ['black', 'black', 'dark_brown', 'dark_brown', 'brown', 'brown', 'blonde', 'red']
 
 function makeCitizens(r: Rng, region: Seed): Citizen[] {
@@ -78,13 +80,19 @@ function makeCitizens(r: Rng, region: Seed): Citizen[] {
       personalitySeed: Math.floor(r() * 1e9),
       job: kid ? 'student' : age > 66 ? 'retired' : pick(r, JOBS),
       belief: fr < region.faith * 0.8 ? 'religious' : fr < region.faith * 0.8 + 0.18 ? 'spiritual' : 'secular',
-      mood: 0.5, thought: '',
+      archetype: ARCHETYPES[(i * 5 + Math.floor(r() * 14)) % ARCHETYPES.length],
+      group: { ageBand: kid ? 'kid' : age > 66 ? 'elder' : age < 30 ? 'young' : 'adult', jobSector: kid ? 'school' : 'general', belief: 'secular', incomeBand: 'mid', regionId: region.id },
+      mood: moodFrom(0.5), behavior: 'working', lifeEvents: [], opinionOfCore: 0, family: { kids: 0 },
+      thought: '',
     })
+    const c = out[out.length - 1]
+    c.group.belief = c.belief
   }
   return out
 }
 
-const LAW_BOOK: Omit<Law, 'enactedTick' | 'support' | 'compliance'>[] = [
+type LawSeed = Pick<Law, 'id' | 'title' | 'text' | 'layer'>
+const LAW_SEEDS: LawSeed[] = [
   { id: 'law-grain', title: 'grain reserve act', text: 'every region keeps six months of staple grain in public silos. surplus regions ship to deficit regions before export.', layer: 'biology' },
   { id: 'law-grid', title: 'one grid', text: 'national power grids are merged into one planetary grid. new capacity goes where demand per person is lowest first.', layer: 'tech' },
   { id: 'law-school', title: 'school for the sky', text: 'school runs ten years for everyone. the last two years include physics, chemistry, and practical engineering.', layer: 'family' },
@@ -95,6 +103,7 @@ const LAW_BOOK: Omit<Law, 'enactedTick' | 'support' | 'compliance'>[] = [
   { id: 'law-curfew', title: 'quiet hours', text: 'public gatherings above 500 people need a 48 hour notice in regions with unrest above the planetary median.', layer: 'government' },
   { id: 'law-care', title: 'elder care corps', text: 'adults under 30 may serve one year in elder care in place of two years of tax.', layer: 'family' },
 ]
+const LAW_BOOK: Omit<Law, 'enactedTick' | 'support' | 'compliance'>[] = LAW_SEEDS.map((l) => ({ ...l, policyKind: l.layer, precedentIds: [], lovedBy: [], hatedBy: [] }))
 
 const RATIONALES = [
   'feed people first. a hungry planet does not build rockets. grain reserves before anything orbital.',
@@ -150,12 +159,23 @@ function thoughtFor(r: Rng, c: Citizen, region: Region, events: WorldEvent[], do
   if (here?.kind === 'revolt') return pick(r, ['nobody asked us before they moved the pads here.', 'i am not going home until they listen.'])
   if (here?.kind === 'disaster') return pick(r, ['the river took the lower street.', 'we are rebuilding the clinic first.'])
   if (events.some((e) => e.kind === 'launch' && !/fail/.test(e.text))) return pick(r, ['i watched the launch from the roof.', 'my cousin works on that rocket.'])
-  if (c.mood > 0.65) return pick(r, ['the grid has not cut out in months.', 'school is harder now, but it is interesting.', 'the floor wage paid for new boots.'])
-  if (c.mood < 0.35) return pick(r, [doomed ? 'they want the moon and we want bread.' : 'prices went up again.', 'the core does not live here.'])
+  if (valence(c.mood) > 0.65) return pick(r, ['the grid has not cut out in months.', 'school is harder now, but it is interesting.', 'the floor wage paid for new boots.'])
+  if (valence(c.mood) < 0.35) return pick(r, [doomed ? 'they want the moon and we want bread.' : 'prices went up again.', 'the core does not live here.'])
   return pick(r, ['work is steady.', 'quiet month.', 'i read the ledger, it mostly adds up.', 'my knees hurt but the clinic is close.'])
 }
 
 export type MockFate = 'moon' | 'destroyed'
+
+function worldState(regions: Region[], progress: number, doomed: boolean, year: number): WorldState {
+  const pop = regions.reduce((a, r) => a + r.population, 0)
+  const ple = regions.reduce((a, r) => a + r.periodLifeExpectancy * r.population, 0) / pop
+  return {
+    requirements: [], cities: [], companies: [], factions: [],
+    frontier: progress >= 1 ? 'moon_landing' : 'none',
+    humanCost: { deaths: doomed ? year * 4e6 : year * 2e5, famineDeaths: doomed ? year * 2e6 : year * 1e5, unrestDeaths: doomed ? year * 1e6 : year * 2e4, displaced: year * 1e6, approval: clamp(0.62 - (doomed ? year * 0.05 : 0)) },
+    globalPopulation: pop, globalPeriodLifeExpectancy: ple, lessonsKnown: 0,
+  }
+}
 
 export function makeMockRun(runId: string, seed: number, fate: MockFate, generation = 3): RunRecord {
   const r = mulberry32(seed)
@@ -207,7 +227,7 @@ export function makeMockRun(runId: string, seed: number, fate: MockFate, generat
       decision = {
         tick, laws: newLaws, repeal, migrations, budget, religionPolicy, schoolPolicy: school,
         rationale: (doomed ? DOOM_RATIONALES : RATIONALES)[year - 1],
-        respondedToOverrides: [],
+        respondedToOverrides: [], foundCities: [], charterCompanies: [], researchFocus: [], publicStatement: '', lessonsApplied: [],
       }
       for (const l of newLaws) events.push({ tick, kind: 'law', text: `enacted: ${l.title}`, severity: 0.2 })
     }
@@ -253,16 +273,19 @@ export function makeMockRun(runId: string, seed: number, fate: MockFate, generat
           if (m.to === s.id) s.population += m.people
         }
       }
-      return { ...s, provenance }
+      return {
+        ...s, provenance, crowds: [], approval: clamp(0.7 - s.unrest * 0.6), lifeExpectancy: 72, periodLifeExpectancy: 73,
+        fertility: 2.1, diseaseBurden: 0.3, travelHoursToNearest: 8, whys: [],
+      }
     })
 
     progress = doomed ? Math.min(0.3, progress + 0.04) : clamp(year === 9 ? 1 : progress + [0, 0.06, 0.07, 0.03, 0.12, 0.12, 0.14, 0.1, 0.12][year - 1] || progress)
-    const status: WorldStatus = doomed && year === 9 ? 'destroyed' : !doomed && year === 9 ? 'moon' : 'alive'
+    const status: WorldStatus = doomed && year === 9 ? 'destroyed' : 'alive'
 
     const citizens: Citizen[] = allCitizens.map((c) => {
       const region = regions.find((x) => x.id === c.regionId)!
-      const mood = clamp(0.85 - region.unrest * 0.9 + ((c.personalitySeed % 100) / 100 - 0.5) * 0.3 + (region.foodKcalPerCapita < 2100 ? -0.2 : 0))
-      const nc = { ...c, mood }
+      const v = clamp(0.85 - region.unrest * 0.9 + ((c.personalitySeed % 100) / 100 - 0.5) * 0.3 + (region.foodKcalPerCapita < 2100 ? -0.2 : 0))
+      const nc = { ...c, mood: moodFrom(v) }
       nc.thought = thoughtFor(r, nc, region, events, doomed)
       return nc
     })
@@ -270,7 +293,7 @@ export function makeMockRun(runId: string, seed: number, fate: MockFate, generat
     frames.push({
       tick, date: dateFor(tick), regions, citizens, laws: laws.map((l) => ({ ...l })), budget,
       religionPolicy, schoolPolicy: school, moonStage: stageFor(progress), moonProgress: progress,
-      status, newEvents: events, decision,
+      status, newEvents: events, decision, ...worldState(regions, progress, doomed, year),
     })
 
     // no-ai twin: 2026 policies frozen
@@ -304,6 +327,9 @@ export function makeMockRun(runId: string, seed: number, fate: MockFate, generat
     moonStage: last.moonStage,
     topEvents: allEvents.filter((e) => e.kind !== 'law').sort((a, b) => b.severity - a.severity).slice(0, 5),
     baselineStatus: 'alive', baselineEndDate: last.date,
+    frontier: last.frontier, peakPeriodLifeExpectancy: Math.max(...frames.map((f) => f.globalPeriodLifeExpectancy)),
+    finalPopulation: last.globalPopulation, citiesFounded: last.cities.length, diseasesEradicated: [], humanCost: last.humanCost,
+    lessonsLearned: [], lessonsApplied: 0,
   }
   return { runId, generation, seed, constitution: summary.constitution, frames, baseline, summary }
 }

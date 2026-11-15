@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'react'
 import type { Budget, Citizen, Frame, Layer, Migration, Region, RunRecord } from '@/lib/types'
 import { MOON_STAGES } from '@/lib/mock/run'
+import { valence } from '@/lib/mock/mood'
 import { layerMetric } from '../world/lib'
 import { useCurrentFrame, useStore } from '../state/store'
 import { Bar, Delta, Num, Prov, Section, Sparkline, fmt } from './bits'
@@ -63,7 +64,7 @@ function PipCard({ c, frame, record, idx }: { c: Citizen; frame: Frame; record: 
         <div><div className="text-ink/45">height</div><Num>{c.heightCm}cm</Num></div>
         <div><div className="text-ink/45">job</div>{c.job}</div>
         <div><div className="text-ink/45">belief</div>{c.belief}</div>
-        <div><div className="text-ink/45">mood</div><span className={c.mood < 0.3 ? 'text-ember' : ''}>{MOOD(c.mood)} <Num className="text-ink/50">{c.mood.toFixed(2)}</Num></span></div>
+        <div><div className="text-ink/45">mood</div><span className={valence(c.mood) < 0.3 ? 'text-ember' : ''}>{MOOD(valence(c.mood))} <Num className="text-ink/50">{valence(c.mood).toFixed(2)}</Num></span></div>
       </div>
       {c.thought && <p className="mt-4 rounded-xl bg-ink/5 px-3 py-2 font-display text-[15px] italic leading-snug">&ldquo;{c.thought}&rdquo;</p>}
       {(migrated || laws.length > 0 || otherMoves.length > 0) && <Section title="what the ai did to me">
@@ -261,7 +262,7 @@ function MoonCard({ record, idx, frame }: { record: RunRecord; idx: number; fram
   const space = record.frames.slice(0, idx + 1).map((f) => f.budget.space)
   const launches = record.frames.slice(0, idx + 1).flatMap((f) => f.newEvents.filter((e) => e.kind === 'launch').map((e) => ({ ...e, date: f.date })))
   return (
-    <Shell kicker="moon program" title={frame.status === 'moon' ? 'boots on the moon' : 'the moon'}>
+    <Shell kicker="moon program" title={frame.moonStage === 'crewed_landing' ? 'boots on the moon' : 'the moon'}>
       <Section title="progress">
         <Bar value={frame.moonProgress} />
         <ol className="mt-3 space-y-1">

@@ -10,7 +10,7 @@ import { DirectorToggle, SoundControls } from './Extras'
 export function StatusPill({ status }: { status: string }) {
   const danger = status === 'destroyed'
   return (
-    <span className={`whitespace-nowrap rounded-full px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] ${danger ? 'bg-ember text-bone' : status === 'moon' ? 'bg-ink text-bone' : 'border border-ink/25 text-ink/70'}`}>{status}</span>
+    <span className={`whitespace-nowrap rounded-full px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] ${danger ? 'bg-ember text-bone' : status === 'goal_achieved' || status === 'complete' ? 'bg-ink text-bone' : 'border border-ink/25 text-ink/70'}`}>{status}</span>
   )
 }
 

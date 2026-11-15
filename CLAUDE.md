@@ -2,15 +2,15 @@
 
 # hypothetical
 
-one ai runs a single world government starting 2026-11. physics, biology, economics are enforced by deterministic code. the ai only makes policy. goal of every world: a crewed moon landing.
+one ai runs a single world government starting 2026-11. physics, biology, economics are enforced by deterministic code. the ai only makes policy. the mission of every world: prolong humanity. the moon landing is now one milestone on the way.
 
 ## rules
 
 - determinism: all physics, biology, demography, economy, rocket math lives in TypeScript in src/lib/sim. the LLM never produces numbers that become world state except policy choices (budget fractions, migration counts, law text). sim clamps everything to physical limits.
 - every seeded number carries provenance SOURCED (with url) or ESTIMATE. never invent a stat and present it as real.
 - seeded rng only (mulberry32). same seed + same decisions = same world.
-- 1 tick = 1 month, tick 0 = 2026-11. governor decides every 12 ticks. world ends on destroyed, moon (crewed landing), or stagnated (tick 600).
-- baseline twin: every run also simulates a no-ai twin on the same seed with 2026 policies frozen, so the ui can show what the ai changed.
+- 1 tick = 1 month, tick 0 = 2026-11. governor decides every 12 ticks. see horizon below for when a world ends.
+- baseline twin: every run also simulates a no-ai twin on the same seed with 2026 policies frozen. see the v2 rule below for where it shows.
 - citizens: diversity comes from skin tone (Monk scale 1-10), hair, age, height, build only. one shared base mesh for every face and body. never exaggerate facial features, never assign ethnic costume. every region is mixed.
 - user overrides (veto, inject, force budget) are real inputs the governor sees and must react to.
 - boundaries: A = ui/3d + types, B = sim + agent, C = evolve + notify + api. never edit another agent's folders. only A edits src/lib/types.ts, others request changes in their report.
@@ -18,6 +18,17 @@ one ai runs a single world government starting 2026-11. physics, biology, econom
 - secrets only in .env.local, never in code, never in commits. my email address only lives in EMAIL_TO.
 - writing: no em-dashes anywhere. commits lowercase always.
 - look: bone + ink base, Fraunces display, JetBrains Mono for every number, ember ONLY for danger/death. hide empty elements instead of showing zeros or blanks. every character and object is an ORIGINAL design, never recreate an existing youtube, game, or brand character.
+
+## v2 rules
+
+- mission: prolong humanity. maximize healthy lifespan and long-term population, and get humanity off-planet (mars and beyond) so one planet's disaster can't end it. the governor optimizes the mission, not approval
+- realism: public behavior is calibrated to real historical precedents (cited) and real social science. no utopia bias. early worlds should mostly fail
+- people feel many emotions, not just anger. behavior emerges from emotion + archetype + group. crowds overreact, panic, follow trends, perform outrage, then lose interest (issue-attention cycle). satire targets behaviors and institutions, NEVER race, ethnicity, religion as identity, sex, or disability
+- every number shown in the ui has a "why" chain from the sim. every real-world claim has a url
+- score = mission progress only. human cost is never in the score, but it's always shown up front
+- horizon: tick 1200 (2126). runs continue past milestones and end only on destroyed or horizon. status 'complete' = reached the horizon, 'goal_achieved' = frontier mars_self_sustaining AND global period life expectancy >= 200 AND global population not declining over the last 10 years
+- learning: every death adds lessons to data/lessons.json, and later governors get the most relevant lessons in their prompt
+- the no-ai twin is still computed but hidden in the ui (reports + an advanced settings toggle only)
 
 ## ownership
 
@@ -33,3 +44,4 @@ one ai runs a single world government starting 2026-11. physics, biology, econom
 - POST /api/live/start { constitution?, seed? } -> { runId }
 - GET /api/live/[id] -> RunRecord (live: true, frames so far)
 - POST /api/override { runId, override: Override } -> { ok: true }
+- GET /api/learning -> { generation: number; bestScore: number; lessonsKnown?: number }[] (one row per generation, for the leaderboard learning curve)

@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { create } from 'zustand'
 import type { BaselineFrame, Frame, Override, RunRecord, RunSummary, WorldEvent, Layer } from '@/lib/types'
 import { mockRuns, stageFor } from '@/lib/mock/run'
+import { moodFrom } from '@/lib/mock/mood'
 
 export type Selection =
   | { kind: 'pip'; id: string }
@@ -157,7 +158,7 @@ export function baselineAsFrame(rec: RunRecord, idx: number): Frame {
   })
   const citizens = f0.citizens.map((c) => {
     const reg = regions.find((r) => r.id === c.regionId)
-    return reg ? { ...c, mood: Math.max(0, Math.min(1, 0.85 - reg.unrest * 0.9 + ((c.personalitySeed % 100) / 100 - 0.5) * 0.3)) } : c
+    return reg ? { ...c, mood: moodFrom(Math.max(0, Math.min(1, 0.85 - reg.unrest * 0.9 + ((c.personalitySeed % 100) / 100 - 0.5) * 0.3))) } : c
   })
   const progress = b?.moonProgress ?? 0
   return { ...f0, tick: f.tick, date: f.date, regions, citizens, moonProgress: progress, moonStage: stageFor(progress), status: b?.status ?? 'alive', newEvents: [], decision: undefined }
