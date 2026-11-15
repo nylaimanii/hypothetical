@@ -50,6 +50,8 @@ one ai runs a single world government starting 2026-11. physics, biology, econom
 - POST /api/override { runId, override: Override } -> { ok: true }
 - GET /api/learning -> { generation: number; bestScore: number; lessonsKnown?: number; lineage?: string }[] (one row per generation per lineage; lineage = the seed agent id it descends from)
 - GET /api/agents -> Agent[]
-- GET /api/compare?agents=<id,id,...> -> { runs: RunRecord[]; divergences: Divergence[] } (one run per agent, same seed when possible)
+- GET /api/compare?agents=<id,id,...> -> CompareResponse (slim: one SlimRun per agent, same seed when possible, plus divergences)
+- GET /api/runs/[id]?slim=1 -> SlimRun (no frames, for long runs)
+- GET /api/runs/[id]/frames?from=<tick>&to=<tick> -> FramesResponse (inclusive range; the ui prefetches about 5 years either side of the scrubber)
 - GET /api/hall -> HallEntry[]
 - POST /api/branch { runId, tick, agentId } -> { runId } (a new live world from that run's snapshot at tick, governed by agentId)

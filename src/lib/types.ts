@@ -97,3 +97,14 @@ export type Agent = {
 export type Snapshot = { tick: number; state: string } // compressed full WorldState, for branching
 export type Divergence = { runA: string; runB: string; tick: number; decisionDiff: string; consequence: string }
 export type HallEntry = { id: string; title: string; runId: string; agentId: string; tick: number; kind: 'first'|'record'|'catastrophe'|'milestone'; text: string }
+
+// ---- slim data for long runs: the ui loads frames lazily around the scrubber ----
+// one row per year (every 12 ticks), enough for stat races and timelines without full frames
+export type YearRow = { tick: number; date: string; globalPopulation: number; globalPeriodLifeExpectancy: number; frontier: Frontier; moonProgress: number; approval: number; deaths: number; displaced: number; status: WorldStatus }
+// one row per governor decision, enough for the side by side diff table
+export type DecisionRow = { tick: number; date: string; religionPolicy: ReligionPolicy; schoolPurpose: string; budget: Budget; lawsEnacted: string[]; citiesFounded: string[] }
+// a run without frames: GET /api/runs/[id]?slim=1 and each entry of GET /api/compare. firstTick/lastTick bound the frames endpoint
+export type SlimRun = Omit<RunRecord, 'frames' | 'baseline' | 'snapshots'> & { firstTick: number; lastTick: number; years: YearRow[]; decisions: DecisionRow[] }
+export type CompareResponse = { seed: number; runs: SlimRun[]; divergences: Divergence[]; pending?: string[]; note?: string }
+// GET /api/runs/[id]/frames?from=<tick>&to=<tick> (inclusive)
+export type FramesResponse = { runId: string; from: number; to: number; frames: Frame[] }

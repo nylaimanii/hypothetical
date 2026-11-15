@@ -75,14 +75,20 @@ export default function Timeline() {
   const overrides = useStore((s) => s.overrides)
   const bar = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<{ x: number; text: string; date: string } | null>(null)
-  const t0 = record.frames[0].tick
-  const t1 = Math.max(t0 + 1, record.frames.at(-1)!.tick)
+  // lazy runs only hold frames near the scrubber; the slim meta knows the whole span
+  const meta = useStore((s) => s.slim[record.runId])
+  const t0 = meta?.lazy ? meta.firstTick : record.frames[0].tick
+  const t1 = Math.max(t0 + 1, meta?.lazy ? meta.lastTick : record.frames.at(-1)!.tick)
+  const firstDate = meta?.lazy ? meta.years[0]?.date ?? record.frames[0].date : record.frames[0].date
+  const lastDate = meta?.lazy ? meta.years.at(-1)?.date ?? record.frames.at(-1)!.date : record.frames.at(-1)!.date
   const x = (t: number) => ((t - t0) / (t1 - t0)) * 100
   const scrub = (clientX: number) => {
     const r = bar.current!.getBoundingClientRect()
     setPlayhead(t0 + Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * (t1 - t0))
   }
-  const decisions = record.frames.filter((f) => f.decision)
+  const decisions = meta?.lazy
+    ? meta.decisions.map((d) => ({ tick: d.tick, date: d.date, text: record.frames.find((f) => f.tick === d.tick)?.decision?.rationale ?? (d.lawsEnacted.length ? `enacted ${d.lawsEnacted.join(', ')}` : 'the core decides') }))
+    : record.frames.filter((f) => f.decision).map((f) => ({ tick: f.tick, date: f.date, text: f.decision!.rationale }))
   const compare = useStore((s) => s.compare)
   const reel = useStore((s) => s.reel)
   const agents = useStore((s) => s.agents)
@@ -104,7 +110,7 @@ export default function Timeline() {
           <button key={s} onClick={() => setSpeed(s)} className={`rounded-full px-2 py-0.5 ${speed === s ? 'bg-ink text-bone' : 'text-ink/60'}`}>{s}x</button>
         ))}
       </div>
-      <Num className="shrink-0 whitespace-nowrap text-[12px] text-ink/60">{record.frames[0].date}</Num>
+      <Num className="shrink-0 whitespace-nowrap text-[12px] text-ink/60">{firstDate}</Num>
       <div ref={bar} className="relative h-9 flex-1 cursor-pointer select-none"
         onPointerDown={(e) => { (e.target as HTMLElement).setPointerCapture(e.pointerId); setPlaying(false); scrub(e.clientX) }}
         onPointerMove={(e) => { if (e.buttons === 1) scrub(e.clientX) }}>
@@ -116,7 +122,7 @@ export default function Timeline() {
         {decisions.map((f) => (
           <div key={f.tick} className="absolute top-1/2 h-4 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink"
             style={{ left: `${x(f.tick)}%` }}
-            onPointerEnter={() => setHover({ x: x(f.tick), text: f.decision!.rationale, date: f.date })}
+            onPointerEnter={() => setHover({ x: x(f.tick), text: f.text, date: f.date })}
             onPointerLeave={() => setHover(null)} />
         ))}
         {compare?.divergences.map((d) => (
@@ -143,7 +149,7 @@ export default function Timeline() {
           </div>
         )}
       </div>
-      <Num className="shrink-0 whitespace-nowrap text-right text-[12px] text-ink/60">{record.frames.at(-1)!.date}</Num>
+      <Num className="shrink-0 whitespace-nowrap text-right text-[12px] text-ink/60">{lastDate}</Num>
       <button onClick={startReel} title="highlight reel: the ten biggest moments" className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-[12px] ${reel ? 'border-ink bg-ink text-bone' : 'border-ink/25 hover:bg-ink/5'}`}>
         {reel ? <>reel <Num>{reel.i + 1}/{reel.stops.length}</Num> · stop</> : 'reel'}
       </button>

@@ -1,9 +1,10 @@
 'use client'
 import { useMemo } from 'react'
 import dynamic from 'next/dynamic'
-import type { Frame, RunRecord } from '@/lib/types'
+import type { DecisionRow, RunRecord, YearRow } from '@/lib/types'
 import { frontierRank } from '@/lib/mock/agents'
 import { frameIndexAt, useStore } from '../state/store'
+import { slimFromRecord } from '../state/frames'
 import { Num, fmt } from './bits'
 import Emblem from './Emblem'
 import { frontierLabel } from './Chrome'
@@ -13,10 +14,17 @@ const CompareGlobe = dynamic(() => import('../world/CompareGlobe'), { ssr: false
 // one color per agent, never ember
 export const AGENT_COLORS = ['#1D1B19', '#5F7FC9', '#C9902F', '#3E9A92']
 
-function Race({ title, records, value, format, playhead }: { title: string; records: RunRecord[]; value: (f: Frame) => number; format: (n: number) => string; playhead: number }) {
+type Rows = { runId: string; years: YearRow[]; decisions: DecisionRow[] }
+
+// latest row at or before the scrubber
+const at = <T extends { tick: number }>(rows: T[], tick: number): T | undefined => { let best: T | undefined; for (const r of rows) { if (r.tick <= tick + 1e-6) best = r; else break } return best ?? rows[0] }
+
+// stat races read the slim yearly rows, so they cover the whole run even when frames are lazy
+function Race({ title, runs, value, format, playhead }: { title: string; runs: Rows[]; value: (y: YearRow) => number; format: (n: number) => string; playhead: number }) {
   const W = 196, H = 48
-  const t1 = Math.max(...records.map((r) => r.frames.at(-1)!.tick), 1)
-  const all = records.flatMap((r) => r.frames.map(value))
+  const t1 = Math.max(1, ...runs.map((r) => r.years.at(-1)?.tick ?? 0))
+  const all = runs.flatMap((r) => r.years.map(value))
+  if (!all.length) return null
   const lo = Math.min(...all), hi = Math.max(...all)
   const span = hi - lo || 1
   const y = (v: number) => H - 4 - ((v - lo) / span) * (H - 8)
@@ -26,47 +34,41 @@ function Race({ title, records, value, format, playhead }: { title: string; reco
       <div className="mb-0.5 flex justify-between text-[10px] uppercase tracking-[0.12em] text-ink/45"><span>{title}</span></div>
       <svg width={W} height={H} className="block overflow-visible">
         <line x1={x(playhead)} x2={x(playhead)} y1={0} y2={H} stroke="var(--ink)" strokeOpacity={0.2} />
-        {records.map((r, i) => {
-          const pts = r.frames.map((f) => `${x(f.tick)},${y(value(f))}`).join(' ')
-          const cur = r.frames[frameIndexAt(r.frames, playhead)]
+        {runs.map((r, i) => {
+          const cur = at(r.years, playhead)
           return (
             <g key={r.runId}>
-              <polyline points={pts} fill="none" stroke={AGENT_COLORS[i]} strokeWidth={1.8} strokeLinejoin="round" />
-              <circle cx={x(cur.tick)} cy={y(value(cur))} r={2.6} fill={AGENT_COLORS[i]} />
+              <polyline points={r.years.map((p) => `${x(p.tick)},${y(value(p))}`).join(' ')} fill="none" stroke={AGENT_COLORS[i]} strokeWidth={1.8} strokeLinejoin="round" />
+              {cur && <circle cx={x(cur.tick)} cy={y(value(cur))} r={2.6} fill={AGENT_COLORS[i]} />}
             </g>
           )
         })}
       </svg>
       <div className="mt-0.5 flex flex-wrap gap-x-2 text-[10px]">
-        {records.map((r, i) => <Num key={r.runId} style={{ color: AGENT_COLORS[i] }}>{format(value(r.frames[frameIndexAt(r.frames, playhead)]))}</Num>)}
+        {runs.map((r, i) => { const cur = at(r.years, playhead); return cur ? <Num key={r.runId} style={{ color: AGENT_COLORS[i] }}>{format(value(cur))}</Num> : null })}
       </div>
     </div>
   )
 }
 
-function DiffTable({ records, playhead }: { records: RunRecord[]; playhead: number }) {
+const BUDGET_KEYS = ['food', 'energy', 'education', 'space', 'security', 'welfare', 'research'] as const
+const BUDGET_COLORS = ['#6FAE7E', '#E0B97E', '#7F98D6', '#1D1B19', '#8D88A3', '#C27FA9', '#56AFA9']
+
+// the diff table reads the slim decision rows: the latest decision of each world at the scrubber
+function DiffTable({ runs, records, playhead }: { runs: Rows[]; records: RunRecord[]; playhead: number }) {
   const agents = useStore((s) => s.agents)
-  const frames = records.map((r) => r.frames[frameIndexAt(r.frames, playhead)])
-  const year = frames[0]?.date.slice(0, 4)
-  const rows: { label: string; cell: (f: Frame, r: RunRecord) => React.ReactNode }[] = [
-    { label: 'religion', cell: (f) => f.religionPolicy.replace('_', ' ') },
-    { label: 'school purpose', cell: (f) => <span className="italic">{f.schoolPolicy.purpose}</span> },
-    {
-      label: 'budget split', cell: (f) => (
-        <div>
-          <div className="flex h-2.5 w-full overflow-hidden rounded-full">
-            {(['food', 'energy', 'education', 'space', 'security', 'welfare', 'research'] as const).map((k, i) => <span key={k} title={`${k} ${fmt.pct(f.budget[k])}`} style={{ width: `${f.budget[k] * 100}%`, background: ['#6FAE7E', '#E0B97E', '#7F98D6', '#1D1B19', '#8D88A3', '#C27FA9', '#56AFA9'][i] }} />)}
-          </div>
-          <div className="mt-0.5 text-[10px] text-ink/55">space <Num>{fmt.pct(f.budget.space)}</Num> · food <Num>{fmt.pct(f.budget.food)}</Num> · welfare <Num>{fmt.pct(f.budget.welfare)}</Num></div>
-        </div>
-      ),
-    },
-    { label: 'laws enacted this year', cell: (f) => (f.decision?.laws.length ? f.decision.laws.map((l) => l.title).join(', ') : <span className="text-ink/40">none</span>) },
-    { label: 'cities founded', cell: (f) => (f.cities.length ? f.cities.map((c) => c.name).join(', ') : <span className="text-ink/40">none yet</span>) },
-  ]
+  const rows = runs.map((r) => ({ cur: at(r.decisions, playhead), cities: r.decisions.filter((d) => d.tick <= playhead + 1e-6).flatMap((d) => d.citiesFounded) }))
+  const year = rows.find((r) => r.cur)?.cur?.date.slice(0, 4)
+  if (!rows.some((r) => r.cur)) return <p className="text-[12px] text-ink/50">no decisions yet</p>
+  const cell = (label: string, f: (r: (typeof rows)[number]) => React.ReactNode) => (
+    <tr key={label} className="border-t border-ink/8 align-top">
+      <td className="py-1 pr-2 text-ink/55">{label}</td>
+      {rows.map((r, i) => <td key={runs[i].runId} className="px-2 py-1">{r.cur ? f(r) : <span className="text-ink/40">none yet</span>}</td>)}
+    </tr>
+  )
   return (
     <div className="min-w-0 overflow-x-auto">
-      <div className="mb-1 text-[10px] uppercase tracking-[0.12em] text-ink/45">decisions in <Num>{year}</Num></div>
+      <div className="mb-1 text-[10px] uppercase tracking-[0.12em] text-ink/45">latest decisions as of <Num>{year}</Num></div>
       <table className="w-full border-collapse text-[11.5px]">
         <thead>
           <tr>
@@ -75,12 +77,18 @@ function DiffTable({ records, playhead }: { records: RunRecord[]; playhead: numb
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.label} className="border-t border-ink/8 align-top">
-              <td className="py-1 pr-2 text-ink/55">{row.label}</td>
-              {records.map((r, i) => <td key={r.runId} className="px-2 py-1">{row.cell(frames[i], r)}</td>)}
-            </tr>
+          {cell('religion', (r) => r.cur!.religionPolicy.replace('_', ' '))}
+          {cell('school purpose', (r) => <span className="italic">{r.cur!.schoolPurpose}</span>)}
+          {cell('budget split', (r) => (
+            <div>
+              <div className="flex h-2.5 w-full overflow-hidden rounded-full">
+                {BUDGET_KEYS.map((k, i) => <span key={k} title={`${k} ${fmt.pct(r.cur!.budget[k])}`} style={{ width: `${r.cur!.budget[k] * 100}%`, background: BUDGET_COLORS[i] }} />)}
+              </div>
+              <div className="mt-0.5 text-[10px] text-ink/55">space <Num>{fmt.pct(r.cur!.budget.space)}</Num> · food <Num>{fmt.pct(r.cur!.budget.food)}</Num> · welfare <Num>{fmt.pct(r.cur!.budget.welfare)}</Num></div>
+            </div>
           ))}
+          {cell('laws enacted', (r) => (r.cur!.lawsEnacted.length ? r.cur!.lawsEnacted.join(', ') : <span className="text-ink/40">none</span>))}
+          {cell('cities founded', (r) => (r.cities.length ? r.cities.join(', ') : <span className="text-ink/40">none yet</span>))}
         </tbody>
       </table>
     </div>
@@ -94,6 +102,8 @@ export default function CompareView() {
   const agents = useStore((s) => s.agents)
   const focus = useStore((s) => s.compareFocus)
   const records = useMemo(() => compare?.records ?? [], [compare])
+  const slim = useStore((s) => s.slim)
+  const runs: Rows[] = useMemo(() => records.map((r) => { const m = slim[r.runId] ?? slimFromRecord(r); return { runId: r.runId, years: m.years, decisions: m.decisions } }), [records, slim])
   if (!compare) return null
   const n = records.length
   const grid = n <= 2 ? 'grid-cols-2 grid-rows-1' : 'grid-cols-2 grid-rows-2'
@@ -125,13 +135,13 @@ export default function CompareView() {
         </div>
         <div className="scroll-thin flex min-h-0 gap-5 overflow-auto">
         <div className="grid shrink-0 grid-cols-3 gap-x-4 gap-y-2">
-          <Race title="population" records={records} value={(f) => f.globalPopulation} format={fmt.people} playhead={playhead} />
-          <Race title="period life exp." records={records} value={(f) => f.globalPeriodLifeExpectancy} format={(v) => `${v.toFixed(1)}y`} playhead={playhead} />
-          <Race title="frontier stage" records={records} value={(f) => frontierRank(f.frontier) + f.moonProgress * 0.9} format={(v) => `${v.toFixed(1)}`} playhead={playhead} />
-          <Race title="approval" records={records} value={(f) => f.humanCost.approval} format={fmt.pct} playhead={playhead} />
-          <Race title="deaths" records={records} value={(f) => f.humanCost.deaths} format={fmt.people} playhead={playhead} />
+          <Race title="population" runs={runs} value={(y) => y.globalPopulation} format={fmt.people} playhead={playhead} />
+          <Race title="period life exp." runs={runs} value={(y) => y.globalPeriodLifeExpectancy} format={(v) => `${v.toFixed(1)}y`} playhead={playhead} />
+          <Race title="frontier stage" runs={runs} value={(y) => frontierRank(y.frontier) + y.moonProgress * 0.9} format={(v) => `${v.toFixed(1)}`} playhead={playhead} />
+          <Race title="approval" runs={runs} value={(y) => y.approval} format={fmt.pct} playhead={playhead} />
+          <Race title="deaths" runs={runs} value={(y) => y.deaths} format={fmt.people} playhead={playhead} />
         </div>
-        <div className="min-w-[22rem] flex-1"><DiffTable records={records} playhead={playhead} /></div>
+        <div className="min-w-[22rem] flex-1"><DiffTable runs={runs} records={records} playhead={playhead} /></div>
         </div>
       </div>
     </div>

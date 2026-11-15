@@ -15,7 +15,7 @@ export function normalizeRecord(rec: RunRecord): RunRecord {
   }
 }
 
-function normalizeFrame(f: Frame): Frame {
+export function normalizeFrame(f: Frame): Frame {
   const regions: Region[] = (f.regions ?? []).map((r) => ({ ...r, crowds: r.crowds ?? [], whys: r.whys ?? [], approval: r.approval ?? 0, lifeExpectancy: r.lifeExpectancy ?? 0, periodLifeExpectancy: r.periodLifeExpectancy ?? 0, fertility: r.fertility ?? 0, diseaseBurden: r.diseaseBurden ?? 0, travelHoursToNearest: r.travelHoursToNearest ?? 0, provenance: r.provenance ?? {} }))
   const pop = regions.reduce((a, r) => a + (r.population ?? 0), 0)
   const citizens: Citizen[] = (f.citizens ?? []).map((c) => {

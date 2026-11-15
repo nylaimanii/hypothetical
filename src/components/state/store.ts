@@ -1,7 +1,7 @@
 'use client'
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import type { Agent, BaselineFrame, Divergence, Frame, Override, RunRecord, RunSummary, WorldEvent, Layer } from '@/lib/types'
+import type { Agent, BaselineFrame, DecisionRow, Divergence, Frame, Override, RunRecord, RunSummary, WorldEvent, Layer, YearRow } from '@/lib/types'
 import { mockRuns, stageFor } from '@/lib/mock/run'
 import { moodFrom } from '@/lib/mock/mood'
 import { normalizeRecord } from './normalize'
@@ -29,6 +29,8 @@ export type Juice = { id: number; kind: WorldEvent['kind']; regionId?: string; s
 // a camera shot: a region or the core, asked for by the director, the feed, or the user
 export type ShotRequest = { id: number; target: 'region' | 'core'; regionId?: string; force?: boolean }
 export type Caption = { id: number; parts: { t: string; mono?: boolean }[]; danger?: boolean }
+// what is known about a run without its frames. lazy runs load frames around the scrubber
+export type SlimMeta = { firstTick: number; lastTick: number; years: YearRow[]; decisions: DecisionRow[]; lazy: boolean }
 export type Panel = 'offworld' | 'longevity' | 'agents' | 'hall' | null
 export type Compare = { agentIds: string[]; records: RunRecord[]; divergences: Divergence[] }
 // a highlight reel: the top events by significance, played back to back
@@ -71,6 +73,7 @@ type State = {
   compare: Compare | null
   compareFocus: number | null
   reel: Reel | null
+  slim: Record<string, SlimMeta>
   setRecord: (r: RunRecord, source: Source) => void
   replaceRecord: (r: RunRecord) => void
   setRuns: (runs: RunSummary[], src: 'mock' | 'api') => void
@@ -103,6 +106,8 @@ type State = {
   setCompare: (c: Compare | null) => void
   setCompareFocus: (i: number | null) => void
   setReel: (r: Reel | null) => void
+  setSlim: (runId: string, meta: SlimMeta) => void
+  mergeFrames: (runId: string, frames: Frame[]) => void
 }
 
 let juiceId = 1
@@ -144,6 +149,7 @@ export const useStore = create<State>((set) => ({
   compare: null,
   compareFocus: null,
   reel: null,
+  slim: {},
   setRecord: (raw, source) => set((s) => { const record = source === 'mock' ? raw : normalizeRecord(raw); return { record, source, playhead: source === 'live' ? (record.frames.at(-1)?.tick ?? 0) : 0, selection: null, overrides: s.record.runId === record.runId ? s.overrides : [] } }),
   replaceRecord: (record) => set((s) => ({ record: s.source === 'mock' ? record : normalizeRecord(record) })),
   setRuns: (runs, runsSource) => set({ runs, runsSource }),
@@ -180,6 +186,19 @@ export const useStore = create<State>((set) => ({
   setCompare: (compare) => set({ compare, compareFocus: null, selection: null, panel: null }),
   setCompareFocus: (compareFocus) => set({ compareFocus }),
   setReel: (reel) => set({ reel }),
+  setSlim: (runId, meta) => set((s) => ({ slim: { ...s.slim, [runId]: meta } })),
+  mergeFrames: (runId, frames) => set((s) => {
+    if (!frames.length) return {}
+    const merge = (rec: RunRecord): RunRecord => {
+      const byTick = new Map(rec.frames.map((f) => [f.tick, f]))
+      for (const f of frames) byTick.set(f.tick, f)
+      return { ...rec, frames: [...byTick.values()].sort((a, b) => a.tick - b.tick) }
+    }
+    const out: Partial<State> = {}
+    if (s.record.runId === runId) out.record = merge(s.record)
+    if (s.compare?.records.some((r) => r.runId === runId)) out.compare = { ...s.compare, records: s.compare.records.map((r) => (r.runId === runId ? merge(r) : r)) }
+    return out
+  }),
 }))
 
 export function frameIndexAt(frames: Frame[], tick: number) {

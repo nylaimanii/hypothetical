@@ -9,6 +9,7 @@ import { Caption, EventFeed, Intro, useIntroGate, useSound } from './Extras'
 import { stopReel } from './Timeline'
 import { loadAgents, openRun, startCompare } from './worlds'
 import Chronicle from './Chronicle'
+import { ensureWindow, needsWindow } from '../state/frames'
 import { AgentsPanel, HallPanel } from './Agents'
 import CompareView from './Compare'
 import Timeline from './Timeline'
@@ -30,7 +31,8 @@ function usePlayback() {
       last = now
       const s = useStore.getState()
       if (s.playing) {
-        const end = s.record.frames.at(-1)!.tick
+        const lastOf = (r: typeof s.record) => { const m = s.slim[r.runId]; return m?.lazy ? m.lastTick : r.frames.at(-1)!.tick }
+        const end = s.compare ? Math.max(...s.compare.records.map(lastOf)) : lastOf(s.record)
         const next = s.playhead + dt * TICKS_PER_SECOND * s.speed
         if (next >= end) { s.setPlayhead(end); if (s.source !== 'live') s.setPlaying(false) } else s.setPlayhead(next)
       }
@@ -113,11 +115,11 @@ function useUrlState() {
       const s = useStore.getState()
       if (cmp) {
         const ids = cmp.split(',').filter(Boolean)
-        if (s.compare?.agentIds.join() !== ids.join()) await startCompare(ids)
+        if (s.compare?.agentIds.join() !== ids.join()) await startCompare(ids, t ?? 0)
       } else {
         if (s.compare) s.setCompare(null)
         const run = q.get('run')
-        if (run && run !== useStore.getState().record.runId) await openRun(run)
+        if (run && run !== useStore.getState().record.runId) await openRun(run, t)
       }
       if (t !== undefined && isFinite(t)) useStore.getState().setPlayhead(t)
       setTimeout(() => { applying.current = false }, 50)
@@ -137,6 +139,27 @@ function useUrlState() {
       if (now - lastWrite > 400) { lastWrite = now; window.history.replaceState(null, '', url) }
     })
     return () => { window.removeEventListener('popstate', onPop); unsub() }
+  }, [])
+}
+
+// long runs: keep about 5 years of frames loaded either side of the scrubber, per world on screen
+function useLazyFrames() {
+  useEffect(() => {
+    const check = () => {
+      const s = useStore.getState()
+      const ids = s.compare ? s.compare.records.map((r) => r.runId) : [s.record.runId]
+      for (const id of ids) if (needsWindow(id, s.playhead)) ensureWindow(id, s.playhead)
+    }
+    let last = -1
+    const unsub = useStore.subscribe((s) => {
+      // only look again when the scrubber has moved a few ticks or the worlds changed
+      const key = Math.round(s.playhead / 3)
+      if (key === last) return
+      last = key
+      check()
+    })
+    check()
+    return unsub
   }, [])
 }
 
@@ -169,6 +192,7 @@ export default function App() {
   useIntroGate()
   useReel()
   useUrlState()
+  useLazyFrames()
   useEffect(() => { loadAgents() }, [])
   const compare = useStore((s) => s.compare)
   const [leftTab, setLeftTab] = useState<'runs' | 'chronicle'>('runs')
