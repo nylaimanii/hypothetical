@@ -2,6 +2,7 @@
 // templates, no llm. the voice is dry and deadpan; satire aims at behaviors and institutions, never at who people are.
 import type { Emotion, Frame, Law, Precedent, RunRecord, WorldEvent } from '@/lib/types'
 import { EMOTIONS } from '@/lib/mock/mood'
+import { rosterAt } from '../state/store'
 
 export type Story = {
   headline: string
@@ -129,7 +130,7 @@ export function buildIssue(rec: RunRecord, yearIndex: number): Issue | null {
   }
   const [lead, ...rest] = stories.length ? stories : [fallback]
   // the public mood: average feelings across everyone this year
-  const cits = last.citizens
+  const cits = rosterAt(rec, last.tick)
   const avg = Object.fromEntries(EMOTIONS.map((e) => [e, cits.length ? cits.reduce((a, c) => a + c.mood[e], 0) / cits.length : 0])) as Record<Emotion, number>
   const top = [...EMOTIONS].sort((a, b) => avg[b] - avg[a]).slice(0, 3).map((emotion) => ({ emotion, value: avg[emotion] }))
   const MOOD: Partial<Record<Emotion, string>> = {

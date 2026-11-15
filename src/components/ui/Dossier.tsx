@@ -1,4 +1,5 @@
 'use client'
+import { rosterAt } from '../state/store'
 import { ReasoningLines, layerSentence, useLinks, whyDoing } from './chains'
 import { todayOf } from '../world/city/day'
 import { localHour, utcHourOf, worldDate } from '../world/time'
@@ -538,7 +539,7 @@ function EventDossier({ tick, index, record }: { tick: number; index: number; re
   const e = f?.newEvents[index]
   if (!f || !e) return null
   const r = f.regions.find((x) => x.id === e.regionId)
-  const hit = f.citizens.filter((c) => c.regionId === e.regionId && c.lifeEvents.some((l) => l.tick === tick))
+  const hit = rosterAt(record, f.tick).filter((c) => c.regionId === e.regionId && c.lifeEvents.some((l) => l.tick === tick))
   return (
     <Drawer kicker={`event · ${e.kind} · ${f.date}`} title={e.text}>
       <Section title="what happened">

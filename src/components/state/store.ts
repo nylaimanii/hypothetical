@@ -5,6 +5,7 @@ import type { Agent, BaselineFrame, DecisionRow, Divergence, Frame, Override, Ru
 import { mockRuns, stageFor } from '@/lib/mock/run'
 import { moodFrom } from '@/lib/mock/mood'
 import { normalizeRecord } from './normalize'
+import { citizensAt, requirementsAt } from '@/lib/sim/citizens-replay'
 
 export type Selection =
   | { kind: 'pip'; id: string }
@@ -302,7 +303,7 @@ export function baselineAsFrame(rec: RunRecord, idx: number): Frame {
     const br = b?.regions.find((x) => x.id === r.id)
     return br ? { ...r, ...br } : r
   })
-  const citizens = f0.citizens.map((c) => {
+  const citizens = withRoster(rec, f0).citizens.map((c) => {
     const reg = regions.find((r) => r.id === c.regionId)
     return reg ? { ...c, mood: moodFrom(Math.max(0, Math.min(1, 0.85 - reg.unrest * 0.9 + ((c.personalitySeed % 100) / 100 - 0.5) * 0.3))) } : c
   })
@@ -310,11 +311,28 @@ export function baselineAsFrame(rec: RunRecord, idx: number): Frame {
   return { ...f0, tick: f.tick, date: f.date, regions, citizens, moonProgress: progress, moonStage: stageFor(progress), status: b?.status ?? 'alive', newEvents: [], decision: undefined }
 }
 
+// B stores the citizen roster as keyframes every 5 years plus deltas. a frame with a delta gets its full
+// roster (and its requirements' text) rebuilt by B's citizensAt/requirementsAt, cached per run and tick while scrubbing.
+// frames that carry a full roster (keyframes, mock worlds, older records) pass straight through
+const rosterCache = new Map<string, Frame>()
+type DeltaFrame = Frame & { citizenDelta?: unknown }
+export function withRoster(record: RunRecord, frame: Frame): Frame {
+  if (!frame || !(frame as DeltaFrame).citizenDelta) return frame
+  const key = `${record.runId}:${frame.tick}:${record.frames.length}`
+  const hit = rosterCache.get(key)
+  if (hit) return hit
+  const full = { ...frame, citizens: citizensAt(record, frame.tick), requirements: requirementsAt(record, frame.tick) }
+  rosterCache.set(key, full)
+  if (rosterCache.size > 64) rosterCache.delete(rosterCache.keys().next().value!)
+  return full
+}
+export const rosterAt = (record: RunRecord, tick: number) => withRoster(record, record.frames[frameIndexAt(record.frames, tick)]).citizens
+
 // in compare mode the focused globe's world drives dossiers and panels
 export function useCurrentFrame() {
   const record = useStore((s) => (s.compare && s.compareFocus !== null ? s.compare.records[s.compareFocus] ?? s.record : s.compare ? s.compare.records[0] ?? s.record : s.record))
   const mode = useStore((s) => (s.compare ? 'ai' : s.mode))
   const idx = useStore((s) => frameIndexAt(record.frames, s.playhead))
-  const frame = useMemo(() => (mode === 'baseline' ? baselineAsFrame(record, idx) : record.frames[idx]), [record, idx, mode])
+  const frame = useMemo(() => (mode === 'baseline' ? baselineAsFrame(record, idx) : withRoster(record, record.frames[idx])), [record, idx, mode])
   return { frame, idx, record, mode }
 }
