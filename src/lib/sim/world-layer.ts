@@ -267,7 +267,8 @@ export function localLife(w: World, c: Citizen) {
   const country = w.countries.find(k => k.id === cc.countryId)
   const rs = w.regions.find(r => r.r.id === c.regionId)!
   const workplace = localWorkplace(w, c)
-  if (workplace !== 'none' && workplace !== 'school' && !JOB_BY_WORKPLACE[workplace].includes(c.job)) {
+  // adults get a job title that matches their workplace (a school's adults are teachers)
+  if (workplace !== 'none' && (c.age >= 18 || workplace !== 'school') && !JOB_BY_WORKPLACE[workplace].includes(c.job)) {
     const jobs = JOB_BY_WORKPLACE[workplace]
     c.job = jobs[Math.floor(unit(c.personalitySeed, `job:${workplace}`) * jobs.length) % jobs.length]
   }
