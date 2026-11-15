@@ -102,7 +102,7 @@ export async function decideLlm(p: Person, env: MonthEnv, question: string, opts
   const lessonText = lessons.length
     ? `things people who lived before you learned (wisdom you half remember; your temperament decides how much you trust it):\n${lessons.map(l => `[${l.id}] ${l.rule} (they chose: ${l.choice}; it led to: ${l.ledTo})${l.verified ? '' : ' (from an older world, unconfirmed)'}`).join('\n')}`
     : 'no advice from earlier lives applies here.'
-  const user = `${who}\n\n${lessonText}\n\ndecision: ${question}\noptions:\n${opts.map(o => `- ${o.id}: ${o.label}`).join('\n')}\n\nchoose one option id. reasoning: one short sentence in your own voice. thought: one journal line, first person, lowercase. lessonApplied: the id of the lesson that shaped your choice, or none.`
+  const user = `${who}\n\n${lessonText}\n\ndecision: ${question}\noptions:\n${opts.map(o => `- ${o.id}: ${o.label}`).join('\n')}\n\nchoose one option id. reasoning: why, in a few plain words, the way you'd say it to a friend ("can't afford school and the rent"). thought: one line from your private diary that day. plain and specific, the way real people write: names, money, your body, the place, what happened ("long shift. feet hurt. kofi's birthday today."). no big statements, no plans, no "i will", nothing inspirational. lessonApplied: the id of the lesson that shaped your choice, or none.`
   const schema = {
     type: 'object',
     properties: {

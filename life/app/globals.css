@@ -1,0 +1,36 @@
+/* bone + ink, fraunces for words, jetbrains mono for every number. ember only for death and danger */
+:root {
+  --bone: #efe8da;
+  --bone-deep: #e2d8c4;
+  --ink: #1d1b19;
+  --ink-soft: color-mix(in srgb, var(--ink) 55%, transparent);
+  --line: color-mix(in srgb, var(--ink) 14%, transparent);
+  --ember: #e4572e;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; overflow: hidden; }
+body { background: var(--bone); color: var(--ink); font-family: var(--font-fraunces), Georgia, serif; -webkit-font-smoothing: antialiased; }
+.mono { font-family: var(--font-mono), ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+
+.chip {
+  background: color-mix(in srgb, var(--bone) 92%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: 0 8px 24px -14px rgba(29, 27, 25, 0.4);
+}
+.icon-btn { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 999px; opacity: 0.55; transition: opacity 0.2s, background 0.2s; }
+.icon-btn:hover { opacity: 0.9; }
+.icon-btn[aria-pressed="true"] { opacity: 1; background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.icon-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+@keyframes caption-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.caption-in { animation: caption-in 0.6s ease-out both; }
+@keyframes fade-2s { 0% { opacity: 0; } 15% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+.feeling { animation: fade-2s 2s ease-out both; }
+@keyframes card-in { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: none; } }
+.card-in { animation: card-in 1.6s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .caption-in, .feeling, .card-in { animation: none; }
+}

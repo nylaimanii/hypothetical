@@ -236,7 +236,11 @@ export function stepMonth(p: Person, ctx: StepCtx): MonthSnap {
   const remit = p.habits.has('remits') ? income * R.remittanceShare : 0
   if (age >= 16) {
     // savings below zero is debt, capped at two years of median income (ESTIMATE: informal lenders stop there)
-    p.savings = Math.max(-median * 24, p.savings + income * (p.habits.has('saves') ? Math.max(p.saveRate, 0.1) : p.saveRate) - Math.max(0, costs - income) * 0.5 - remit)
+    // the family covers students and young people still living at home. otherwise a shortfall is mostly eaten
+    // (people cut back; that is the hunger above), and only a slice becomes debt (ESTIMATE 15%)
+    const covered = p.inSchool || (age < 22 && p.home === 'family_home')
+    const shortfall = covered ? 0 : Math.max(0, costs - income) * 0.15
+    p.savings = Math.max(-median * 24, p.savings + income * (p.habits.has('saves') ? Math.max(p.saveRate, 0.1) : p.saveRate) - shortfall - remit)
     if (p.retired) p.savings = Math.max(-median * 24, p.savings - median * 0.25 * (p.savings > 0 ? 1 : 0.3)) // living on savings and family (ESTIMATE)
     if (remit) p.help += 0.3
   }

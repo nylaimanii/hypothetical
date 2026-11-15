@@ -72,7 +72,17 @@ export function createPerson(world: WorldEnv, seed: number): Person {
     kin: [
       { id: 'mother', name: mother.given, relation: 'mother', sex: 'female', bornTick: -Math.round(motherAge * 12), bond: 0.8 },
       ...(fatherPresent ? [{ id: 'father', name: father.given, relation: 'father' as const, sex: 'male' as const, bornTick: -Math.round((motherAge + 3 + 3 * normal(r)) * 12), bond: 0.65 }] : []),
-      ...Array.from({ length: olderSibs }, (_, i) => { const s: Sex = r() < 0.5 ? 'female' : 'male'; return { id: `sib${i + 1}`, name: nameFor(r, regionId, s).given, relation: 'sibling' as const, sex: s, bornTick: -Math.round((2 + i * 2.5 + r()) * 12), bond: 0.6 } }),
+      ...(() => {
+        // siblings never share a name with each other or the chosen person
+        const taken = new Set([n.given, mother.given, father.given])
+        return Array.from({ length: olderSibs }, (_, i) => {
+          const s: Sex = r() < 0.5 ? 'female' : 'male'
+          let name = nameFor(r, regionId, s).given
+          for (let k = 0; k < 6 && taken.has(name); k++) name = nameFor(r, regionId, s).given
+          taken.add(name)
+          return { id: `sib${i + 1}`, name, relation: 'sibling' as const, sex: s, bornTick: -Math.round((2 + i * 2.5 + r()) * 12), bond: 0.6 }
+        })
+      })(),
     ],
     migrant: false, pendingBirthTick: null, widowedAt: null, griefUntil: 0,
     help: 0, harm: 0, meaningSum: 0, adultMonths: 0, healthyMonths: 0, valenceSum: 0, relSum: 0, months: 0, lastIncome: 0,
@@ -283,24 +293,48 @@ function parentReason(p: Person, o: Option): string {
 const short = (label: string) => label.replace(/^(have |take |keep |join |go |start |stay |become |work |move |retire )/, m => m).split(/[,(:]/)[0].trim().toLowerCase()
 
 // ---------- words ----------
+// the journal: one line a year in their voice. plain and specific, like a real diary ("long shift. feet hurt."),
+// built from what actually happened that year. years with a milestone use the llm's diary line instead
 function journalLine(p: Person, ys: MonthSnap[], ms: Milestone[], t: number): JournalLine {
   const year = 2026 + Math.floor((t - 2 + 10) / 12)
   const age = Math.floor(t / 12)
   const m = ms.filter(x => x.tick > t - 12 && x.tick <= t && x.thought).pop()
   if (m) return { year, age, text: m.thought, byLlm: true }
   const r = luck(p, 'journal')
-  const ev = p.events.filter(e => e.tick > t - 12 && e.tick <= t && e.severity >= 0.5 && e.kind !== 'milestone').pop()
-  const hungry = ys.filter(s => s.hunger).length
-  const v = ys.reduce((a, s) => a + s.valence, 0) / Math.max(1, ys.length)
   const pick = (xs: string[]) => xs[Math.floor(r() * xs.length)]
+  const evs = p.events.filter(e => e.tick > t - 12 && e.tick <= t && e.kind !== 'milestone' && e.kind !== 'death' && e.kind !== 'birth')
+  const s = ys[ys.length - 1]
+  const hungry = ys.filter(x => x.hunger).length
+  const inc = Math.round(ys.reduce((a, x) => a + x.income, 0) / Math.max(1, ys.length))
+  const city = p.place.city.toLowerCase()
+  const sib = p.kin.find(k => k.relation === 'sibling' && k.diedTick === undefined)?.name
+  const death = evs.find(e => / died/.test(e.text))
+  const born = evs.find(e => /was born$/.test(e.text))
+  const moved = evs.find(e => /^moved from/.test(e.text))
+  const lostHome = evs.find(e => /home was lost/.test(e.text))
+  const job = evs.find(e => /^(first job|new job|found work):/.test(e.text))
   let text: string
-  if (age < 4) text = pick(['(too young to write. the family kept count.)', '(a small year. they learned to walk and to laugh.)'])
-  else if (ev) text = /died/.test(ev.text) ? pick([`${ev.text.replace(/^(\S+) died.*/, '$1')} is gone. the house is too quiet.`, 'i keep setting a place that nobody sits at.']) : /born/.test(ev.text) ? pick(['a new small person in the house. no sleep, all joy.', 'i held the baby all night.']) : /moved/.test(ev.text) ? pick(['new streets, new names. i miss the old ones.', 'we started over this year.']) : `${ev.text}.`
-  else if (hungry >= 3) text = pick(['we ate less again this year.', 'the market was half empty most months.'])
-  else if (age < 16) text = pick(['school, chores, friends on the street.', 'i grew taller. my mother says so.', 'nothing big. we played until dark.'])
-  else if (p.retired) text = pick(['slow mornings. i like them.', 'the grandchildren visited.', 'i walk the old streets and remember.'])
-  else text = v > 0.6 ? pick(['a good year. tired, but good.', 'work, home, people i love. enough.']) : v < 0.4 ? pick(['a heavy year. i kept going.', 'i do not know how much longer i can do this.']) : pick(['work and more work.', 'an ordinary year. those count too.'])
-  return { year, age, text: text.toLowerCase(), byLlm: false }
+  if (age < 6) text = '(too young to write.)'
+  else if (death) {
+    const who = death.text.replace(/ died.*/, '')
+    const rel = /my mother/.test(death.text) ? 'mum' : /my father/.test(death.text) ? 'dad' : /my partner/.test(death.text) ? who : /my child/.test(death.text) ? who : who
+    const kinOf = p.kin.find(k => k.name === who)
+    const pos = kinOf?.sex === 'female' ? 'her' : kinOf?.sex === 'male' ? 'his' : 'their'
+    text = pick([`${rel} died. ${who === rel ? '' : `${who}. `}everyone came to the house.`, `buried ${rel === who ? who : `${rel}`}. back at work a week later.`, `${rel} is gone. still have ${pos} coat.`])
+  } else if (lostHome) text = pick([`lost the house. staying with ${sib ?? 'neighbors'} for now.`, 'the house is gone. slept at the church hall.'])
+  else if (born) text = pick([`${born.text.replace(/ was born$/, '')} was born. haven't slept.`, `${born.text.replace(/ was born$/, '')} is here. tiny. loud.`])
+  else if (moved) text = pick([`moved to ${city}. don't know anyone yet.`, `new place in ${city}. the rent is too much.`])
+  else if (job) text = `${job.text.replace(/^(first job|new job|found work): /, 'started as ')}.${inc ? ` $${inc} a month.` : ''}`
+  else if (hungry >= 3) text = pick(['ate once a day most of this year.', 'rice costs twice what it did. we eat less.', 'the market stalls were half empty again.'])
+  else if (age < 13) text = pick([`school. ${sib ? `${sib} walks me there.` : 'walked there alone.'}`, 'school, then chores. played football in the street after.', `${sib ? `${sib} and i fought most of the year.` : 'school. nothing much.'}`])
+  else if (s && (s.activity === 'studying' || (s.activity === 'school' && age >= 18))) text = pick([`classes all year. ${p.path === 'nursing' ? 'night shifts at the ward for practice.' : p.path === 'trade' ? 'hands are all cuts.' : 'library till late.'}`, 'exams in june. barely slept.', `${p.path ?? 'school'}. ${sib ? `${sib} sends money sometimes.` : 'money is tight.'}`])
+  else if (age < 18) text = pick(['school. exams soon.', `helped at the market on weekends. ${city} is so hot this year.`, 'mostly school and friends.'])
+  else if (p.retired) {
+    const gk = p.kin.filter(k => k.relation === 'grandchild' && k.diedTick === undefined)
+    text = gk.length ? pick([`${gk[0].name} came over on sunday.`, 'walked to the square most mornings. knees bad.']) : pick(['walked to the square most mornings. knees bad.', 'quiet year. radio, tea, the neighbors.'])
+  } else if (s?.job) text = pick([`${s.job}. $${inc} a month. tired.`, `long year at work. ${s.health < 0.6 ? 'back hurts.' : 'fine.'}`, `${s.job} still. ${s.savings < 0 ? `owe $${Math.round(-s.savings)}.` : `$${Math.round(s.savings)} saved.`}`])
+  else text = pick(['no work most of the year.', 'looked for work. nothing.'])
+  return { year, age, text: text.replace(/\s+/g, ' ').trim().toLowerCase(), byLlm: false }
 }
 
 // ---------- the whole thing ----------

@@ -1,0 +1,143 @@
+[
+ {
+  "lifeId": "v2-off-a-life-1",
+  "worldId": "v2-off-a",
+  "lifeNo": 1,
+  "name": "emeka diallo",
+  "sex": "male",
+  "look": {
+   "skinTone": 8,
+   "hair": "buzz",
+   "hairColor": "black",
+   "adultHeightCm": 173.1,
+   "build": "slim"
+  },
+  "birthplace": {
+   "cityId": "luanda",
+   "city": "Luanda",
+   "countryId": "AGO",
+   "country": "Angola",
+   "regionId": "ssa",
+   "lat": -8.84,
+   "lon": 13.23,
+   "fromTick": 0
+  },
+  "deathTick": 1089,
+  "deathAge": 90.8,
+  "deathCause": "complications of diabetes",
+  "epitaph": "emeka diallo · 2026–2117 · luanda · care worker",
+  "status": "done",
+  "score": 0.6934,
+  "twinScore": 0.529,
+  "parts": {
+   "healthyYears": 0.8506,
+   "relationships": 0.519,
+   "contribution": 0.8139,
+   "meaning": 0.6723,
+   "wellbeing": 0.5821
+  },
+  "lastCity": "Luanda",
+  "job": null,
+  "kids": 0,
+  "lessonsLeft": [
+   "choose activities that strengthen your body and community instead of those that weaken them",
+   "when grief strikes, share the burden by helping someone else who suffers",
+   "listen to your body and see a professional before a small problem becomes a big one"
+  ],
+  "createdAt": "2026-11-15T23:25:04.260Z"
+ },
+ {
+  "lifeId": "v2-off-a-life-2",
+  "worldId": "v2-off-a",
+  "lifeNo": 2,
+  "name": "jabari diallo",
+  "sex": "male",
+  "look": {
+   "skinTone": 8,
+   "hair": "short_coily",
+   "hairColor": "black",
+   "adultHeightCm": 151.2,
+   "build": "slim"
+  },
+  "birthplace": {
+   "cityId": "dar_es_salaam",
+   "city": "Dar es Salaam",
+   "countryId": "TZA",
+   "country": "Tanzania",
+   "regionId": "ssa",
+   "lat": -6.79,
+   "lon": 39.21,
+   "fromTick": 0
+  },
+  "deathTick": 1193,
+  "deathAge": 99.4,
+  "deathCause": "heart disease",
+  "epitaph": "jabari diallo · 2026–2126 · dar es salaam · technician",
+  "status": "done",
+  "score": 0.705,
+  "twinScore": 0.6158,
+  "parts": {
+   "healthyYears": 0.9053,
+   "relationships": 0.5128,
+   "contribution": 0.8022,
+   "meaning": 0.6634,
+   "wellbeing": 0.6034
+  },
+  "lastCity": "Dar es Salaam",
+  "job": null,
+  "kids": 0,
+  "lessonsLeft": [
+   "maintain at least one close friend through every busy decade",
+   "listen to your body and get checkups before small problems become big ones",
+   "turn grief into service for those who are hurting"
+  ],
+  "createdAt": "2026-11-15T23:27:29.675Z"
+ },
+ {
+  "lifeId": "v2-off-a-life-3",
+  "worldId": "v2-off-a",
+  "lifeNo": 3,
+  "name": "wanjiru abebe",
+  "sex": "female",
+  "look": {
+   "skinTone": 9,
+   "hair": "braids",
+   "hairColor": "black",
+   "adultHeightCm": 150.9,
+   "build": "slim"
+  },
+  "birthplace": {
+   "cityId": "antananarivo",
+   "city": "Antananarivo",
+   "countryId": "MDG",
+   "country": "Madagascar",
+   "regionId": "ssa",
+   "lat": -18.88,
+   "lon": 47.51,
+   "fromTick": 0
+  },
+  "deathTick": 1020,
+  "deathAge": 85,
+  "deathCause": "heart disease",
+  "epitaph": "wanjiru abebe · 2026–2111 · antananarivo · care worker",
+  "status": "done",
+  "score": 0.6721,
+  "twinScore": 0.507,
+  "parts": {
+   "healthyYears": 0.8023,
+   "relationships": 0.5058,
+   "contribution": 0.82,
+   "meaning": 0.674,
+   "wellbeing": 0.5328
+  },
+  "lastCity": "Antananarivo",
+  "job": null,
+  "kids": 0,
+  "lessonsLeft": [
+   "choose activities that strengthen your body and community instead of those that weaken them",
+   "always set aside a small, consistent portion of income for future needs",
+   "when grief or hardship strikes, share the burden by helping someone else who suffers"
+  ],
+  "createdAt": "2026-11-15T23:30:05.953Z"
+ }
+]

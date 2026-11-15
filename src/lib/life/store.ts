@@ -9,11 +9,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { LifeRecord, LifeSummary } from './types'
 
+// statically scoped paths (literal segments), so the life site's build traces only data/lives, not the whole repo
 export function livesRoot(): string {
   if (process.env.LIFE_DATA_DIR) return process.env.LIFE_DATA_DIR
-  const here = process.cwd()
-  const repo = path.basename(here) === 'life' && fs.existsSync(path.join(here, '..', 'data')) ? path.join(here, '..') : here
-  return path.join(repo, 'data', 'lives')
+  return path.basename(process.cwd()) === 'life' ? path.join(process.cwd(), '..', 'data', 'lives') : path.join(process.cwd(), 'data', 'lives')
 }
 export const livesFile = (...parts: string[]) => path.join(livesRoot(), ...parts)
 
