@@ -6,9 +6,6 @@ import '../src/lib/evolve/usage'
 import { evolve, control } from '../src/lib/evolve/evolve'
 import { startCommands } from '../src/lib/notify/commands'
 import { arg } from './args'
-import { spawn } from 'node:child_process'
-import fs from 'node:fs'
-import path from 'node:path'
 
 async function main() {
   const gensArg = arg('gens')
@@ -26,14 +23,12 @@ async function main() {
   } finally {
     stopCommands()
   }
-  // a new sim version landed: this process stopped at a generation boundary. start a fresh one on the new code,
-  // still under caffeinate so the mac can't sleep, appending to the same log
+  // a new sim version was pushed: this process stopped at a generation boundary. exit 75 so scripts/run-evolve.sh
+  // checks out the new origin/main in its worktree and starts again
   if (control.restartForVersion) {
-    const log = fs.openSync('data/evolve.log', 'a')
-    const tsx = path.join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs')
-    const child = spawn('caffeinate', ['-i', process.execPath, tsx, 'scripts/evolve.ts', ...process.argv.slice(2)], { detached: true, stdio: ['ignore', log, log], env: process.env })
-    child.unref()
-    console.log(`restarting on sim version ${control.restartForVersion} (pid ${child.pid})`)
+    console.log(`restarting on sim version ${control.restartForVersion}`)
+    return 75
   }
+  return 0
 }
-main().then(() => process.exit(0), e => { console.error(e); process.exit(1) })
+main().then(code => process.exit(code), e => { console.error(e); process.exit(1) })

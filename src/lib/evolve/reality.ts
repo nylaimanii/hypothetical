@@ -10,6 +10,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { BaselineFrame, RunRecord } from '../types'
 import { dirs, readJson, readRunIndex, writeJson } from './store'
+import { codeRoot } from './version'
 
 const file = () => path.join(process.cwd(), 'data', 'reality-check.json')
 const START_YEAR = 2026
@@ -100,7 +101,7 @@ function twinAt(baseline: BaselineFrame[], year: number) {
 }
 
 function estimateParams(): { name: string; value: string; note: string }[] {
-  const p = path.join(process.cwd(), 'src', 'lib', 'sim', 'constants.ts')
+  const p = path.join(codeRoot(), 'src', 'lib', 'sim', 'constants.ts')
   if (!fs.existsSync(p)) return []
   const lines = fs.readFileSync(p, 'utf8').split('\n')
   const out: { name: string; value: string; note: string }[] = []

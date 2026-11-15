@@ -4,7 +4,9 @@
 // unverified until a world on the new version confirms them.
 //
 // the version is B's SIM_VERSION constant when one exists in src/lib/sim, otherwise a hash of the sim and agent
-// source. it is read from disk, so a running evolve can notice a new version between generations.
+// source. in the runner both come from git: the runner's commit, and origin/main for what B has pushed, so
+// uncommitted sim code never decides a version.
+import { execFileSync } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -12,6 +14,10 @@ import type { Lesson } from '../types'
 import { readJson, writeJson } from './store'
 
 const root = () => process.cwd()
+// where the running code lives. scripts/run-evolve.sh runs evolve from a clean worktree of origin/main
+// (HYP_CODE_ROOT) while the working directory stays the shared project, so data is shared but code is committed
+export const codeRoot = () => process.env.HYP_CODE_ROOT || process.cwd()
+export const inRunner = () => !!process.env.HYP_CODE_ROOT
 const versionFile = () => path.join(root(), 'data', 'version.json')
 export const versionDir = (v: string) => path.join(root(), 'data', 'versions', v.replace(/[^A-Za-z0-9._-]/g, '_'))
 
@@ -30,21 +36,44 @@ function sources(dir: string): string[] {
   } catch { return [] }
 }
 
+const git = (args: string[], cwd: string) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 60_000 })
+
+// the sim version of a git ref: its SIM_VERSION constant, or a hash of the sim and agent trees at that ref
+export function simVersionOfRef(ref: string, repo = codeRoot()): string {
+  try {
+    const m = /export\s+const\s+SIM_VERSION\s*=\s*['"`]([^'"`]+)['"`]/.exec(git(['show', `${ref}:src/lib/sim/version.ts`], repo))
+    if (m) return m[1]
+  } catch { /* no version file at that ref */ }
+  const tree = git(['ls-tree', '-r', ref, '--', 'src/lib/sim', 'src/lib/agent'], repo)
+  return `tree-${crypto.createHash('sha256').update(tree).digest('hex').slice(0, 10)}`
+}
+
+// the version pushed to origin/main right now (fetches first)
+export function upstreamSimVersion(repo = process.cwd()): string | null {
+  try { git(['fetch', '-q', 'origin', 'main'], repo); return simVersionOfRef('origin/main', repo) } catch { return null }
+}
+
+// the version of the code this process runs: the runner's commit, or (outside the runner) the files on disk
+export function runningSimVersion(): string {
+  if (inRunner()) { try { return simVersionOfRef('HEAD', codeRoot()) } catch { /* fall through */ } }
+  return simVersionOnDisk()
+}
+
 export function simVersionOnDisk(): string {
-  const files = [...sources(path.join(root(), 'src', 'lib', 'sim')), ...sources(path.join(root(), 'src', 'lib', 'agent'))]
+  const files = [...sources(path.join(codeRoot(), 'src', 'lib', 'sim')), ...sources(path.join(codeRoot(), 'src', 'lib', 'agent'))]
   for (const f of files) {
     const m = /export\s+const\s+SIM_VERSION\s*=\s*['"`]([^'"`]+)['"`]/.exec(fs.readFileSync(f, 'utf8'))
     if (m) return m[1]
   }
   const h = crypto.createHash('sha256')
-  for (const f of files) h.update(path.relative(root(), f)).update(fs.readFileSync(f))
+  for (const f of files) h.update(path.relative(codeRoot(), f)).update(fs.readFileSync(f))
   return `src-${h.digest('hex').slice(0, 10)}`
 }
 
 export function readVersion(): VersionFile | null {
   return readJson<VersionFile>(versionFile())
 }
-export const currentVersion = () => readVersion()?.current ?? simVersionOnDisk()
+export const currentVersion = () => readVersion()?.current ?? runningSimVersion()
 
 // makes `v` the current version. if another version was current, its results move to data/versions/<old>/
 // and lessons carry forward unverified. returns the previous version when a rollover happened

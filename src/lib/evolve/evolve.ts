@@ -26,7 +26,7 @@ import { isTransient, realClock, runQueue, type Clock } from './queue'
 import { trackWorld } from './usage'
 import { lineageRoots, recordAgentRun, registerPopulation, settleGeneration } from './agents'
 import { indexFeatures, recomputeSteps } from './steps'
-import { enterVersion, simVersionOnDisk, verifyLessons } from './version'
+import { enterVersion, inRunner, runningSimVersion, simVersionOnDisk, upstreamSimVersion, verifyLessons } from './version'
 import { realityCheckDue, runRealityCheck } from './reality'
 import { agentRanges, EXTRA_SEEDS, markUncertaintyDone, milestoneYears, readUncertainty, versionTopAgents } from './uncertainty'
 import { checkHall } from './hall'
@@ -529,7 +529,7 @@ export async function evolve(opts: EvolveOptions) {
   control.goalReached = false
   control.recent = readRunIndex().filter(r => r.generation > 0).slice(-5).reverse()
   try {
-    control.simVersion = simVersionOnDisk()
+    control.simVersion = runningSimVersion()
     const previous = enterVersion(control.simVersion)
     if (previous) {
       const carried = readLessons().length
@@ -559,11 +559,12 @@ export async function evolve(opts: EvolveOptions) {
       // the mission is done: finish this generation, then stop
       if (control.goalReached) { deps.log('goal achieved, evolution stops'); break }
       if (control.stopRequested || done === gens - 1) break
-      // a new sim version on disk: stop here, at the generation boundary, and let the script restart on it
-      const onDisk = simVersionOnDisk()
-      if (onDisk !== control.simVersion) {
-        control.restartForVersion = onDisk
-        const msg = `sim version changed (${control.simVersion} to ${onDisk}) after gen ${current.generation}: restarting evolution on the new version`
+      // a new sim version: in the runner, only what B pushed to origin/main counts (outside it, the files on disk).
+      // stop here, at the generation boundary, and let scripts/run-evolve.sh restart on the new commit
+      const next = inRunner() ? upstreamSimVersion() : simVersionOnDisk()
+      if (next && next !== control.simVersion) {
+        control.restartForVersion = next
+        const msg = `sim version changed (${control.simVersion} to ${next}) after gen ${current.generation}: restarting evolution on the new version`
         deps.log(msg); await send(msg)
         break
       }

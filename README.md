@@ -22,8 +22,8 @@ npm install
 npm run seed                    # data folders, starting constitutions, starting world data
 npm run dev                     # the site, http://localhost:3000
 npm run evolve -- --gens 10 --concurrency 1   # one gpu: keep it at 1
-# overnight, without the mac sleeping:
-nohup caffeinate -i npx tsx scripts/evolve.ts --gens 50 --concurrency 1 > data/evolve.log 2>&1 &
+# overnight, without the mac sleeping, from a clean worktree of the pushed origin/main:
+nohup caffeinate -i scripts/run-evolve.sh --gens 50 --concurrency 1 > data/evolve.log 2>&1 &
 npm run run-one -- --seed 1 --constitution technocrat
 npm run reality-check          # the no-ai twin vs real published data, writes data/reality-check.json
 npm run live -- --runId mylive --seed 7 --constitution-file path/to/constitution.txt
@@ -77,12 +77,15 @@ If any of these is missing, that feature logs once and is skipped. Nothing crash
 - **Fairness:** every active agent runs the same 2 screening seeds each generation, so compare mode always has like-for-like worlds.
 - **Hall of history:** `data/hall.json` records firsts (moon, a Mars city, an eradicated disease, 150 and 200 year lifespans), records (population, lifespan, fastest moon), catastrophes (biggest collapse, deadliest famine) and milestones. Each entry links to its world and the exact tick of the event behind it.
 - Evolution keeps going, generation after generation, until a world achieves the goal. Then it finishes that generation and stops. Use `--gens n` to stop sooner.
+- **Evolution runs committed code only.** `scripts/run-evolve.sh` keeps a git worktree at `.runner/`, checked out at the pushed `origin/main`, and runs evolve from it with this project as the working directory:
+  - Data (runs, lessons, the ollama lock, everything the api reads) is shared.
+  - Code and sim inputs come from the commit, so uncommitted work in the shared tree never reaches a world.
 - Evolution is resumable: rerunning `npm run evolve` continues the unfinished generation.
 - **Sim versions:**
   - Every world records the sim version that ran it: B's `SIM_VERSION`, or a hash of the sim and agent source if there is none.
   - The leaderboard, steps, hall and learning curve are kept per version. When the version changes, the old files move to `data/versions/<version>/` and the new version starts clean.
   - Lessons carry forward but are unverified until a world on the new version dies of the mistake a lesson names, or applies the lesson and survives.
-  - A running evolve checks for a new version at every generation boundary and restarts itself on it, still under caffeinate.
+  - At every generation boundary, the runner compares its commit's version with what B has pushed to `origin/main`. If it changed, evolve exits with code 75, and `run-evolve.sh` moves the worktree to the new commit and starts again under the same caffeinate.
   - `GET /api/versions` lists the versions; steps, hall and learning take `?version=`.
 - An unreachable LLM is never a death:
   - **Ollama down before a world starts:** the generation pauses, sends one telegram ("paused: ollama not running"), checks every 60s, and resumes on its own.
