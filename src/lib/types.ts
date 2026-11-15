@@ -47,6 +47,8 @@ export type Region = {
   provenance: Record<string, Provenance>
   // v3: what the region looks like and how it feels, by group. optional until the sim fills them; the ui normalizes
   visual?: RegionVisual; emotionMix?: Mood; emotionByGroup?: { group: string; mood: Mood }[]
+  // cause chains (B): this year's specific story and the stat trends behind it
+  story?: Story | null; trends?: ChainTrend[]
 }
 export type Citizen = {
   id: string; regionId: string; name: string; age: number; sex: 'female'|'male'; skinTone: number
@@ -66,6 +68,8 @@ export type SchoolPolicy = { purpose: string; curriculum: string[]; yearsRequire
 export type Decision = {
   tick: number; laws: Law[]; repeal: string[]; migrations: Migration[]; budget: Budget; religionPolicy: ReligionPolicy; schoolPolicy: SchoolPolicy; rationale: string; respondedToOverrides: string[]
   foundCities: Omit<City, 'id'|'population'|'foundedTick'>[]; charterCompanies: Omit<Company, 'id'|'workers'|'foundedTick'>[]; researchFocus: string[]; publicStatement: string; lessonsApplied: string[]
+  // the core's reasoning (B): what it saw, what it chose, what it expected, and (two years later) what happened
+  reasoning?: Reasoning
 }
 // significance 0..1 drives the chronicle (>= 0.6), highlight reels and hall of history. headline is a short title for lists
 export type WorldEvent = { tick: number; regionId?: string; kind: 'famine'|'revolt'|'war'|'disaster'|'pandemic'|'breakthrough'|'launch'|'migration'|'law'|'injected'|'override'; text: string; severity: number; significance: number; headline?: string }
@@ -81,6 +85,8 @@ export type WorldState = {
   space?: SpaceAsset[]; atmosphere?: { tint: string; haze: number }; flows?: Flow[]
   // v4 (optional until the sim fills them)
   countries?: Country[]; adminAreas?: AdminArea[]
+  // cause chains (B): every link created since the previous frame
+  causes?: CauseLink[]
 }
 export type Frame = {
   tick: number; date: string; regions: Region[]; citizens: Citizen[]; laws: Law[]; budget: Budget; religionPolicy: ReligionPolicy; schoolPolicy: SchoolPolicy
@@ -189,3 +195,21 @@ export type Country = { id: string; name: string; regionId: string; stats: Place
 export type AdminArea = { id: string; countryId: string; name: string; stats: PlaceStats }
 export type Activity = 'sleeping'|'commuting'|'working'|'school'|'eating'|'shopping'|'socializing'|'resting'|'protesting'|'striking'|'praying'|'aid_line'|'moving'|'celebrating'|'idle'
 export type Workplace = 'farm'|'factory'|'office'|'lab'|'clinic'|'school'|'shop'|'launch_site'|'construction'|'power_plant'|'none'
+
+// ---- cause chains (B, src/lib/sim/causes.ts) ----
+// every meaningful change is a link: what changed (with the number), because of what, by whom. walk causeIds back
+// and nextIds forward for a chain like drought -> food prices -> protests -> law -> result
+export type ByWhom = 'core' | 'nature' | 'people' | 'market' | 'observer' | `faction:${string}` | `crowd:${string}`
+export type CauseLink = {
+  id: string; tick: number; placeId: string
+  what: string; value: number
+  because: string
+  byWhom: ByWhom
+  lawId?: string; eventId?: string
+  causeIds: string[]; nextIds: string[]
+  stat?: string // set on yearly stat-change links
+}
+export type ChainTrend = { stat: string; direction: 'rising' | 'declining' | 'stable'; change: number; text: string }
+// sentences are written from the chains, with real names, dates and numbers; chainIds[i] are the link ids behind sentences[i]
+export type Story = { year: number; sentences: string[]; chainIds: string[][] }
+export type Reasoning = { saw: string[]; chose: string[]; expected: string; outcome?: string }
