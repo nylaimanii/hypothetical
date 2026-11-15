@@ -13,7 +13,7 @@ const REGION_IDS = ['na', 'latam', 'europe', 'rus_ca', 'mideast', 'nafrica', 'ss
 const SECTORS = ['energy', 'food', 'transit', 'medicine', 'longevity', 'launch', 'materials', 'housing', 'computing'] as const
 
 const num = z.coerce.number().refine(Number.isFinite)
-const DecisionSchema = z.object({
+export const DecisionSchema = z.object({
   laws: z.array(z.object({
     title: z.string().min(3).transform(x => x.slice(0, 120)),
     text: z.string().min(10).transform(x => x.slice(0, 1200)),
@@ -62,7 +62,7 @@ ${lessons.length ? lessons.map(l => `- [${l.id}] mistake: ${l.mistake}. result: 
 A HUMAN OBSERVER may veto your laws, inject events, or force your budget. These appear in overridesSinceLastDecision. List every override id in respondedToOverrides and explain your response in the rationale. Do not re-enact a vetoed law under the same title.
 
 Reply with one JSON decision (laws, repeal, migrations, budget, religionPolicy, schoolPolicy, foundCities, charterCompanies, researchFocus as requirement ids or tracks, publicStatement in plain words, rationale in first person with no em-dashes, respondedToOverrides, lessonsApplied). Company sectors: ${SECTORS.join(', ')}.
-At most 5 new laws, 3 cities and 3 companies per decision. Names must be original. Region ids: ${REGION_IDS.join(', ')}.`
+Be brief, every word costs time: at most 3 new laws, each law text under 25 words; rationale under 60 words; publicStatement one sentence; researchFocus at most 4 ids; empty lists are fine. At most 3 cities and 3 companies. Names must be original. Region ids: ${REGION_IDS.join(', ')}.`
 }
 
 export type GovernorMemory = { last?: Decision; vetoedTitles: Set<string>; lessons: Lesson[] }

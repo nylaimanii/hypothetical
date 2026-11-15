@@ -5,8 +5,9 @@ export const START_YEAR = 2026
 export const START_MONTH = 11 // tick 0 = 2026-11
 export const MAX_TICKS = 1200 // horizon: 2126-11
 export const GOVERNOR_EVERY = 12
-// governor decides every 12 ticks for the first 30 years, then every 24
-export const decisionDue = (tick: number) => (tick < 360 ? tick % 12 === 0 : tick % 24 === 0)
+// live worlds: the governor decides every 12 ticks for the first 30 years, then every 24.
+// evolution and batch runs (not live): every 24 ticks for the whole run, to keep local llm runs fast.
+export const decisionDue = (tick: number, live = true) => (live && tick < 360 ? tick % 12 === 0 : tick % 24 === 0)
 
 export function dateOf(tick: number): string {
   const m = START_MONTH - 1 + tick

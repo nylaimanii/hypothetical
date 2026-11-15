@@ -1,4 +1,4 @@
-// npm run run-one -- [--seed 1] [--constitution technocrat | --constitution-file path] [--runId id] [--overrideDir dir]
+// npm run run-one -- [--seed 1] [--constitution technocrat | --constitution-file path] [--runId id] [--overrideDir dir] [--until tick]
 // one world, one line per frame (yearly): date, population, food, unrest, moon stage, frontier, period life
 // expectancy, approval, vs the no-ai twin's population
 import fs from 'node:fs'
@@ -19,7 +19,8 @@ async function main() {
   const constitution = file ? fs.readFileSync(file, 'utf8') : pick.text
   const runId = arg('runId') ?? `one-${file ? 'file' : pick.id}-s${seed}`
   const overrideDir = arg('overrideDir')
-  const s = await runWorld({ runId, generation: 0, seed, constitution, frameEvery: 12, overrideDir })
+  const until = arg('until')
+  const s = await runWorld({ runId, generation: 0, seed, constitution, frameEvery: 12, overrideDir, ...(until ? { untilTick: Number(until) } : {}) })
   const rec = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'data', 'runs', `${runId}.json`), 'utf8')) as RunRecord
   const twinPop = new Map(rec.baseline.map(b => [b.tick, b.regions.reduce((a, r) => a + r.population, 0)]))
   for (const f of rec.frames) {

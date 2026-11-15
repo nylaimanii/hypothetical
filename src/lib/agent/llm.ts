@@ -1,12 +1,15 @@
 // the one llm client every call goes through (governor, lessons, thoughts, askCore).
 // provider from env: LLM_PROVIDER=ollama (default) | groq | offline.
-//   ollama: openai-compatible endpoint at OLLAMA_URL (default http://localhost:11434/v1), model LLM_MODEL
-//           (default gpt-oss:20b). json schema output keeps every structured reply valid json.
+//   ollama: native /api/chat at OLLAMA_URL (default http://localhost:11434), model LLM_MODEL (default
+//           gpt-oss:20b). json schema output (format) keeps every structured reply valid json. every call:
+//           think low (gpt-oss), num_ctx 8192, num_predict <= 1024, keep_alive 30m so the model stays loaded.
 //   groq:   GROQ_API_KEY from .env.local, model LLM_MODEL (default openai/gpt-oss-120b), 429 backoff.
 //   offline: no llm at all; the deterministic offline governor and templates. only for tests and
 //           determinism checks, never chosen silently.
 import { AsyncLocalStorage } from 'node:async_hooks'
+import fs from 'node:fs'
 import http from 'node:http'
+import path from 'node:path'
 
 export type Provider = 'ollama' | 'groq' | 'offline'
 export type Usage = { llmCalls: number; tokens: number }
@@ -16,7 +19,9 @@ export const provider = (): Provider => {
   return p === 'groq' || p === 'offline' ? p : 'ollama'
 }
 export const llmEnabled = () => provider() !== 'offline'
-export const modelName = () => process.env.LLM_MODEL ?? (provider() === 'groq' ? 'openai/gpt-oss-120b' : 'gpt-oss:20b')
+// default qwen2.5:7b: fastest local model that passed zod 20/20 in the governor benchmark (gpt-oss:20b ~57s/call
+// and truncated at the output cap, qwen2.5:14b ~34s/call)
+export const modelName = () => process.env.LLM_MODEL ?? (provider() === 'groq' ? 'openai/gpt-oss-120b' : 'qwen2.5:7b')
 const ollamaBase = () => (process.env.OLLAMA_URL ?? 'http://localhost:11434/v1').replace(/\/$/, '')
 
 // ---------- per-world usage ----------
@@ -81,7 +86,18 @@ export async function chat(opts: ChatOpts): Promise<string> {
   if (/gpt-oss/.test(modelName())) body.reasoning_effort = process.env.LLM_REASONING ?? 'low'
   if (opts.schema) body.response_format = { type: 'json_schema', json_schema: { name: opts.schemaName ?? 'reply', schema: grammarSchema(opts.schema), strict: true } }
   else if (opts.json) body.response_format = { type: 'json_object' }
-  if (p === 'ollama') return ollamaPost(url, body, opts.timeoutMs ?? 1_800_000)
+  if (p === 'ollama') {
+    // native /api/chat: the only ollama endpoint that takes think, num_ctx, num_predict and keep_alive
+    const native: Record<string, unknown> = {
+      model: modelName(), messages: body.messages, stream: false,
+      keep_alive: process.env.LLM_KEEP_ALIVE ?? '30m',
+      options: { temperature: opts.temperature ?? 0.4, num_ctx: Number(process.env.LLM_NUM_CTX ?? 8192), num_predict: Math.min(opts.maxTokens ?? 1024, Number(process.env.LLM_NUM_PREDICT ?? 1024)) },
+    }
+    if (/gpt-oss/.test(modelName())) native.think = process.env.LLM_REASONING ?? 'low'
+    if (opts.schema) native.format = grammarSchema(opts.schema)
+    else if (opts.json) native.format = 'json'
+    return ollamaPost(`${ollamaBase().replace(/\/v1$/, '')}/api/chat`, native, opts.timeoutMs ?? 1_800_000)
+  }
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(opts.timeoutMs ?? 90_000) })
     if (res.status === 429 && attempt < 6) {
@@ -97,6 +113,9 @@ export async function chat(opts: ChatOpts): Promise<string> {
   }
 }
 
+// stats of the most recent ollama call (for benchmarks)
+export let lastCall = { promptTokens: 0, outputTokens: 0, doneReason: '' }
+
 // local generation can take many minutes before the first byte (long reasoning, or queued behind another
 // request), longer than fetch's built-in 300s header timeout, so ollama goes through plain node:http
 function ollamaPost(url: string, body: Record<string, unknown>, timeoutMs: number): Promise<string> {
@@ -109,10 +128,11 @@ function ollamaPost(url: string, body: Record<string, unknown>, timeoutMs: numbe
       res.on('end', () => {
         if ((res.statusCode ?? 500) >= 400) return reject(new Error(`ollama ${res.statusCode}: ${data.slice(0, 300)}`))
         try {
-          const j = JSON.parse(data) as { choices?: { message?: { content?: string } }[]; usage?: { total_tokens?: number } }
+          const j = JSON.parse(data) as { message?: { content?: string }; prompt_eval_count?: number; eval_count?: number; done_reason?: string }
           const st = usageStore.getStore()
-          if (st) { st.llmCalls++; st.tokens += j.usage?.total_tokens ?? 0 }
-          resolve(j.choices?.[0]?.message?.content ?? '')
+          if (st) { st.llmCalls++; st.tokens += (j.prompt_eval_count ?? 0) + (j.eval_count ?? 0) }
+          lastCall = { promptTokens: j.prompt_eval_count ?? 0, outputTokens: j.eval_count ?? 0, doneReason: j.done_reason ?? '' }
+          resolve(j.message?.content ?? '')
         } catch (e) { reject(e) }
       })
     })
@@ -120,4 +140,39 @@ function ollamaPost(url: string, body: Record<string, unknown>, timeoutMs: numbe
     req.on('error', e => reject((e as NodeJS.ErrnoException).code === 'ECONNREFUSED' ? new LlmUnavailable('ollama not running: ollama serve') : e))
     req.end(JSON.stringify(body))
   })
+}
+
+// ---------- one ollama-heavy job at a time ----------
+// data/.ollama.lock holds the pid of the process running llm worlds. other processes wait for it. the lock is
+// reentrant inside one process (evolve can run several worlds in parallel) and a lock whose pid is dead is stale.
+const LOCK = () => path.join(process.cwd(), 'data', '.ollama.lock')
+let held = 0
+const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
+
+export async function acquireOllamaLock(label: string): Promise<() => void> {
+  if (provider() !== 'ollama') return () => {}
+  let warned = false
+  for (;;) {
+    if (held > 0) { held++; break }
+    try {
+      fs.mkdirSync(path.dirname(LOCK()), { recursive: true })
+      fs.writeFileSync(LOCK(), JSON.stringify({ pid: process.pid, label, since: new Date().toISOString() }), { flag: 'wx' })
+      held = 1
+      break
+    } catch {
+      let pid = 0
+      try { pid = (JSON.parse(fs.readFileSync(LOCK(), 'utf8')) as { pid: number }).pid } catch { /* half written */ }
+      if (pid === process.pid) { held = 1; break }
+      if (pid && !alive(pid)) { try { fs.unlinkSync(LOCK()) } catch { /* raced */ } continue }
+      if (!warned) { console.error(`[ollama lock] another job (pid ${pid}) is using ollama, waiting...`); warned = true }
+      await sleep(5000)
+    }
+  }
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    held--
+    if (held <= 0) { held = 0; try { fs.unlinkSync(LOCK()) } catch { /* gone */ } }
+  }
 }

@@ -1,12 +1,12 @@
 // runWorld: the only simulation entry point (contract in CLAUDE.md).
-// monthly step, governor every 12 ticks for 30 years then every 24, frame every opts.frameEvery ticks
+// monthly step, governor every 24 ticks (live: every 12 for 30 years, then 24), frame every opts.frameEvery ticks
 // (default 12, live 1), at every decision and on death. a no-ai baseline twin runs on the same seed with
 // 2026 policies frozen and no llm calls. full state snapshots every 60 ticks allow exact branching.
 import fs from 'node:fs'
 import path from 'node:path'
 import type { BaselineFrame, Decision, Frame, Lesson, Override, RunOptions, RunRecord, RunSummary, Snapshot, WorldEvent } from '../types'
 import { decide, type GovernorMemory } from '../agent/governor'
-import { assertLlmReady, withUsage, type Usage } from '../agent/llm'
+import { acquireOllamaLock, assertLlmReady, withUsage, type Usage } from '../agent/llm'
 import { BASELINE_BUDGET, BASELINE_RELIGION, BASELINE_SCHOOL, dateOf, decisionDue } from './constants'
 import { extractLessons, loadLessons } from '../agent/lessons'
 import { globalPLE } from './end'
@@ -72,15 +72,18 @@ function applyOverride(w: World, o: Override, mem: GovernorMemory) {
 }
 
 // RunOptions as A defines it, plus fields B accepts ahead of the contract (requested in the report):
-// agentId stamps the record; startFrom branches from a saved run at a tick.
-export type RunOpts = RunOptions & { agentId?: string; startFrom?: { runId: string; tick: number } }
+// agentId stamps the record; startFrom branches from a saved run at a tick; untilTick stops early (status stays alive).
+export type RunOpts = RunOptions & { agentId?: string; startFrom?: { runId: string; tick: number }; untilTick?: number }
 
 export async function runWorld(opts: RunOpts): Promise<RunSummary> {
   // fail fast: a real run never quietly drops to the offline governor
   await assertLlmReady()
+  // one ollama-heavy job at a time across processes (run-one, evolve, live): data/.ollama.lock
+  const release = await acquireOllamaLock(opts.runId)
   const usage: Usage = { llmCalls: 0, tokens: 0 }
   const t0 = Date.now()
-  const summary = await withUsage(usage, () => runInner(opts, usage))
+  let summary: RunSummary
+  try { summary = await withUsage(usage, () => runInner(opts, usage)) } finally { release() }
   console.log(`[usage] ${opts.runId}: ${usage.llmCalls} llm calls, ${usage.tokens} tokens, ${((Date.now() - t0) / 1000).toFixed(1)}s wall`)
   return summary
 }
@@ -92,14 +95,14 @@ export function loadRun(runId: string): RunRecord | null {
   return null
 }
 
-type Ctx = { mem: GovernorMemory; pendingOverrides: Override[]; snapshots: Snapshot[] }
+type Ctx = { mem: GovernorMemory; pendingOverrides: Override[]; snapshots: Snapshot[]; due: (tick: number) => boolean }
 
 // one month of the main world. shared by live runs, replays and branches so they execute identical code.
 async function tickBody(w: World, ctx: Ctx, decideFn: (w: World) => Promise<Decision | undefined>, opts: { overrideDir?: string; llmThoughts: boolean }): Promise<Decision | undefined> {
   if (w.tick % SNAPSHOT_EVERY === 0) ctx.snapshots.push(snapshotWorld(w))
   ctx.pendingOverrides.push(...applyOverrides(w, opts.overrideDir, ctx.mem))
   let decision: Decision | undefined
-  if (decisionDue(w.tick)) {
+  if (ctx.due(w.tick)) {
     const d = await decideFn(w)
     if (d) {
       const { migrations } = applyDecision(w, d)
@@ -124,7 +127,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   const live = !!opts.live
   const frameEvery = live ? 1 : Math.max(1, opts.frameEvery ?? 12)
   const knownLessons = loadLessons()
-  const ctx: Ctx = { mem: { vetoedTitles: new Set(), lessons: knownLessons }, pendingOverrides: [], snapshots: [] }
+  const ctx: Ctx = { mem: { vetoedTitles: new Set(), lessons: knownLessons }, pendingOverrides: [], snapshots: [], due: t => decisionDue(t, live) }
   const frames: Frame[] = []
   let lessonsLearned: Lesson[] = []
   let branchedFrom: RunRecord['branchedFrom']
@@ -143,6 +146,8 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
     ctx.mem.last = [...srcDecisions.values()].filter(d => d.tick < snap.tick).sort((a, b) => b.tick - a.tick)[0]
     // where the source emitted frames, reset the per-frame accumulators (whys, new-event cursor) the same way
     const srcFrameTicks = new Set(src.frames.map(f => f.tick))
+    // replay on the source's own cadence (it decided wherever it has a recorded decision)
+    ctx.due = t => srcDecisions.has(t)
     while (w.tick < target && w.status === 'alive') {
       await tickBody(w, ctx, async x => srcDecisions.get(x.tick), { llmThoughts: false })
       if (srcFrameTicks.has(w.tick)) { for (const rs of w.regions) rs.whyAcc = {}; w.frameCursor = w.events.length }
@@ -150,6 +155,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
       updateMoods(w)
     }
     if (w.status !== 'alive') throw new Error(`startFrom: the source world had already ended by tick ${target}`)
+    ctx.due = t => decisionDue(t, live)
     for (const l of w.laws) if (l.vetoed) ctx.mem.vetoedTitles.add(l.title.toLowerCase())
     ctx.mem.last = [...srcDecisions.values()].filter(d => d.tick < target).sort((a, b) => b.tick - a.tick)[0]
     frames.push(...src.frames.filter(f => f.tick < target))
@@ -182,8 +188,8 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
     if (live) writeJsonAtomic(path.join(process.cwd(), 'data', 'live', `${opts.runId}.json`), rec(w.status !== 'alive'))
   }
 
-  while (w.status === 'alive') {
-    const decision = await tickBody(w, ctx, x => decide(x, opts.constitution, ctx.pendingOverrides, ctx.mem), { overrideDir: opts.overrideDir, llmThoughts: true })
+  while (w.status === 'alive' && (opts.untilTick === undefined || w.tick < opts.untilTick)) {
+    const decision = await tickBody(w, ctx, x => decide(x, opts.constitution, ctx.pendingOverrides, ctx.mem), { overrideDir: opts.overrideDir, llmThoughts: live })
     if (w.tick % frameEvery === 0 || decision) emit(decision)
     stepWorld(w)
     stepTwin()
@@ -191,7 +197,8 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
     if (w.status !== 'alive') { ctx.snapshots.push(snapshotWorld(w)); emit() }
     else if (live) await sleep(opts.live!.msPerTick)
   }
-  while (twin.status === 'alive') stepTwin()
+  while (twin.status === 'alive' && (opts.untilTick === undefined || twin.tick < opts.untilTick)) stepTwin()
+  if (w.status === 'alive' && opts.untilTick !== undefined && frames[frames.length - 1]?.tick !== w.tick) emit()
   if (w.status === 'destroyed') lessonsLearned = await extractLessons(rec(true))
   const final = rec(true)
   writeJsonAtomic(path.join(process.cwd(), 'data', 'runs', `${opts.runId}.json`), final)
