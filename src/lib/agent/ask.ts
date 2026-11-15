@@ -9,6 +9,7 @@ function recordContext(record: RunRecord): string {
   const decisions = record.frames.filter(f => f.decision).map(f => ({
     date: f.date,
     rationale: f.decision!.rationale,
+    publicStatement: f.decision!.publicStatement,
     laws: f.decision!.laws.map(l => l.title),
     repealed: f.decision!.repeal,
     migrations: f.decision!.migrations.map(m => `${m.from}->${m.to} ${m.people}`),
@@ -21,7 +22,7 @@ function recordContext(record: RunRecord): string {
   const lawsNow = last?.laws.map(l => ({ title: l.title, support: l.support, compliance: l.compliance, vetoed: !!l.vetoed })) ?? []
   const ctx = {
     constitution: record.constitution,
-    outcome: { status: record.summary.status, endDate: record.summary.endDate, moonStage: record.summary.moonStage, causeOfDeath: record.summary.causeOfDeath, noAiTwin: record.summary.baselineStatus },
+    outcome: { status: record.summary.status, endDate: record.summary.endDate, frontier: record.summary.frontier, peakPeriodLifeExpectancy: record.summary.peakPeriodLifeExpectancy, causeOfDeath: record.summary.causeOfDeath, humanCost: record.summary.humanCost },
     decisions,
     lawsAtEnd: lawsNow,
     events: events.slice(-200),
@@ -51,6 +52,6 @@ function offlineAnswer(record: RunRecord, _q: string): string {
   const ds = record.frames.filter(f => f.decision)
   const last = ds[ds.length - 1]
   const s = record.summary
-  const end = s.status === 'moon' ? `we landed on the moon in ${s.endDate}` : s.status === 'destroyed' ? `the world ended in ${s.endDate}: ${s.causeOfDeath ?? 'collapse'}` : s.status === 'stagnated' ? `we reached ${s.endDate} without landing on the moon` : `the world is still running at ${s.endDate}`
+  const end = s.status === 'goal_achieved' ? `we reached the goal in ${s.endDate}: a self-sustaining mars, 200 year lives, a growing population` : s.status === 'destroyed' ? `the world ended in ${s.endDate}: ${s.causeOfDeath ?? 'collapse'}` : s.status === 'complete' ? `we reached ${s.endDate} with the frontier at ${s.frontier}` : `the world is still running at ${s.endDate}`
   return `I cannot reason freely right now, so I can only point to my record. ${end[0].toUpperCase()}${end.slice(1)}. ${last ? `My last decision, in ${last.date}, said: ${last.decision!.rationale}` : 'I have not made a decision yet.'}`
 }

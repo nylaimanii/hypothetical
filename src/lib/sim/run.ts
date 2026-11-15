@@ -3,15 +3,17 @@
 // a no-ai baseline twin runs on the same seed with 2026 policies frozen and no llm calls.
 import fs from 'node:fs'
 import path from 'node:path'
-import type { BaselineFrame, Decision, Frame, Override, RunOptions, RunRecord, RunSummary, WorldEvent } from '../types'
+import type { BaselineFrame, Decision, Frame, Lesson, Override, RunOptions, RunRecord, RunSummary, WorldEvent } from '../types'
 import { decide, type GovernorMemory } from '../agent/governor'
 import { withUsage, type Usage } from '../agent/groq'
-import { BASELINE_BUDGET, BASELINE_RELIGION, BASELINE_SCHOOL, GOVERNOR_EVERY, dateOf } from './constants'
-import { ageCitizens, initCitizens, refreshThoughts, syncCitizenCounts, updateMoods } from './citizens'
+import { BASELINE_BUDGET, BASELINE_RELIGION, BASELINE_SCHOOL, dateOf, decisionDue } from './constants'
+import { extractLessons, loadLessons } from '../agent/lessons'
+import { globalPLE } from './end'
+import { ageCitizens, initCitizens, pairPartners, refreshThoughts, syncCitizenCounts, updateMoods } from './citizens'
 import { score } from './end'
 import { applyEvent } from './events'
 import { fmt } from './physics'
-import { applyDecision, baselineFrame, snapshot, stepWorld } from './step'
+import { applyDecision, baselineFrame, lawPrecedents, snapshot, stepWorld } from './step'
 import { event, initWorld, regionPop, worldPop, type World } from './state'
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -19,7 +21,11 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 const BASELINE_DECISION = (tick: number): Decision => ({
   tick, laws: [], repeal: [], migrations: [], budget: { ...BASELINE_BUDGET }, religionPolicy: BASELINE_RELIGION,
   schoolPolicy: { ...BASELINE_SCHOOL, curriculum: [...BASELINE_SCHOOL.curriculum] }, rationale: 'baseline twin: 2026 policies frozen', respondedToOverrides: [],
+  foundCities: [], charterCompanies: [], researchFocus: [], publicStatement: '', lessonsApplied: [],
 })
+
+// RunOptions as A defines it, plus fields B accepts ahead of the contract
+export type RunOpts = RunOptions & { agentId?: string }
 
 // reads every override file in dir that is due, applies it, deletes it. returns the applied overrides.
 export function applyOverrides(w: World, dir: string | undefined, mem: GovernorMemory): Override[] {
@@ -66,20 +72,23 @@ function applyOverride(w: World, o: Override, mem: GovernorMemory) {
   }
 }
 
-export async function runWorld(opts: RunOptions): Promise<RunSummary> {
+export async function runWorld(opts: RunOpts): Promise<RunSummary> {
   const usage: Usage = { llmCalls: 0, tokens: 0 }
   const summary = await withUsage(usage, () => runInner(opts, usage))
   console.log(`[usage] ${opts.runId}: ${usage.llmCalls} llm calls, ${usage.tokens} tokens`)
   return summary
 }
 
-async function runInner(opts: RunOptions, usage: Usage): Promise<RunSummary> {
+async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   const live = !!opts.live
   const frameEvery = live ? 1 : Math.max(1, opts.frameEvery ?? 12)
   const w = initWorld(opts.seed, false)
   const twin = initWorld(opts.seed, true)
   initCitizens(w)
-  const mem: GovernorMemory = { vetoedTitles: new Set() }
+  const knownLessons = loadLessons()
+  const mem: GovernorMemory = { vetoedTitles: new Set(), lessons: knownLessons }
+  w.lessonsKnown = knownLessons.length
+  let lessonsLearned: Lesson[] = []
   const frames: Frame[] = []
   const baseline: BaselineFrame[] = [baselineFrame(twin)]
   let pendingOverrides: Override[] = []
@@ -87,7 +96,7 @@ async function runInner(opts: RunOptions, usage: Usage): Promise<RunSummary> {
 
   const writeLive = (done: boolean) => {
     if (!live) return
-    const rec = record(opts, w, twin, frames, baseline, !done, usage)
+    const rec = record(opts, w, twin, frames, baseline, !done, usage, lessonsLearned, knownLessons)
     writeJsonAtomic(path.join(process.cwd(), 'data', 'live', `${opts.runId}.json`), rec)
   }
   const emit = (decision?: Decision) => {
@@ -103,7 +112,7 @@ async function runInner(opts: RunOptions, usage: Usage): Promise<RunSummary> {
   while (w.status === 'alive') {
     pendingOverrides.push(...applyOverrides(w, opts.overrideDir, mem))
     let decision: Decision | undefined
-    if (w.tick % GOVERNOR_EVERY === 0) {
+    if (decisionDue(w.tick)) {
       const d = await decide(w, opts.constitution, pendingOverrides, mem)
       const { migrations } = applyDecision(w, d)
       // record what actually happened: real law ids and support, and how many people really moved
@@ -115,7 +124,10 @@ async function runInner(opts: RunOptions, usage: Usage): Promise<RunSummary> {
       for (const m of migrations) if (m.actual < m.requested) event(w, { kind: 'migration', regionId: m.from, text: `only ${fmt(m.actual)} of ${fmt(m.requested)} ordered to move actually left`, severity: 0.1 })
       mem.last = decision
       pendingOverrides = []
-      if (w.tick > 0) { ageCitizens(w); syncCitizenCounts(w) }
+    }
+    if (w.tick % 12 === 0) {
+      // yearly: birthdays, pip counts, partners, one batched thought call
+      if (w.tick > 0) { ageCitizens(w); syncCitizenCounts(w); pairPartners(w) }
       updateMoods(w)
       await refreshThoughts(w, true)
     }
@@ -134,24 +146,32 @@ async function runInner(opts: RunOptions, usage: Usage): Promise<RunSummary> {
     stepWorld(twin)
     if (twin.tick % 12 === 0 || twin.status !== 'alive') baseline.push(baselineFrame(twin))
   }
-  const rec = record(opts, w, twin, frames, baseline, false, usage)
+  if (w.status === 'destroyed') lessonsLearned = await extractLessons(record(opts, w, twin, frames, baseline, false, usage, [], knownLessons))
+  const rec = record(opts, w, twin, frames, baseline, false, usage, lessonsLearned, knownLessons)
   writeJsonAtomic(path.join(process.cwd(), 'data', 'runs', `${opts.runId}.json`), rec)
   if (live) writeJsonAtomic(path.join(process.cwd(), 'data', 'live', `${opts.runId}.json`), rec)
   return rec.summary
 }
 
-function record(opts: RunOptions, w: World, twin: World, frames: Frame[], baseline: BaselineFrame[], liveFlag: boolean, usage: Usage): RunRecord {
-  const topEvents: WorldEvent[] = w.events.filter(e => e.kind !== 'law' && e.kind !== 'override').slice().sort((a, b) => b.severity - a.severity || a.tick - b.tick).slice(0, 8)
+function record(opts: RunOpts, w: World, twin: World, frames: Frame[], baseline: BaselineFrame[], liveFlag: boolean, usage: Usage, lessonsLearned: Lesson[], knownLessons: Lesson[]): RunRecord {
+  const topEvents: WorldEvent[] = w.events.filter(e => e.kind !== 'law' && e.kind !== 'override').slice().sort((a, b) => b.significance - a.significance || b.severity - a.severity || a.tick - b.tick).slice(0, 8)
+  const agentId = opts.agentId ?? 'unassigned'
   const summary: RunSummary = {
     runId: opts.runId, generation: opts.generation, status: w.status, endDate: dateOf(w.tick), ticks: w.tick,
     score: score(w), constitution: opts.constitution, peakPopulation: Math.round(Math.max(w.peakPop, worldPop(w))),
     moonStage: w.space.stage, topEvents,
     baselineStatus: twin.status, baselineEndDate: dateOf(twin.tick),
+    frontier: w.frontier, peakPeriodLifeExpectancy: Math.round(Math.max(w.peakPLE, globalPLE(w)) * 10) / 10, finalPopulation: Math.round(worldPop(w)),
+    citiesFounded: w.cities.length, diseasesEradicated: [...w.diseasesEradicated],
+    humanCost: { deaths: Math.round(w.humanCost.deaths), famineDeaths: Math.round(w.humanCost.famineDeaths), unrestDeaths: Math.round(w.humanCost.unrestDeaths), displaced: Math.round(w.humanCost.displaced), approval: Math.round(w.humanCost.approval * 1e4) / 1e4 },
+    lessonsLearned, lessonsApplied: w.lessonsApplied.size, usage: { ...usage }, agentId,
     ...(w.causeOfDeath ? { causeOfDeath: w.causeOfDeath } : {}),
   }
-  // usage is not in A's RunSummary type yet; attached untyped so C's tracker can prefer it (it checks for summary.usage)
-  Object.assign(summary, { usage: { ...usage } })
-  return { runId: opts.runId, generation: opts.generation, seed: opts.seed, constitution: opts.constitution, frames, baseline, summary, ...(liveFlag ? { live: true } : {}) }
+  return {
+    runId: opts.runId, generation: opts.generation, seed: opts.seed, constitution: opts.constitution, frames, baseline, summary,
+    agentId, snapshots: [], precedents: lawPrecedents(w), lessons: knownLessons,
+    ...(liveFlag ? { live: true } : {}),
+  }
 }
 
 function writeJsonAtomic(file: string, data: unknown) {

@@ -6,7 +6,8 @@ import {
   EDUCATION_LAG_TICKS, EDUCATION_TURNOVER_MONTHS, REVOLT_END_UNREST, REVOLT_ONSET_MONTHS, REVOLT_UNREST,
   REVENUE_SHARE, REVENUE_SHARE_MAX, SECESSION_MONTHS, SURVIVAL_KCAL, WORLD_RD_USD,
 } from './constants'
-import { clamp, event, incomeIdx, regionPop, sum, type RegionState, type World } from './state'
+import { clamp, event, incomeIdx, regionPop, sum, why, type RegionState, type World } from './state'
+import { labelShare } from './behavior'
 
 // ---------- law classification ----------
 // deterministic keyword reading of the law text. the llm writes the text; only this code decides what it does.
@@ -69,9 +70,15 @@ export function stepLaws(w: World): Record<string, LawEffects> {
     const e: LawEffects = { science: 0, energy: 0, food: 0, education: 0, family: 0, redistributive: 0, security: 0, tax: 0, backlash: 0 }
     for (const l of active) {
       const f = feats.get(l.id)!
-      const s = rs.seceded ? 0.05 : lawSupport(f, rs)
-      // compliance with this law = region's general compliance x support (people ignore laws they reject)
-      const c = rs.seceded ? 0 : rs.r.compliance * (0.25 + 0.75 * s)
+      // social identity: support shifts with how much of the region sits in the groups that win or lose
+      const meta = w.lawMeta[l.id]
+      const loved = meta ? Math.min(0.8, meta.lovedBy.reduce((a, g) => a + labelShare(w, rs, g), 0)) : 0
+      const hated = meta ? Math.min(0.8, meta.hatedBy.reduce((a, g) => a + labelShare(w, rs, g), 0)) : 0
+      const s = rs.seceded ? 0.05 : clamp(lawSupport(f, rs) + 0.2 * loved - 0.3 * hated, 0.02, 0.98)
+      // compliance with this law = region's general compliance x support (people ignore laws they reject);
+      // a pending lawsuit pauses most enforcement
+      const sued = (w.lawsuits[l.id] ?? -1) > w.tick ? 0.4 : 1
+      const c = rs.seceded ? 0 : rs.r.compliance * (0.25 + 0.75 * s) * sued
       rs.lawSupport[l.id] = s
       rs.lawCompliance[l.id] = c
       e.science = Math.max(e.science, f.science * c)
@@ -116,7 +123,7 @@ export function religionBacklash(policy: ReligionPolicy, faith: number): number 
 
 const fWelfare = (pc: number) => 1 - Math.exp(-pc / 3000)
 
-export function stepSociety(w: World, fx: Record<string, LawEffects>, researchUsd: number) {
+export function stepSociety(w: World, fx: Record<string, LawEffects>, researchUsd: number, outrage: Record<string, number> = {}) {
   const curriculum = w.schoolPolicy.curriculum.map(c => c.toLowerCase())
   const stem = curriculum.filter(c => /(math|science|engineer|technolog|computer|physics|chemistry|biology)/.test(c)).length
   const religiousCurriculum = curriculum.some(c => /(relig|scripture|faith|theolog)/.test(c))
@@ -137,8 +144,22 @@ export function stepSociety(w: World, fx: Record<string, LawEffects>, researchUs
     // security suppresses unrest a little, but heavy policing in low-compliance regions breeds resentment
     const security = clamp(-0.04 * Math.log2(secRatio), -0.08, 0.08) + (secRatio > 1.5 ? clamp(0.03 * (secRatio - 1) * (1 - r.compliance), 0, 0.1) : 0)
     const religion = religionBacklash(w.religionPolicy, r.faith) + (religiousCurriculum ? 0.04 * (1 - r.faith) : 0)
-    const target = clamp(rs.base.unrest + food + energy + recession + welfare + security + religion + e.backlash
-      - 0.03 * e.redistributive * (1 - incomeIdx(r.gdpUsd / pop)) + rs.shock + rs.migrationShock)
+    const crowd = Math.min(0.25, 0.12 * (outrage[r.id] ?? 0))
+    const redistrib = -0.03 * e.redistributive * (1 - incomeIdx(r.gdpUsd / pop))
+    const target = clamp(rs.base.unrest + food + energy + recession + welfare + security + religion + e.backlash + redistrib + crowd + rs.shock + rs.migrationShock)
+    // whys: each driver's pull on unrest this month
+    const k = 0.08
+    const U = 'https://www.worldbank.org/en/publication/worldwide-governance-indicators'
+    why(rs, 'unrest', 'hunger', food * k, 'https://www.fao.org/3/i4646e/i4646e.pdf')
+    why(rs, 'unrest', 'power shortages', energy * k)
+    why(rs, 'unrest', 'recession', recession * k)
+    why(rs, 'unrest', 'welfare vs 2026', welfare * k)
+    why(rs, 'unrest', 'policing', security * k)
+    why(rs, 'unrest', 'religion policy', religion * k)
+    why(rs, 'unrest', 'unpopular laws', e.backlash * k)
+    why(rs, 'unrest', 'crowd outrage', crowd * k, 'https://www.nationalaffairs.com/public_interest/detail/up-and-down-with-ecologythe-issue-attention-cycle')
+    why(rs, 'unrest', 'recent shocks', (rs.shock + rs.migrationShock) * k)
+    why(rs, 'unrest', 'settling back', -(r.unrest - rs.base.unrest) * k, U)
     r.unrest = clamp(r.unrest + (target - r.unrest) * 0.08)
     rs.shock *= 0.9
     rs.migrationShock *= 0.92
@@ -202,7 +223,9 @@ export function stepSociety(w: World, fx: Record<string, LawEffects>, researchUs
       + 0.02 * Math.min(stem, 3) + 0.05 * e.education, 0, 1)
     rs.eduTargets[w.tick] = rs.seceded ? r.education : eduTarget
     const lagged = w.tick >= EDUCATION_LAG_TICKS ? rs.eduTargets[w.tick - EDUCATION_LAG_TICKS] : rs.base.education
-    r.education = clamp(r.education + (lagged - r.education) / EDUCATION_TURNOVER_MONTHS)
+    const de = (lagged - r.education) / EDUCATION_TURNOVER_MONTHS
+    r.education = clamp(r.education + de)
+    why(rs, 'education', w.tick >= EDUCATION_LAG_TICKS ? 'school policy from 10 years ago' : 'schools already running', de)
 
     // ---------- tech ----------
     // ESTIMATE: 0.3%/yr baseline drift, research (log of spend vs world R&D today), education pulling tech up,
@@ -211,6 +234,7 @@ export function stepSociety(w: World, fx: Record<string, LawEffects>, researchUs
       + 0.01 * (maxTech - r.techLevel) * r.compliance - 0.02 * Math.max(0, r.unrest - 0.5)
     if (rs.seceded) dt = Math.min(dt, 0.002)
     r.techLevel = clamp(r.techLevel + dt / 12)
+    why(rs, 'techLevel', 'research and diffusion', dt / 12, 'https://uis.unesco.org/en/topic/research-and-development')
   }
 
   // war tension decays; open war when it crosses 1

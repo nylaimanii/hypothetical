@@ -23,7 +23,7 @@ export function offlineDecision(b: Brief, overrides: Override[], vetoedTitles: S
   const laws: Law[] = []
   const propose = (title: string, text: string, layer: Law['layer']) => {
     if (vetoedTitles.has(title.toLowerCase()) || b.laws.some(l => l.title === title)) return
-    laws.push({ id: '', title, text, layer, enactedTick: b.tick, support: 0, compliance: 0 })
+    laws.push({ id: '', title, text, layer, enactedTick: b.tick, support: 0, compliance: 0, policyKind: '', precedentIds: [], lovedBy: [], hatedBy: [] })
   }
   propose('World Research and Lunar Program Act', 'Funds universities, research laboratories and a civilian lunar program open to every region.', 'tech')
   if (minKcal < 2500) propose('Universal Food Security Program', 'Food aid and farm subsidies for regions with low food supply, paid from the world budget.', 'economy')
@@ -38,8 +38,17 @@ export function offlineDecision(b: Brief, overrides: Override[], vetoedTitles: S
     if (o.kind === 'inject_event') { notes.push(`responding to an injected ${o.eventKind ?? 'event'}${o.regionId ? ` in ${o.regionId}` : ''} with more welfare`); budget.welfare += 0.03 }
     if (o.kind === 'force_budget') notes.push('the observer forced a budget; this decision takes the budget back but keeps their priorities in view')
   }
+  // research focus: the cheapest open nodes on the path to mars and longer lives
+  const open = b.requirements.filter(r => !r.stalled && (r.track === 'mars' || r.track === 'longevity' || r.id === 'super_heavy_lift' || r.id === 'orbital_refueling'))
+  const researchFocus = open.sort((x, y) => (y.progress - x.progress) || x.id.localeCompare(y.id)).slice(0, 4).map(r => r.id)
+  // one city per decade in the region with the most people per city, on a mid-latitude site (ESTIMATE heuristic)
+  const foundCities = b.tick % 120 === 0 && b.tick > 0 && b.cities.length < 6
+    ? [{ name: `${['harbor', 'ridge', 'meadow', 'lantern', 'cedar', 'delta'][b.cities.length]} city`, regionId: b.regions.slice().sort((x, y) => y.population - x.population)[0].id, lat: 26, lon: 80, reason: 'room for a growing population near water and power' }]
+    : []
+  const charterCompanies = b.tick === 0 ? [{ name: 'long horizon medicine', sector: 'medicine' as const, regionId: 'europe', purpose: 'trials for the leading causes of death' }, { name: 'tall stack launch', sector: 'launch' as const, regionId: 'na', purpose: 'reusable heavy lift for the moon and mars' }] : []
   return {
-    tick: b.tick, laws, repeal, migrations: [],
+    tick: b.tick, laws, repeal, migrations: [], foundCities, charterCompanies, researchFocus,
+    publicStatement: 'Food and power first, then medicine, then the stars. Nothing here comes free.', lessonsApplied: [],
     budget: normalizeBudget(budget),
     religionPolicy: 'free',
     schoolPolicy: { purpose: 'science literacy and skilled work', curriculum: ['literacy', 'mathematics', 'science', 'engineering', 'computer science', 'history'], yearsRequired: 12 },

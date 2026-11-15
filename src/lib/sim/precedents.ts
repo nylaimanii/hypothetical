@@ -1,0 +1,197 @@
+// real historical reactions to policy. every law is classified into a policyKind and matched to 1-3
+// precedents. the precedents set how big the public reaction is (magnitude 0..1 = size of backlash),
+// how long it takes to start (delay) and how long it lasts. no match = ESTIMATE defaults, logged.
+// facts are summarized from the linked articles; magnitude/delay are ESTIMATE readings of those accounts.
+import type { Law, Precedent } from '../types'
+
+const W = 'https://en.wikipedia.org/wiki/'
+
+type P = Precedent & { delayMonths: number; tfrEffect?: number }
+
+export const PRECEDENTS: P[] = [
+  // fuel and subsidy cuts
+  { id: 'yellow_vests', event: 'fuel tax rise triggers the yellow vests protests', year: 2018, country: 'France', policyKind: 'energy_tax', reaction: 'weekly mass protests for months, the tax rise was suspended', magnitude: 0.7, durationMonths: 12, delayMonths: 1, url: `${W}Yellow_vests_protests` },
+  { id: 'occupy_nigeria', event: 'fuel subsidy removal doubles petrol prices overnight', year: 2012, country: 'Nigeria', policyKind: 'fuel_subsidy_cut', reaction: 'general strike, subsidy partly restored within two weeks', magnitude: 0.8, durationMonths: 1, delayMonths: 0, url: `${W}Occupy_Nigeria` },
+  { id: 'ecuador_2019', event: 'fuel subsidy removal sparks nationwide protests', year: 2019, country: 'Ecuador', policyKind: 'fuel_subsidy_cut', reaction: 'general strike, decree withdrawn within two weeks', magnitude: 0.8, durationMonths: 1, delayMonths: 0, url: `${W}2019_Ecuadorian_protests` },
+  { id: 'kazakhstan_2022', event: 'price cap on liquefied gas lifted', year: 2022, country: 'Kazakhstan', policyKind: 'fuel_subsidy_cut', reaction: 'unrest across the country, government resigned, over 200 dead', magnitude: 0.9, durationMonths: 1, delayMonths: 0, url: `${W}2022_Kazakh_unrest` },
+  { id: 'iran_2019', event: 'gasoline price raised up to 300 percent', year: 2019, country: 'Iran', policyKind: 'fuel_subsidy_cut', reaction: 'nationwide protests met with a deadly crackdown', magnitude: 0.9, durationMonths: 1, delayMonths: 0, url: `${W}2019%E2%80%932020_Iranian_protests` },
+  { id: 'egypt_1977', event: 'subsidies on bread and staples cut', year: 1977, country: 'Egypt', policyKind: 'food_subsidy_cut', reaction: 'bread riots in many cities, cuts reversed within two days', magnitude: 0.85, durationMonths: 1, delayMonths: 0, url: `${W}1977_Egyptian_bread_riots` },
+  // food prices and shortages
+  { id: 'food_crisis_2008', event: 'world food prices spike', year: 2008, country: 'world', policyKind: 'food_price', reaction: 'food riots in dozens of countries', magnitude: 0.7, durationMonths: 12, delayMonths: 1, url: `${W}2007%E2%80%932008_world_food_price_crisis` },
+  { id: 'arab_spring', event: 'food prices and unemployment boil over in Tunisia', year: 2010, country: 'Tunisia', policyKind: 'food_price', reaction: 'regime fell in weeks, protests spread across the region', magnitude: 0.95, durationMonths: 18, delayMonths: 2, url: `${W}Arab_Spring` },
+  { id: 'sri_lanka_2022', event: 'fuel, food and medicine shortages after a currency collapse', year: 2022, country: 'Sri Lanka', policyKind: 'food_price', reaction: 'months of protests, the president fled the country', magnitude: 0.9, durationMonths: 6, delayMonths: 2, url: `${W}2022_Sri_Lankan_protests` },
+  { id: 'uk_rationing', event: 'wartime food rationing', year: 1940, country: 'United Kingdom', policyKind: 'rationing', reaction: 'broad compliance while the threat was visible, growing resentment once the war ended', magnitude: 0.3, durationMonths: 168, delayMonths: 6, url: `${W}Rationing_in_the_United_Kingdom` },
+  { id: 'india_pds', event: 'public distribution system for staple grain', year: 1965, country: 'India', policyKind: 'food_reserve', reaction: 'broad support, persistent leakage and queues', magnitude: 0.15, durationMonths: 600, delayMonths: 3, url: `${W}Public_distribution_system_(India)` },
+  { id: 'green_revolution_india', event: 'high-yield seeds, fertilizer and irrigation push', year: 1966, country: 'India', policyKind: 'agriculture_push', reaction: 'large yield gains, little public resistance, later water and soil concerns', magnitude: 0.1, durationMonths: 120, delayMonths: 12, url: `${W}Green_Revolution_in_India` },
+  { id: 'great_leap', event: 'forced collectivization of farms', year: 1958, country: 'China', policyKind: 'collectivization', reaction: 'output collapsed, famine killed tens of millions', magnitude: 0.95, durationMonths: 36, delayMonths: 6, url: `${W}Great_Leap_Forward` },
+  // relocation and big projects
+  { id: 'three_gorges', event: 'dam project relocates about 1.3 million people', year: 1994, country: 'China', policyKind: 'relocation', reaction: 'local grievances and petitions for decades', magnitude: 0.5, durationMonths: 200, delayMonths: 6, url: `${W}Three_Gorges_Dam` },
+  { id: 'tva', event: 'regional dam and electrification program', year: 1933, country: 'United States', policyKind: 'electrification', reaction: 'popular overall, thousands of displaced families resented it', magnitude: 0.2, durationMonths: 120, delayMonths: 6, url: `${W}Tennessee_Valley_Authority` },
+  { id: 'apollo_opinion', event: 'crewed moon program funded at its peak', year: 1965, country: 'United States', policyKind: 'big_project', reaction: 'public support for the spending often sat below half, except right after the landing', magnitude: 0.35, durationMonths: 96, delayMonths: 12, url: `${W}Apollo_program` },
+  { id: 'big_dig', event: 'highway tunnel megaproject runs far over budget', year: 1991, country: 'United States', policyKind: 'big_project', reaction: 'years of anger over cost, then quiet acceptance', magnitude: 0.25, durationMonths: 180, delayMonths: 24, url: `${W}Big_Dig` },
+  { id: 'entsoe', event: 'national grids synchronized into one continental grid', year: 1958, country: 'Europe', policyKind: 'grid_integration', reaction: 'low public attention, steady reliability gains', magnitude: 0.05, durationMonths: 400, delayMonths: 12, url: `${W}Synchronous_grid_of_Continental_Europe` },
+  { id: 'dagen_h', event: 'whole country switches to driving on the right', year: 1967, country: 'Sweden', policyKind: 'big_change', reaction: 'most voters had rejected it in a referendum, the switch itself went smoothly', magnitude: 0.3, durationMonths: 3, delayMonths: 0, url: `${W}Dagen_H` },
+  // religion
+  { id: 'soviet_religion', event: 'decades of state campaigns against religion', year: 1928, country: 'Soviet Union', policyKind: 'religion_suppression', reaction: 'open practice fell, private belief persisted and revived after 1991', magnitude: 0.6, durationMonths: 240, delayMonths: 3, url: `${W}Religion_in_the_Soviet_Union` },
+  { id: 'albania_1967', event: 'religion banned outright, country declared atheist', year: 1967, country: 'Albania', policyKind: 'religion_suppression', reaction: 'enforced by terror, faith returned quickly once allowed', magnitude: 0.5, durationMonths: 280, delayMonths: 1, url: `${W}Religion_in_Albania` },
+  { id: 'france_1905', event: 'law separating churches and the state', year: 1905, country: 'France', policyKind: 'secular_state', reaction: 'bitter conflict for a decade, then a settled norm', magnitude: 0.5, durationMonths: 120, delayMonths: 2, url: `${W}1905_French_law_on_the_Separation_of_the_Churches_and_the_State` },
+  { id: 'ataturk_reforms', event: 'secular reforms including the hat law', year: 1925, country: 'Turkey', policyKind: 'secular_state', reaction: 'local revolts and executions, reforms held in cities', magnitude: 0.55, durationMonths: 60, delayMonths: 1, url: `${W}Atat%C3%BCrk%27s_reforms` },
+  { id: 'iran_1979', event: 'state religion imposed after a revolution', year: 1979, country: 'Iran', policyKind: 'state_religion', reaction: 'secular and minority groups resisted for decades, periodic mass protests', magnitude: 0.6, durationMonths: 240, delayMonths: 6, url: `${W}Iranian_Revolution` },
+  // money
+  { id: 'india_2016', event: '86 percent of cash in circulation invalidated overnight', year: 2016, country: 'India', policyKind: 'currency_shock', reaction: 'weeks of bank queues and lost wages, surprisingly little organized protest', magnitude: 0.5, durationMonths: 3, delayMonths: 0, url: `${W}2016_Indian_banknote_demonetisation` },
+  { id: 'corralito', event: 'bank deposits frozen', year: 2001, country: 'Argentina', policyKind: 'currency_shock', reaction: 'riots and pot-banging protests, the president resigned', magnitude: 0.9, durationMonths: 6, delayMonths: 0, url: `${W}Corralito` },
+  { id: 'poll_tax', event: 'flat per-person local tax introduced', year: 1990, country: 'United Kingdom', policyKind: 'head_tax', reaction: 'mass non-payment and riots, tax scrapped, prime minister fell', magnitude: 0.8, durationMonths: 12, delayMonths: 3, url: `${W}Poll_tax_riots` },
+  { id: 'france_pension_2023', event: 'retirement age raised from 62 to 64', year: 2023, country: 'France', policyKind: 'pension_cut', reaction: 'months of strikes, the reform passed anyway', magnitude: 0.7, durationMonths: 6, delayMonths: 0, url: `${W}2023_French_pension_reform_unrest` },
+  { id: 'alaska_pfd', event: 'permanent fund dividend paid to every resident', year: 1982, country: 'United States', policyKind: 'basic_income', reaction: 'very popular, politically hard to cut', magnitude: 0.1, durationMonths: 500, delayMonths: 6, url: `${W}Alaska_Permanent_Fund` },
+  { id: 'mincome', event: 'guaranteed annual income experiment in Dauphin', year: 1974, country: 'Canada', policyKind: 'basic_income', reaction: 'hospital visits fell, work hours barely changed', magnitude: 0.15, durationMonths: 48, delayMonths: 6, url: `${W}Mincome` },
+  // carbon pricing
+  { id: 'australia_carbon', event: 'carbon price introduced', year: 2012, country: 'Australia', policyKind: 'carbon_tax', reaction: 'axe the tax campaign won an election, repealed in 2014', magnitude: 0.5, durationMonths: 24, delayMonths: 3, url: `${W}Carbon_pricing_in_Australia` },
+  { id: 'canada_carbon', event: 'revenue neutral carbon tax with rebates', year: 2008, country: 'Canada', policyKind: 'carbon_tax', reaction: 'initial opposition faded while rebates were visible', magnitude: 0.25, durationMonths: 24, delayMonths: 3, url: `${W}Carbon_pricing_in_Canada` },
+  // lockdowns and assembly limits
+  { id: 'covid_protests', event: 'pandemic lockdowns and mandates', year: 2020, country: 'world', policyKind: 'lockdown', reaction: 'compliance high at first, protests grew as months passed', magnitude: 0.45, durationMonths: 12, delayMonths: 2, url: `${W}Protests_against_responses_to_the_COVID-19_pandemic` },
+  { id: 'china_2022', event: 'zero covid lockdowns in their third year', year: 2022, country: 'China', policyKind: 'lockdown', reaction: 'rare nationwide protests, policy dropped within weeks', magnitude: 0.7, durationMonths: 2, delayMonths: 1, url: `${W}2022_COVID-19_protests_in_China` },
+  { id: 'hk_mask', event: 'emergency ban on face coverings at protests', year: 2019, country: 'Hong Kong', policyKind: 'assembly_limit', reaction: 'protests grew the same weekend', magnitude: 0.8, durationMonths: 6, delayMonths: 0, url: `${W}Prohibition_on_Face_Covering_Regulation` },
+  { id: 'us_prohibition', event: 'nationwide ban on alcohol', year: 1920, country: 'United States', policyKind: 'prohibition', reaction: 'mass quiet noncompliance and organized crime, repealed in 1933', magnitude: 0.5, durationMonths: 156, delayMonths: 6, url: `${W}Prohibition_in_the_United_States` },
+  // service and conscription
+  { id: 'vietnam_draft', event: 'conscription for an unpopular war', year: 1965, country: 'United States', policyKind: 'conscription', reaction: 'draft card burnings and campus protests for years', magnitude: 0.7, durationMonths: 72, delayMonths: 6, url: `${W}Opposition_to_United_States_involvement_in_the_Vietnam_War` },
+  { id: 'russia_2022', event: 'partial military mobilization', year: 2022, country: 'Russia', policyKind: 'conscription', reaction: 'hundreds of thousands left the country within weeks', magnitude: 0.7, durationMonths: 3, delayMonths: 0, url: `${W}2022_Russian_mobilization` },
+  { id: 'canada_1917', event: 'overseas conscription imposed', year: 1917, country: 'Canada', policyKind: 'conscription', reaction: 'riots in Quebec, a lasting regional split', magnitude: 0.6, durationMonths: 12, delayMonths: 3, url: `${W}Conscription_Crisis_of_1917` },
+  { id: 'zivildienst', event: 'civilian service as an alternative to conscription', year: 1961, country: 'West Germany', policyKind: 'national_service', reaction: 'became normal, the care sector came to rely on it', magnitude: 0.2, durationMonths: 600, delayMonths: 12, url: `${W}Zivildienst` },
+  // schools and language
+  { id: 'finland_school', event: 'comprehensive school reform', year: 1972, country: 'Finland', policyKind: 'school_reform', reaction: 'slow, then large long-term attainment gains', magnitude: 0.2, durationMonths: 120, delayMonths: 12, url: `${W}Education_in_Finland` },
+  { id: 'soweto_1976', event: 'Afrikaans imposed as a medium of instruction', year: 1976, country: 'South Africa', policyKind: 'language_reform', reaction: 'student uprising, hundreds killed', magnitude: 0.9, durationMonths: 12, delayMonths: 2, url: `${W}Soweto_uprising` },
+  { id: 'bengali_1952', event: 'Urdu declared the only state language', year: 1952, country: 'Pakistan', policyKind: 'language_reform', reaction: 'student protests and deaths, Bengali later made official', magnitude: 0.8, durationMonths: 48, delayMonths: 3, url: `${W}Bengali_language_movement` },
+  { id: 'tamil_1965', event: 'Hindi set to become the sole official language', year: 1965, country: 'India', policyKind: 'language_reform', reaction: 'weeks of riots, English kept alongside Hindi', magnitude: 0.7, durationMonths: 3, delayMonths: 0, url: `${W}Anti-Hindi_agitations_of_Tamil_Nadu` },
+  // families
+  { id: 'hungary_family', event: 'family tax breaks, loans and housing grants for parents', year: 2011, country: 'Hungary', policyKind: 'pronatal', reaction: 'fertility rose from 1.23 to about 1.6 by 2021, then slipped back', magnitude: 0.1, durationMonths: 120, delayMonths: 24, tfrEffect: 0.25, url: `${W}Demographics_of_Hungary` },
+  { id: 'korea_pronatal', event: 'two decades of spending to raise births', year: 2006, country: 'South Korea', policyKind: 'pronatal', reaction: 'fertility kept falling, to 0.72 in 2023', magnitude: 0.05, durationMonths: 200, delayMonths: 24, tfrEffect: 0.0, url: `${W}Demographics_of_South_Korea` },
+  { id: 'france_family', event: 'long-running family allowances and childcare', year: 1946, country: 'France', policyKind: 'pronatal', reaction: 'among the highest fertility in Europe for decades', magnitude: 0.05, durationMonths: 600, delayMonths: 36, tfrEffect: 0.2, url: `${W}Demographics_of_France` },
+  { id: 'one_child', event: 'one child limit per family', year: 1980, country: 'China', policyKind: 'birth_limit', reaction: 'coercion, rural resistance, lasting sex ratio and aging problems', magnitude: 0.6, durationMonths: 420, delayMonths: 6, tfrEffect: -0.6, url: `${W}One-child_policy` },
+  { id: 'india_emergency', event: 'forced sterilization drive during emergency rule', year: 1976, country: 'India', policyKind: 'birth_limit', reaction: 'fury that cost the government the next election', magnitude: 0.85, durationMonths: 21, delayMonths: 3, tfrEffect: -0.1, url: `${W}The_Emergency_(India)` },
+  // health
+  { id: 'nhs_1948', event: 'free universal health service', year: 1948, country: 'United Kingdom', policyKind: 'healthcare_expansion', reaction: 'became the most popular public institution in the country', magnitude: 0.1, durationMonths: 600, delayMonths: 6, url: `${W}National_Health_Service` },
+  { id: 'aca_2010', event: 'health insurance expansion with a mandate', year: 2010, country: 'United States', policyKind: 'healthcare_expansion', reaction: 'polarized and unpopular for years, majority support by 2017', magnitude: 0.4, durationMonths: 84, delayMonths: 3, url: `${W}Affordable_Care_Act` },
+  { id: 'smallpox', event: 'global smallpox vaccination campaign', year: 1967, country: 'world', policyKind: 'vaccination', reaction: 'local resistance in places, disease eradicated by 1980', magnitude: 0.15, durationMonths: 156, delayMonths: 6, url: `${W}Smallpox#Eradication` },
+]
+
+export const precedentById = new Map(PRECEDENTS.map(p => [p.id, p]))
+
+// ---------- classification ----------
+// keyword rules in priority order. the llm writes the text; this code decides what kind of policy it is.
+const RULES: [string, RegExp][] = [
+  ['fuel_subsidy_cut', /(cut|remove|end|phase out|abolish).{0,30}(fuel|energy|gas|petrol|electricity).{0,15}subsid|subsid.{0,30}(fuel|energy|petrol).{0,30}(cut|remov|end|phase)/],
+  ['food_subsidy_cut', /(cut|remove|end|phase out).{0,30}(food|bread|grain).{0,15}subsid/],
+  ['carbon_tax', /carbon (tax|price|pricing|levy)|emissions? (tax|levy)/],
+  ['energy_tax', /(tax|levy|surcharge).{0,30}(fuel|petrol|gasoline|diesel|energy)|(fuel|energy|petrol).{0,15}(tax|levy)/],
+  ['birth_limit', /(limit|cap|restrict|reduce).{0,25}(birth|child|famil)|one.child|two.child|steriliz/],
+  ['pronatal', /(child|family|parent|baby|birth).{0,25}(benefit|allowance|bonus|grant|leave|credit|support)|fertility|childcare|maternity|paternity/],
+  ['religion_suppression', /(ban|restrict|limit|discourag|prohibit|close|suppress).{0,40}(relig|worship|church|mosque|temple|faith|clergy)|(relig|worship|faith).{0,30}(ban|restrict|limit|prohibit)/],
+  ['state_religion', /(state|official|national) (faith|religion|church)|mandatory prayer/],
+  ['secular_state', /secular|separat.{0,20}(church|religion)|religious neutrality/],
+  ['currency_shock', /currency|banknote|demoneti|cash (ban|withdraw)|digital currency|deposit freeze/],
+  ['lockdown', /lockdown|quarantine|stay.at.home|mask mandate/],
+  ['assembly_limit', /assembl|protest ban|curfew|censor|press control|internet shutdown/],
+  ['conscription', /conscript|draft|military service|mobiliz/],
+  ['national_service', /national service|civil(ian)? service year|community service/],
+  ['language_reform', /language|lingua franca|official tongue/],
+  ['school_reform', /school|curricul|education|literacy|universit|teacher/],
+  ['relocation', /relocat|resettl|evacuat|move .{0,20}(people|population|residents)/],
+  ['collectivization', /collectiv|nationaliz.{0,20}(farm|land)|state farm/],
+  ['rationing', /ration/],
+  ['food_reserve', /(food|grain) (reserve|aid|bank|security)|famine relief/],
+  ['agriculture_push', /agricultur|farm|crop|irrigat|fertili[sz]er|yield|seed/],
+  ['vaccination', /vaccin|immuniz|eradicat/],
+  ['healthcare_expansion', /health|hospital|clinic|medical|medicine/],
+  ['pension_cut', /(retirement|pension) age|(cut|reduce).{0,20}pension/],
+  ['head_tax', /poll tax|head tax|flat tax|per.person tax/],
+  ['wealth_tax', /wealth tax|income tax|tax on (the )?(rich|wealth|income)|progressive tax/],
+  ['basic_income', /basic income|cash transfer|dividend|guaranteed income/],
+  ['prohibition', /(ban|prohibit).{0,20}(alcohol|drug|tobacco|meat|car)/],
+  ['grid_integration', /grid|transmission|power line|interconnect/],
+  ['electrification', /electrif|solar|wind|nuclear|power plant|fusion|energy/],
+  ['big_project', /space|lunar|moon|mars|rocket|launch|orbit|dam|megaproject|rail|canal|city/],
+  ['research_push', /research|science|laborator|technolog|innovation/],
+]
+
+export type LawMeta = { policyKind: string; precedentIds: string[]; magnitude: number; delayMonths: number; durationMonths: number; tfrEffect: number; estimate: boolean; lovedBy: string[]; hatedBy: string[] }
+
+export function classifyPolicy(law: Pick<Law, 'title' | 'text' | 'layer'>): string {
+  const t = `${law.title} ${law.text}`.toLowerCase()
+  for (const [kind, re] of RULES) if (re.test(t)) return kind
+  return 'other'
+}
+
+// who tends to win and lose under each kind of policy (in-group / out-group, Tajfel & Turner 1979).
+// labels are group descriptions matched against citizens' GroupKey, or faction ids. ESTIMATE readings.
+export const GROUP_STAKES: Record<string, { lovedBy: string[]; hatedBy: string[] }> = {
+  fuel_subsidy_cut: { lovedBy: ['science'], hatedBy: ['low income', 'labor', 'old_energy'] },
+  food_subsidy_cut: { lovedBy: ['business'], hatedBy: ['low income', 'elders', 'labor'] },
+  carbon_tax: { lovedBy: ['science', 'young'], hatedBy: ['old_energy', 'low income', 'industry workers'] },
+  energy_tax: { lovedBy: ['science'], hatedBy: ['low income', 'old_energy', 'industry workers'] },
+  birth_limit: { lovedBy: ['bureaucrats'], hatedBy: ['religious', 'young', 'religious_faction'] },
+  pronatal: { lovedBy: ['young', 'religious'], hatedBy: ['high income', 'business'] },
+  religion_suppression: { lovedBy: ['secular'], hatedBy: ['religious', 'religious_faction', 'elders'] },
+  state_religion: { lovedBy: ['religious', 'religious_faction'], hatedBy: ['secular', 'science'] },
+  secular_state: { lovedBy: ['secular', 'science'], hatedBy: ['religious', 'religious_faction'] },
+  currency_shock: { lovedBy: ['bureaucrats'], hatedBy: ['low income', 'farm workers', 'business'] },
+  lockdown: { lovedBy: ['elders'], hatedBy: ['young', 'business', 'service workers'] },
+  assembly_limit: { lovedBy: ['military'], hatedBy: ['young', 'labor', 'secular'] },
+  conscription: { lovedBy: ['military', 'elders'], hatedBy: ['young', 'labor'] },
+  national_service: { lovedBy: ['elders'], hatedBy: ['young'] },
+  language_reform: { lovedBy: ['bureaucrats'], hatedBy: ['regional_nationalist', 'kids', 'elders'] },
+  school_reform: { lovedBy: ['kids', 'science', 'young'], hatedBy: ['religious_faction'] },
+  relocation: { lovedBy: ['business'], hatedBy: ['regional_nationalist', 'farm workers', 'elders'] },
+  collectivization: { lovedBy: ['bureaucrats'], hatedBy: ['farm workers', 'business', 'religious'] },
+  rationing: { lovedBy: ['low income'], hatedBy: ['high income', 'business'] },
+  food_reserve: { lovedBy: ['low income', 'elders'], hatedBy: ['business'] },
+  agriculture_push: { lovedBy: ['farm workers', 'business'], hatedBy: [] },
+  vaccination: { lovedBy: ['science', 'elders'], hatedBy: ['conspiracy'] },
+  healthcare_expansion: { lovedBy: ['low income', 'elders'], hatedBy: ['high income'] },
+  pension_cut: { lovedBy: ['business'], hatedBy: ['elders', 'labor', 'adults'] },
+  head_tax: { lovedBy: ['high income'], hatedBy: ['low income', 'labor'] },
+  wealth_tax: { lovedBy: ['low income', 'labor'], hatedBy: ['high income', 'business'] },
+  basic_income: { lovedBy: ['low income', 'young'], hatedBy: ['high income'] },
+  prohibition: { lovedBy: ['religious'], hatedBy: ['young', 'business'] },
+  grid_integration: { lovedBy: ['science', 'business'], hatedBy: ['old_energy'] },
+  electrification: { lovedBy: ['science', 'low income'], hatedBy: ['old_energy'] },
+  big_project: { lovedBy: ['science', 'business', 'industry workers'], hatedBy: ['low income', 'regional_nationalist'] },
+  research_push: { lovedBy: ['science', 'young'], hatedBy: [] },
+  big_change: { lovedBy: ['bureaucrats'], hatedBy: ['elders'] },
+  other: { lovedBy: [], hatedBy: [] },
+}
+
+// precedent defaults when nothing matches (ESTIMATE)
+const DEFAULT_META = { magnitude: 0.3, delayMonths: 3, durationMonths: 12, tfrEffect: 0 }
+export const unmatchedLog: string[] = []
+
+export function lawMeta(law: Pick<Law, 'title' | 'text' | 'layer'>): LawMeta {
+  const policyKind = classifyPolicy(law)
+  const matches = PRECEDENTS.filter(p => p.policyKind === policyKind)
+  // pick up to 3 precedents, closest by shared title words, stable order
+  const words = new Set(`${law.title} ${law.text}`.toLowerCase().split(/\W+/).filter(w => w.length > 3))
+  const ranked = matches
+    .map(p => ({ p, s: p.event.toLowerCase().split(/\W+/).filter(w => words.has(w)).length }))
+    .sort((a, b) => b.s - a.s || a.p.year - b.p.year)
+    .slice(0, 3).map(x => x.p)
+  const stakes = GROUP_STAKES[policyKind] ?? GROUP_STAKES.other
+  if (!ranked.length) {
+    unmatchedLog.push(`ESTIMATE: no precedent for "${law.title}" (${policyKind})`)
+    return { policyKind, precedentIds: [], ...DEFAULT_META, estimate: true, ...stakes }
+  }
+  const avg = (f: (p: P) => number) => ranked.reduce((a, p) => a + f(p), 0) / ranked.length
+  return {
+    policyKind, precedentIds: ranked.map(p => p.id), estimate: false,
+    magnitude: avg(p => p.magnitude), delayMonths: Math.round(Math.min(...ranked.map(p => p.delayMonths))),
+    durationMonths: Math.round(Math.min(48, avg(p => p.durationMonths))), tfrEffect: avg(p => p.tfrEffect ?? 0),
+    ...stakes,
+  }
+}
+
+export function publicPrecedents(ids: Iterable<string>): Precedent[] {
+  const out: Precedent[] = []
+  for (const id of new Set(ids)) {
+    const p = precedentById.get(id)
+    if (p) out.push({ id: p.id, event: p.event, year: p.year, country: p.country, policyKind: p.policyKind, reaction: p.reaction, magnitude: p.magnitude, durationMonths: p.durationMonths, url: p.url })
+  }
+  return out
+}

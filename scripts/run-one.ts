@@ -1,5 +1,6 @@
 // npm run run-one -- [--seed 1] [--constitution technocrat | --constitution-file path] [--runId id] [--overrideDir dir]
-// one world, one line per year: date, population, food, unrest, moon stage, vs the no-ai twin's population
+// one world, one line per frame (yearly): date, population, food, unrest, moon stage, frontier, period life
+// expectancy, approval, vs the no-ai twin's population
 import fs from 'node:fs'
 import path from 'node:path'
 import { config } from 'dotenv'
@@ -27,8 +28,8 @@ async function main() {
     const unrest = f.regions.reduce((a, r) => a + r.unrest * r.population, 0) / pop
     const tp = twinPop.get(f.tick)
     const vs = tp ? `${pop >= tp ? '+' : ''}${(((pop - tp) / tp) * 100).toFixed(2)}%` : 'n/a'
-    console.log(`${f.date}  pop ${fmt(pop).padStart(8)}  food ${Math.round(food)} kcal  unrest ${unrest.toFixed(3)}  moon ${f.moonStage.padEnd(14)} vs twin pop ${vs}`)
+    console.log(`${f.date}  pop ${fmt(pop).padStart(8)}  food ${Math.round(food)} kcal  unrest ${unrest.toFixed(3)}  moon ${f.moonStage.padEnd(14)} frontier ${f.frontier.padEnd(20)} le ${f.globalPeriodLifeExpectancy.toFixed(1)}  approval ${f.humanCost.approval.toFixed(2)}  vs twin pop ${vs}`)
   }
-  console.log(`${runId} ${s.status} ${s.endDate} score ${s.score} peak ${s.peakPopulation} twin ${s.baselineStatus} ${s.baselineEndDate}${s.causeOfDeath ? ` (${s.causeOfDeath})` : ''}`)
+  console.log(`${runId} ${s.status} ${s.endDate} score ${s.score} frontier ${s.frontier} peak le ${s.peakPeriodLifeExpectancy} peak pop ${s.peakPopulation} final pop ${s.finalPopulation} deaths ${s.humanCost.deaths} twin ${s.baselineStatus} ${s.baselineEndDate}${s.causeOfDeath ? ` (${s.causeOfDeath})` : ''}`)
 }
 main().then(() => process.exit(0), e => { console.error(e); process.exit(1) })

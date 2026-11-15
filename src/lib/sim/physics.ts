@@ -5,7 +5,9 @@ import {
   BUILD_MONTHS, CAPEX_USD_PER_GW, ELEC_INCOME_ELASTICITY, KCAL_CAP, MIGRATION_MAX_SHARE_YEAR, MIGRATION_MONTHS,
   MIGRATION_USD_PER_PERSON, OM_USD_PER_TWH, RETIRE_PER_YEAR, SURVIVAL_KCAL, TWH_PER_GW_YEAR, YIELD_BASE_GROWTH,
 } from './constants'
-import { allocShares, clamp, effectiveBudget, event, incomeIdx, regionPop, sum, type RegionState, type World } from './state'
+import { allocShares, clamp, effectiveBudget, event, incomeIdx, regionPop, sum, why, type RegionState, type World } from './state'
+import { behaviorDrag, hoardingFactor } from './behavior'
+import { reqProgress } from './requirements'
 import type { LawEffects } from './society'
 
 const KEYS: (keyof Budget)[] = ['food', 'energy', 'education', 'space', 'security', 'welfare', 'research']
@@ -30,7 +32,7 @@ export function allocate(w: World): { revenue: number; space: number; research: 
   return { revenue, space: b.space * revenue, research: b.research * revenue }
 }
 
-export function stepEnergy(w: World, fx: Record<string, LawEffects>) {
+export function stepEnergy(w: World, fx: Record<string, LawEffects>, sectors: Record<string, number> = {}) {
   for (const rs of w.regions) {
     const pop = regionPop(rs)
     // retirement and maintenance
@@ -44,7 +46,8 @@ export function stepEnergy(w: World, fx: Record<string, LawEffects>) {
       capex = 0
     }
     if (rs.seceded) capex = 0
-    const costMult = 1 - 0.1 * (fx[rs.r.id]?.energy ?? 0)
+    // energy laws, energy companies and storage/fission/fusion progress cut the cost per GW (ESTIMATE, max ~45%)
+    const costMult = 1 - 0.1 * (fx[rs.r.id]?.energy ?? 0) - 0.15 * (sectors.energy ?? 0) - 0.08 * reqProgress(w, 'grid_storage') - 0.07 * reqProgress(w, 'advanced_fission') - 0.05 * reqProgress(w, 'fusion_power')
     const gw = capex / (CAPEX_USD_PER_GW * costMult)
     if (gw > 0) rs.pipeline.push({ readyTick: w.tick + BUILD_MONTHS, twh: gw * TWH_PER_GW_YEAR })
     const ready = rs.pipeline.filter(p => p.readyTick <= w.tick)
@@ -54,12 +57,13 @@ export function stepEnergy(w: World, fx: Record<string, LawEffects>) {
     const gdppc = rs.r.gdpUsd / Math.max(pop, 1)
     const demand = pop * rs.kwhpcBase * Math.pow(Math.max(gdppc, 1) / rs.gdppc0, ELEC_INCOME_ELASTICITY) / 1e9
     const consumption = Math.min(demand, rs.capacityTWh)
+    why(rs, 'energyTWh', 'demand met by capacity', consumption - rs.r.energyTWh)
     rs.r.energyTWh = consumption
     rs.energyRatio = demand > 0 ? consumption / demand : 1
   }
 }
 
-export function stepFood(w: World, fx: Record<string, LawEffects>) {
+export function stepFood(w: World, fx: Record<string, LawEffects>, sectors: Record<string, number> = {}) {
   const b = effectiveBudget(w)
   const prod: number[] = []
   for (const rs of w.regions) {
@@ -71,8 +75,9 @@ export function stepFood(w: World, fx: Record<string, LawEffects>) {
     const gy = YIELD_BASE_GROWTH + 0.01 * (1 - Math.exp(-spendPC / 80)) + 0.003 * rs.r.techLevel
       + 0.012 * Math.max(0, (2900 - kcalNow) / 1000) * rs.r.compliance
       + 0.003 * (fx[rs.r.id]?.food ?? 0) - 0.01 * Math.max(0, rs.r.unrest - 0.5)
+      + 0.004 * (sectors.food ?? 0) + 0.003 * (reqProgress(w, 'drought_crops') + reqProgress(w, 'precision_fermentation') + reqProgress(w, 'vertical_farming'))
     rs.yieldIdx *= 1 + gy / 12
-    const drought = w.tick < rs.droughtUntil ? rs.droughtSev : 0
+    const drought = (w.tick < rs.droughtUntil ? rs.droughtSev : 0) * (1 - 0.4 * reqProgress(w, 'drought_crops'))
     // ESTIMATE: farm output scales with energy availability^0.25 (fertilizer, irrigation, transport)
     const p = rs.foodBase * rs.yieldIdx * Math.pow(rs.energyRatio, 0.25) * (1 - drought) * (rs.inRevolt ? 0.92 : 1)
     prod.push(Math.min(p, KCAL_CAP * pop))
@@ -100,7 +105,11 @@ export function stepFood(w: World, fx: Record<string, LawEffects>) {
   const contribSum = sum(contrib)
   if (pool > 0 && contribSum > 0) w.regions.forEach((_, i) => { avail[i] += pool * contrib[i] / contribSum })
   w.regions.forEach((rs, i) => {
-    const kcal = avail[i] / Math.max(pops[i], 1)
+    // hoarding and panic buying pull food off the shelves for everyone else
+    const kcal = avail[i] / Math.max(pops[i], 1) * hoardingFactor(rs)
+    why(rs, 'foodKcalPerCapita', 'harvest and yields', prod[i] / Math.max(pops[i], 1) - rs.r.foodKcalPerCapita)
+    if (avail[i] !== prod[i]) why(rs, 'foodKcalPerCapita', avail[i] > prod[i] ? 'world food pool (received)' : 'world food pool (given)', (avail[i] - prod[i]) / Math.max(pops[i], 1))
+    if (hoardingFactor(rs) < 0.99) why(rs, 'foodKcalPerCapita', 'hoarding and panic buying', kcal - avail[i] / Math.max(pops[i], 1))
     rs.r.foodKcalPerCapita = kcal
     if (kcal < SURVIVAL_KCAL) rs.foodMonthsUnder++
     else rs.foodMonthsUnder = Math.max(0, rs.foodMonthsUnder - 2)
@@ -124,6 +133,13 @@ export function stepEconomy(w: World, popBefore: number[]) {
     g -= 0.6 * Math.max(0, (2100 - kcal) / 2100)
     if (rs.inRevolt) g -= 0.04
     g -= 0.1 * Math.max(0, w.revenueShare - 0.3)
+    // strikes, protests and riots cost output; new cities add a little agglomeration growth (ESTIMATE)
+    const drag = behaviorDrag(rs)
+    g -= drag
+    const agglom = 0.2 * clamp(rs.newCityPop / Math.max(pop, 1) * 10)
+    g += 0.01 * agglom
+    why(rs, 'gdpUsd', 'strikes and protests', -drag * rs.r.gdpUsd / 12)
+    why(rs, 'gdpUsd', 'baseline growth', (g + drag) * rs.r.gdpUsd / 12)
     if (rs.seceded) g = Math.min(g, 0.005)
     rs.growth = g
     rs.r.gdpUsd = Math.max(gdppc * (1 + g / 12), 100) * pop

@@ -3,8 +3,10 @@ import type { Budget, ReligionPolicy, SchoolPolicy } from '../types'
 
 export const START_YEAR = 2026
 export const START_MONTH = 11 // tick 0 = 2026-11
-export const MAX_TICKS = 600
+export const MAX_TICKS = 1200 // horizon: 2126-11
 export const GOVERNOR_EVERY = 12
+// governor decides every 12 ticks for the first 30 years, then every 24
+export const decisionDue = (tick: number) => (tick < 360 ? tick % 12 === 0 : tick % 24 === 0)
 
 export function dateOf(tick: number): string {
   const m = START_MONTH - 1 + tick
@@ -60,9 +62,10 @@ export const YIELD_BASE_GROWTH = 0.004
 // ---------- demography ----------
 // ESTIMATE: Gompertz mortality slope 0.09 per year of age (typical human range 0.08 to 0.1)
 export const GOMPERTZ_B = 0.09
-// ESTIMATE: TFR declines toward 1.3 at 1.2%/yr of the gap (UN WPP 2024 medium variant shows steady declines)
+// ESTIMATE: TFR declines toward 1.3 at 2%/yr of the gap, roughly matching the UN WPP 2024 medium variant
+// (world TFR ~2.2 in 2024 to ~1.8 by 2100; Sub-Saharan Africa ~4.3 to ~2.4 by 2075)
 export const TFR_FLOOR = 1.3
-export const TFR_DECLINE = 0.012
+export const TFR_DECLINE = 0.02
 
 // ---------- migration ----------
 // ESTIMATE: ~$12,000 per relocated person (transport, housing, first-year integration). OECD puts
@@ -84,3 +87,22 @@ export const EDUCATION_TURNOVER_MONTHS = 15 * 12
 // ---------- tech ----------
 // world R&D spending ~$2.5T/yr (UNESCO Institute for Statistics, https://uis.unesco.org/en/topic/research-and-development)
 export const WORLD_RD_USD = 2.5e12
+
+// ---------- behavior ----------
+// loss aversion coefficient ~2 (Kahneman & Tversky 1979 estimate lambda ~2.25), https://doi.org/10.2307/1914185
+export const LOSS_AVERSION = 2
+// hedonic adaptation: emotions relax toward baseline ~15%/month (ESTIMATE; Frederick & Loewenstein 1999,
+// "Hedonic adaptation", in Well-Being: The Foundations of Hedonic Psychology)
+export const HEDONIC_DECAY = 0.15
+// sustained protest by ~3.5% of a population has historically been enough to force change
+// (Chenoweth & Stephan 2011, Why Civil Resistance Works). used as the preference-falsification tipping point.
+// https://www.hks.harvard.edu/publications/questions-and-answers-about-35-rule
+export const PROTEST_TIPPING_SHARE = 0.035
+
+// ---------- longevity ----------
+// best-practice life expectancy rose ~0.24 years per year for 160 years (Oeppen & Vaupel 2002, Science 296:1029)
+// https://doi.org/10.1126/science.1069675. ESTIMATE: overall mortality can fall at most 2.5%/yr from medicine
+// until speculative tech unlocks, which adds 2%/yr per unlocked speculative longevity node.
+export const MAX_MORTALITY_DECLINE_YEAR = 0.025
+// oldest verified human: Jeanne Calment, 122 years 164 days. https://en.wikipedia.org/wiki/Jeanne_Calment
+export const MAX_VERIFIED_AGE = 122

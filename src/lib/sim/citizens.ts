@@ -6,6 +6,7 @@ import type { Citizen, Law } from '../types'
 import { chat, groqAvailable } from '../agent/groq'
 import { hashString, mulberry32, normal, pick, pickWeighted, type Rng } from './rng'
 import { BAND_MID, DEMOGRAPHICS, clamp, incomeIdx, regionPop, type RegionState, type World } from './state'
+import { addLifeEvent, citizenGroup, pickArchetype, satiricalThought, stepCitizens, valence } from './behavior'
 
 export const PEOPLE_PER_PIP = 40e6
 export const MIN_PIPS = 3
@@ -122,9 +123,12 @@ export function makeCitizen(w: World, rs: RegionState, rng: Rng, age?: number): 
   const f = rs.r.faith
   const belief = pickWeighted<string>(rng, { religious: 0.85 * f, spiritual: 0.15 * f + 0.15 * (1 - f), secular: 0.85 * (1 - f) }) as Citizen['belief']
   w.citizenSeq++
+  const archetype = pickArchetype(rng, a)
   const c: Citizen = {
     id: `c${w.citizenSeq}`, regionId: rs.r.id, name, age: a, sex, skinTone, hair, hairColor: baseColor,
-    heightCm: 0, build, personalitySeed, job, belief, mood: 0.5, thought: '',
+    heightCm: 0, build, personalitySeed, job, belief, thought: '',
+    archetype, group: citizenGroup(w, rs, { age: a, job, belief, personalitySeed }), mood: { ...rs.mood }, behavior: 'working',
+    lifeEvents: [], opinionOfCore: 0, family: { kids: a >= 25 ? Math.floor(rng() * Math.min(4, (rs.tfr || 2) + 0.5)) : 0 },
   }
   // hidden per-citizen attributes kept outside the public Citizen shape
   w.citizenMeta[c.id] = { origin, baseHair: baseColor, affectedTick: w.tick, prevMood: 0.5 }
@@ -193,20 +197,28 @@ export function migrateCitizens(w: World, from: string, to: string, people: numb
   const mover = pick(rng, movers)
   // the mover keeps their appearance; counts are rebalanced at the next yearly sync
   w.citizens = w.citizens.map(c => (c === mover ? { ...c, regionId: to } : c))
-  const meta = w.citizenMeta[mover.id]
-  if (meta) meta.affectedTick = w.tick
+  const moved = w.citizens.find(c => c.id === mover.id)
+  if (moved) addLifeEvent(w, moved, `relocated from ${src.r.name} to ${dst.r.name}`)
 }
 
-// mood from region conditions, laws hitting the region, belief vs religion policy, and a stable personal offset
+// monthly: moods, behaviors, opinions (behavior.ts). yearly: partners for unpartnered adults in the same region
 export function updateMoods(w: World) {
-  for (const c of w.citizens) {
-    const rs = w.regions.find(r => r.r.id === c.regionId)!
-    const disliked = Math.max(0, ...w.laws.filter(l => !l.vetoed).map(l => 0.5 - (rs.lawSupport[l.id] ?? 0.5)))
-    let m = 0.5 + 0.6 * (0.35 - rs.r.unrest) + 0.2 * clamp((rs.r.foodKcalPerCapita - 2200) / 800) - 0.4 * disliked
-    if (c.belief === 'religious' && w.religionPolicy === 'discouraged') m -= 0.15
-    if (c.belief === 'secular' && w.religionPolicy === 'state_faith') m -= 0.1
-    m += 0.2 * (unit(c.personalitySeed, 'temper') - 0.5)
-    c.mood = Math.round(clamp(m) * 100) / 100
+  stepCitizens(w)
+}
+
+export function pairPartners(w: World) {
+  const rng = w.rng.citizens
+  for (const rs of w.regions) {
+    const single = w.citizens.filter(c => c.regionId === rs.r.id && c.age >= 20 && c.age <= 60 && !c.family.partnerId)
+    for (let i = 0; i + 1 < single.length; i += 2) {
+      // ESTIMATE: 15% of eligible pairs partner up in a given year
+      if (rng() < 0.15 && single[i].sex !== single[i + 1].sex || rng() < 0.03) {
+        single[i].family.partnerId = single[i + 1].id
+        single[i + 1].family.partnerId = single[i].id
+        addLifeEvent(w, single[i], `moved in with ${single[i + 1].name}`)
+        addLifeEvent(w, single[i + 1], `moved in with ${single[i].name}`)
+      }
+    }
   }
 }
 
@@ -218,38 +230,7 @@ function lawsHitting(w: World, regionId: string): { law: Law; support: number }[
 
 export function templateThought(w: World, c: Citizen): string {
   const rs = w.regions.find(r => r.r.id === c.regionId)!
-  const hit = lawsHitting(w, c.regionId)[0]
-  const kcal = rs.r.foodKcalPerCapita
-  const v = unit(c.personalitySeed, `t${w.tick}`)
-  if (kcal < 2000) return v < 0.5 ? 'There is not enough food. I skip meals so the kids can eat.' : 'The ration lines get longer every month. I do not know how long we can live like this.'
-  if (rs.inRevolt) return v < 0.5 ? 'Nobody here listens to the world government anymore. The streets decide now.' : 'I keep my head down. Every night there is shouting outside.'
-  if (hit && hit.support < 0.35 && v < 0.6) return pick(rngFor(c, w), [
-    `They passed "${hit.law.title}" and nobody here asked for it. Most of us just ignore it.`,
-    `"${hit.law.title}" was written by people who have never been to ${rs.r.name}.`,
-    `My neighbors say they will not follow "${hit.law.title}". I think they are right.`,
-  ])
-  if (hit && hit.support > 0.65 && v < 0.6) return pick(rngFor(c, w), [
-    `"${hit.law.title}" is the first thing in years that actually helps people like me.`,
-    `I did not expect much, but "${hit.law.title}" is making a difference here.`,
-  ])
-  if (c.belief === 'religious' && w.religionPolicy === 'discouraged') return 'They want us to pray less. I pray more.'
-  if (c.belief === 'secular' && w.religionPolicy === 'state_faith') return 'I never asked the government to pick a faith for me.'
-  if (c.job === 'child') return pick(rngFor(c, w), ['I want to see a rocket go up.', 'Today we drew the moon at school.', 'My grandmother tells the best stories.'])
-  if (c.mood > 0.65) return pick(rngFor(c, w), [
-    c.job === 'student' ? 'School is hard but I think it leads somewhere now.' : `Work as a ${c.job} is steady. Things feel like they are getting better.`,
-    'We ate well this week and the lights stayed on. That counts for a lot.',
-    `They say the moon program is on track. My kids talk about nothing else.`,
-  ])
-  if (c.mood < 0.35) return pick(rngFor(c, w), [
-    `Prices keep rising and my work as a ${c.job} barely covers rent. I am tired.`,
-    'Nobody in charge seems to know what life is like here.',
-    'I am angry and I am not the only one.',
-  ])
-  return pick(rngFor(c, w), [
-    'Some days are fine, some are not. I am waiting to see what they do next.',
-    'They talk about the moon. I would settle for a better bus to work.',
-    `Life as a ${c.job} in ${rs.r.name} is ordinary. Maybe that is good.`,
-  ])
+  return satiricalThought(w, c, rs, rngFor(c, w))
 }
 
 // stable per citizen and year, independent of the sim rng streams
@@ -260,13 +241,13 @@ export async function refreshThoughts(w: World, useLlm: boolean) {
   // "affected": a pip that is new, just moved, or whose mood shifted since last year
   for (const c of w.citizens) {
     const m = w.citizenMeta[c.id]
-    if (m && Math.abs(c.mood - m.prevMood) > 0.05) m.affectedTick = w.tick
+    if (m && Math.abs(valence(c.mood) - m.prevMood) > 0.05) m.affectedTick = w.tick
   }
   const chosen = new Set<string>()
   for (const rs of w.regions) {
     w.citizens.filter(c => c.regionId === rs.r.id)
       .sort((a, b) => (w.citizenMeta[b.id]?.affectedTick ?? 0) - (w.citizenMeta[a.id]?.affectedTick ?? 0)
-        || Math.abs(b.mood - (w.citizenMeta[b.id]?.prevMood ?? 0.5)) - Math.abs(a.mood - (w.citizenMeta[a.id]?.prevMood ?? 0.5))
+        || Math.abs(valence(b.mood) - (w.citizenMeta[b.id]?.prevMood ?? 0.5)) - Math.abs(valence(a.mood) - (w.citizenMeta[a.id]?.prevMood ?? 0.5))
         || Number(a.id.slice(1)) - Number(b.id.slice(1)))
       .slice(0, LLM_THOUGHTS_PER_REGION)
       .forEach(c => chosen.add(c.id))
@@ -274,7 +255,7 @@ export async function refreshThoughts(w: World, useLlm: boolean) {
   for (const c of w.citizens) {
     c.thought = templateThought(w, c)
     const m = w.citizenMeta[c.id]
-    if (m) m.prevMood = c.mood
+    if (m) m.prevMood = valence(c.mood)
   }
   if (!useLlm || !groqAvailable()) return
   const regionBrief = w.regions.map(rs => ({
@@ -282,13 +263,13 @@ export async function refreshThoughts(w: World, useLlm: boolean) {
     laws: lawsHitting(w, rs.r.id).map(x => ({ title: x.law.title, localSupport: +x.support.toFixed(2) })),
   }))
   const targets = w.citizens.filter(c => chosen.has(c.id))
-  const people = targets.map(c => ({ id: c.id, name: c.name, age: c.age, job: c.job, region: c.regionId, belief: c.belief, mood: c.mood }))
+  const people = targets.map(c => ({ id: c.id, name: c.name, age: c.age, job: c.job, region: c.regionId, archetype: c.archetype, behavior: c.behavior, mood: +valence(c.mood).toFixed(2), recent: c.lifeEvents.slice(-2).map(e => e.text) }))
   try {
     // one batched call per year for every chosen pip in every region
     const out = await chat({
       model: THOUGHT_MODEL, json: true, temperature: 0.8, maxTokens: 8000,
-      system: 'You write one short first-person thought (max 25 words) for each ordinary person living under a single world government. React to the laws that hit their region and their conditions. Match their mood (0 angry, 1 happy). Plain everyday language, no em-dashes, no names of real politicians. Return JSON {"thoughts": {"<id>": "<thought>"}}.',
-      user: JSON.stringify({ tick: w.tick, religionPolicy: w.religionPolicy, regions: regionBrief, people }),
+      system: 'You write one short first-person thought (max 25 words) for each ordinary person living under a single world government. Dry, deadpan, satirical, in an original voice: react to their actual situation, the laws that hit their region, the crowd topic of the moment, their archetype and what they are doing. Satirize behaviors and institutions, never race, ethnicity, religion as identity, sex or disability. Match their mood (0 miserable, 1 thriving). Plain everyday language, no em-dashes, no real politicians. Return JSON {"thoughts": {"<id>": "<thought>"}}.',
+      user: JSON.stringify({ tick: w.tick, religionPolicy: w.religionPolicy, regions: regionBrief.map(r => ({ ...r, crowds: w.regions.find(x => x.r.id === r.id)!.crowds.map(c => `${c.topic} (${c.phase})`) })), people }),
     })
     const parsed = JSON.parse(out) as { thoughts?: Record<string, unknown> }
     for (const c of targets) {

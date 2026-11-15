@@ -5,25 +5,43 @@
 //   - 3 or more regions have been in revolt for 24 straight months
 //   - global food supply has been under the survival threshold (1,800 kcal) for 12 straight months
 //   - a war reaches severity 1
-// moon: crewed landing succeeded. stagnated: tick 600 (2076-11) reached without either.
+// goal_achieved (ends early): frontier mars_self_sustaining reached AND global period life expectancy >= 200
+//   AND global population not declining over the last 10 years (120 ticks)
+// complete: reached the horizon, tick 1200 (2126-11), without the goal.
 //
-// score:
-//   moon:      1000 + (600 - tick at landing), so landing earlier scores more (max 1600)
-//   otherwise: moonProgress * 500 + months survived + average wellbeing * 100
-//   wellbeing per month (0..1, population-weighted) = 0.4 * food (0 at 1,800 kcal, 1 at 2,500+)
-//     + 0.4 * (1 - unrest) + 0.2 * energy demand met
+// score = mission progress only, 0..1 (human cost is never in the score; it is reported next to it):
+//   0.40 x frontier: share of the 7 milestones achieved (moon_landing .. outer_system)
+//   0.30 x period life expectancy progress from 2026 (~73) to 200, using the best value reached
+//   0.15 x population trend over the last 10 years (1 if not declining, falling to 0 at a 10% decline)
+//   0.15 x share of requirement nodes completed
+//   goal_achieved scores 1.
 import { MAX_TICKS, SURVIVAL_KCAL } from './constants'
+import { FRONTIERS, has } from './frontier'
 import { clamp, popWeighted, worldPop, type World } from './state'
-import { moonProgress } from './space'
+
+export const START_PLE = 73
 
 export function wellbeing(w: World): number {
   return popWeighted(w, r => 0.4 * clamp((r.r.foodKcalPerCapita - SURVIVAL_KCAL) / 700) + 0.4 * (1 - r.r.unrest) + 0.2 * r.energyRatio)
 }
 
-// updates streak counters and status. call once per tick after the step.
-export function checkEnd(w: World, landed: boolean) {
+export function globalPLE(w: World): number {
+  return popWeighted(w, r => r.periodLE)
+}
+
+export function popTrend(w: World): number {
+  // popHistory holds one entry per 12 ticks
+  const h = w.popHistory
+  const now = worldPop(w)
+  const then = h.length > 10 ? h[h.length - 11] : h[0]
+  return then > 0 ? now / then - 1 : 0
+}
+
+export function checkEnd(w: World) {
   const pop = worldPop(w)
   w.peakPop = Math.max(w.peakPop, pop)
+  w.peakPLE = Math.max(w.peakPLE, globalPLE(w))
+  if (w.tick % 12 === 0) w.popHistory.push(pop)
   w.wellbeingSum += wellbeing(w)
   w.wellbeingN++
   const food = popWeighted(w, r => r.r.foodKcalPerCapita)
@@ -31,7 +49,6 @@ export function checkEnd(w: World, landed: boolean) {
   const revolts = w.regions.filter(r => r.inRevolt)
   w.revoltStreak = revolts.length >= 3 ? w.revoltStreak + 1 : 0
 
-  if (landed) { w.status = 'moon'; return }
   if (pop <= 0.6 * w.peakPop) {
     w.status = 'destroyed'
     w.causeOfDeath = `Famine, disease and collapse cut the world population ${Math.round((1 - pop / w.peakPop) * 100)}% below its peak.`
@@ -44,13 +61,18 @@ export function checkEnd(w: World, landed: boolean) {
   } else if (w.warTension >= 1) {
     w.status = 'destroyed'
     w.causeOfDeath = 'Crackdowns on breakaway regions escalated into open war that the world government could not survive.'
+  } else if (has(w, 'mars_self_sustaining') && globalPLE(w) >= 200 && w.popHistory.length > 10 && popTrend(w) >= 0) {
+    w.status = 'goal_achieved'
   } else if (w.tick >= MAX_TICKS) {
-    w.status = 'stagnated'
+    w.status = 'complete'
   }
 }
 
 export function score(w: World): number {
-  if (w.status === 'moon') return 1000 + Math.max(0, MAX_TICKS - w.tick)
-  const avgWell = w.wellbeingN ? w.wellbeingSum / w.wellbeingN : 0
-  return Math.round(moonProgress(w.space) * 500 + w.tick + avgWell * 100)
+  if (w.status === 'goal_achieved') return 1
+  const frontier = w.frontierState.achieved.length / (FRONTIERS.length - 1)
+  const ple = clamp((Math.max(w.peakPLE, globalPLE(w)) - START_PLE) / (200 - START_PLE))
+  const trend = clamp(1 + popTrend(w) * 10)
+  const reqs = w.requirements.filter(r => r.progress >= 1).length / Math.max(1, w.requirements.length)
+  return Math.round((0.4 * frontier + 0.3 * ple + 0.15 * trend + 0.15 * reqs) * 1e4) / 1e4
 }

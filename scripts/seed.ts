@@ -319,7 +319,8 @@ async function main() {
   const clamp = (x: number, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, x))
   const round = (x: number, d = 4) => Math.round(x * 10 ** d) / 10 ** d
 
-  const regions: Region[] = []
+  // the starting snapshot: v2 fields (crowds, approval, life expectancy...) are computed by the sim at tick 0
+  const regions: Omit<Region, 'crowds' | 'approval' | 'lifeExpectancy' | 'periodLifeExpectancy' | 'fertility' | 'diseaseBurden' | 'travelHoursToNearest' | 'whys'>[] = []
   const report: string[] = []
   const extras: Record<string, unknown> = {}
   for (const r of REGION_IDS) {
