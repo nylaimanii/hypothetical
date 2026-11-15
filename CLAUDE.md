@@ -53,5 +53,6 @@ one ai runs a single world government starting 2026-11. physics, biology, econom
 - GET /api/compare?agents=<id,id,...> -> CompareResponse (slim: one SlimRun per agent, same seed when possible, plus divergences)
 - GET /api/runs/[id]?slim=1 -> SlimRun (no frames, for long runs)
 - GET /api/runs/[id]/frames?from=<tick>&to=<tick> -> FramesResponse (inclusive range; the ui prefetches about 5 years either side of the scrubber)
+- GET /api/evolve/now -> EvolveNow (from data/evolve-now.json, written by evolve.ts after every frame, throttled to every 2s; 404 when no evolution is running)
 - GET /api/hall -> HallEntry[]
 - POST /api/branch { runId, tick, agentId } -> { runId } (a new live world from that run's snapshot at tick, governed by agentId)

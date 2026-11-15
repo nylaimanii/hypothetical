@@ -50,7 +50,8 @@ export async function openRun(runId: string, tick?: number) {
     if (tick !== undefined) s.setPlayhead(tick)
     return true
   }
-  const got = await fetchRecord(runId, tick ?? 0)
+  s.setLoading('opening world')
+  const got = await fetchRecord(runId, tick ?? 0).finally(() => useStore.getState().setLoading(null))
   if (!got) { s.setNotice('could not open that world'); return false }
   if (s.compare) s.setCompare(null)
   s.setRecord(got.rec, got.source)
@@ -77,6 +78,11 @@ export async function loadHall(): Promise<{ entries: HallEntry[]; mock: boolean 
 
 // one world per agent, on the same seed when possible. the api answers slim; frames load per globe
 export async function startCompare(agentIds: string[], tick = 0) {
+  useStore.getState().setLoading('loading worlds to compare')
+  try { return await compareInner(agentIds, tick) } finally { useStore.getState().setLoading(null) }
+}
+
+async function compareInner(agentIds: string[], tick: number) {
   const s = useStore.getState()
   const ids = agentIds.slice(0, 4)
   let records: RunRecord[] = []

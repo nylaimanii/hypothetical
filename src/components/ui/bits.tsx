@@ -60,3 +60,8 @@ export function Delta({ v, invert = false, format }: { v: number; invert?: boole
   const good = invert ? v < 0 : v > 0
   return <Num className={`text-[10px] ${good ? 'text-ink/60' : 'text-ink/40'}`}>{v > 0 ? '+' : '-'}{format(Math.abs(v))}</Num>
 }
+
+// loading placeholder in the bone palette, never a blank box
+export function Skel({ className = '' }: { className?: string }) {
+  return <span className={`skel block rounded-lg ${className}`} aria-hidden />
+}

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Agent, HallEntry } from '@/lib/types'
 import { rootOf } from '@/lib/mock/agents'
 import { useStore } from '../state/store'
-import { Num } from './bits'
+import { Num, Skel } from './bits'
 import Emblem from './Emblem'
 import { frontierLabel } from './Chrome'
 import { loadHall, openRun, startCompare } from './worlds'
@@ -129,7 +129,7 @@ export function AgentsPanel() {
         <>
           {picked.length > 0 && picked.length < 2 && <p className="mt-2 text-[11px] text-ink/50">pick one more to compare (up to four)</p>}
           <div className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3">
-            {sorted.map((a) => <Card key={a.id} a={a} checked={picked.includes(a.id)} onCheck={(v) => check(a.id, v)} />)}
+            {sorted.length ? sorted.map((a) => <Card key={a.id} a={a} checked={picked.includes(a.id)} onCheck={(v) => check(a.id, v)} />) : Array.from({ length: 6 }, (_, i) => <Skel key={i} className="h-44 rounded-2xl" />)}
           </div>
         </>
       )}
@@ -180,7 +180,8 @@ export function HallPanel() {
           </div>
         )
       })}
-      {hall && !hall.entries.length && <p className="mt-4 text-[12px] text-ink/50">no history yet</p>}
+      {!hall && <div className="mt-4 space-y-2">{Array.from({ length: 5 }, (_, i) => <Skel key={i} className="h-14 rounded-xl" />)}</div>}
+      {hall && !hall.entries.length && <p className="mt-4 text-[12px] text-ink/50">no history yet. records appear as worlds finish</p>}
     </div>
   )
 }

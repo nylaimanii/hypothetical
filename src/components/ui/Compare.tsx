@@ -108,7 +108,7 @@ export default function CompareView() {
   const n = records.length
   const grid = n <= 2 ? 'grid-cols-2 grid-rows-1' : 'grid-cols-2 grid-rows-2'
   return (
-    <div className="absolute inset-x-3 bottom-[5.5rem] top-[5.25rem] flex flex-col gap-2 xl:inset-x-4">
+    <div className="absolute inset-x-3 bottom-[5.5rem] top-[9.25rem] flex flex-col gap-2 min-[1720px]:top-[5.25rem] xl:inset-x-4">
       <div className={`grid min-h-0 flex-1 gap-2 ${grid}`}>
         {records.map((r, i) => {
           const a = agents.find((x) => x.id === r.agentId)

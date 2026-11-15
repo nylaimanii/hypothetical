@@ -8,8 +8,8 @@ import { frontierLabel } from './Chrome'
 const FRONTIER: Frontier[] = ['none', 'moon_landing', 'moon_base', 'mars_crewed', 'mars_settlement', 'mars_self_sustaining', 'asteroid_mining', 'outer_system']
 const FRONTIER_SHORT: Record<Frontier, string> = { none: 'earth', moon_landing: 'moon', moon_base: 'moon base', mars_crewed: 'mars', mars_settlement: 'mars settlement', mars_self_sustaining: 'self sustaining mars', asteroid_mining: 'asteroids', outer_system: 'outer system' }
 
-const PILL_W = 176
-const PILL_H = 46
+const PILL_W = 188
+const PILL_H = 54
 const COL_GAP = 52
 const ROW_GAP = 14
 
@@ -63,7 +63,7 @@ function Tree({ reqs }: { reqs: Requirement[] }) {
             style={{ left: p.x, top: p.y, width: PILL_W, height: PILL_H }}>
             {!lit && <span className="absolute inset-y-0 left-0 bg-ink/12" style={{ width: `${r.progress * 100}%` }} />}
             <span className="relative flex h-full flex-col justify-center px-3">
-              <span className="truncate text-[12.5px] leading-tight">{r.name}</span>
+              <span className="line-clamp-2 text-[11.5px] leading-[1.15]">{r.name}</span>
               <span className={`flex justify-between text-[10px] ${lit ? 'text-bone/70' : 'text-ink/50'}`}><span>{r.tier}</span><Num>{Math.round(r.progress * 100)}%</Num></span>
             </span>
           </button>

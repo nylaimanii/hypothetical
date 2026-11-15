@@ -74,6 +74,9 @@ type State = {
   compareFocus: number | null
   reel: Reel | null
   slim: Record<string, SlimMeta>
+  globeOnly: boolean
+  loading: string | null // what is loading, shown as a pill
+  shortcutsOpen: boolean
   setRecord: (r: RunRecord, source: Source) => void
   replaceRecord: (r: RunRecord) => void
   setRuns: (runs: RunSummary[], src: 'mock' | 'api') => void
@@ -107,6 +110,9 @@ type State = {
   setCompareFocus: (i: number | null) => void
   setReel: (r: Reel | null) => void
   setSlim: (runId: string, meta: SlimMeta) => void
+  setGlobeOnly: (on: boolean) => void
+  setLoading: (what: string | null) => void
+  setShortcuts: (open: boolean) => void
   mergeFrames: (runId: string, frames: Frame[]) => void
 }
 
@@ -150,6 +156,9 @@ export const useStore = create<State>((set) => ({
   compareFocus: null,
   reel: null,
   slim: {},
+  globeOnly: false,
+  loading: null,
+  shortcutsOpen: false,
   setRecord: (raw, source) => set((s) => { const record = source === 'mock' ? raw : normalizeRecord(raw); return { record, source, playhead: source === 'live' ? (record.frames.at(-1)?.tick ?? 0) : 0, selection: null, overrides: s.record.runId === record.runId ? s.overrides : [] } }),
   replaceRecord: (record) => set((s) => ({ record: s.source === 'mock' ? record : normalizeRecord(record) })),
   setRuns: (runs, runsSource) => set({ runs, runsSource }),
@@ -186,6 +195,9 @@ export const useStore = create<State>((set) => ({
   setCompare: (compare) => set({ compare, compareFocus: null, selection: null, panel: null }),
   setCompareFocus: (compareFocus) => set({ compareFocus }),
   setReel: (reel) => set({ reel }),
+  setGlobeOnly: (globeOnly) => set({ globeOnly }),
+  setLoading: (loading) => set({ loading }),
+  setShortcuts: (shortcutsOpen) => set({ shortcutsOpen }),
   setSlim: (runId, meta) => set((s) => ({ slim: { ...s.slim, [runId]: meta } })),
   mergeFrames: (runId, frames) => set((s) => {
     if (!frames.length) return {}

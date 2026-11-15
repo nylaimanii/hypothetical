@@ -9,6 +9,7 @@ import { Caption, EventFeed, Intro, useIntroGate, useSound } from './Extras'
 import { stopReel } from './Timeline'
 import { loadAgents, openRun, startCompare } from './worlds'
 import Chronicle from './Chronicle'
+import { ShortcutSheet, toggleGlobeOnly, useShortcuts } from './Shortcuts'
 import { ensureWindow, needsWindow } from '../state/frames'
 import { AgentsPanel, HallPanel } from './Agents'
 import CompareView from './Compare'
@@ -163,6 +164,12 @@ function useLazyFrames() {
   }, [])
 }
 
+function Loading() {
+  const loading = useStore((s) => s.loading)
+  if (!loading) return null
+  return <div className="panel pointer-events-none flex items-center gap-2 px-4 py-2 text-[12.5px]"><span className="skel inline-block h-2 w-10 rounded-full" />{loading}</div>
+}
+
 function Notice() {
   const notice = useStore((s) => s.notice)
   const setNotice = useStore((s) => s.setNotice)
@@ -193,6 +200,8 @@ export default function App() {
   useReel()
   useUrlState()
   useLazyFrames()
+  useShortcuts()
+  const globeOnly = useStore((s) => s.globeOnly)
   useEffect(() => { loadAgents() }, [])
   const compare = useStore((s) => s.compare)
   const [leftTab, setLeftTab] = useState<'runs' | 'chronicle'>('runs')
@@ -231,11 +240,15 @@ export default function App() {
   return (
     <main className="relative h-screen w-screen overflow-hidden">
       {compare ? <CompareView /> : <Globe />}
-      <div className="pointer-events-none absolute inset-0 z-10 flex flex-col p-3 xl:p-4">
+      {globeOnly && (
+        <button onClick={() => toggleGlobeOnly(false)} className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-full bg-bone/70 px-3 py-1 text-[11px] text-ink/60 backdrop-blur hover:text-ink">press f or esc for the ui</button>
+      )}
+      <div className={`pointer-events-none absolute inset-0 z-10 flex flex-col p-3 transition-opacity duration-300 xl:p-4 ${globeOnly ? 'invisible opacity-0' : ''}`}>
         <div className="relative flex flex-wrap items-start justify-between gap-2">
           <TopLeft />
-          <div className="order-last flex w-full min-w-0 flex-col items-center gap-2 xl:order-none xl:w-auto xl:flex-1">
+          <div className="order-last flex w-full min-w-0 flex-col items-center gap-2 min-[1720px]:order-none min-[1720px]:w-auto min-[1720px]:flex-1">
             <MissionBar />
+            <Loading />
             <Notice />
           </div>
           <TopRight onLive={startLive} />
@@ -283,6 +296,7 @@ export default function App() {
         </div>
         <div className="mt-3 shrink-0 xl:mt-4"><Timeline /></div>
       </div>
+      <ShortcutSheet />
       <Intro />
     </main>
   )

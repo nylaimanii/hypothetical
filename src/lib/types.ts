@@ -108,3 +108,19 @@ export type SlimRun = Omit<RunRecord, 'frames' | 'baseline' | 'snapshots'> & { f
 export type CompareResponse = { seed: number; runs: SlimRun[]; divergences: Divergence[]; pending?: string[]; note?: string }
 // GET /api/runs/[id]/frames?from=<tick>&to=<tick> (inclusive)
 export type FramesResponse = { runId: string; from: number; to: number; frames: Frame[] }
+
+// ---- live evolution status, for mission control ----
+// GET /api/evolve/now. evolve.ts writes data/evolve-now.json after every frame, at most every 2s. 404 when nothing is evolving
+export type EvolveNow = {
+  generation: number
+  agentId: string
+  runId: string
+  worldIndex: number // 1-based position of this world in the generation
+  worldsInGen: number
+  latestFrame: Frame
+  queue: string[] // agent ids still waiting to run a world this generation
+  recent: RunSummary[] // last 5 finished worlds, newest first
+  newLessons: Lesson[] // lessons added during this generation
+  stats: { worldsLost: number; lessonsKnown: number; bestScore: number; champion: string; avgMinutesPerWorld: number; estWorldsByMorning: number }
+  updatedAt: string // iso time of the write, so the ui can tell a stalled runner from a live one
+}

@@ -57,8 +57,10 @@ function Drawer({ kicker, title, children }: { kicker: string; title: React.Reac
 function useTab<T extends string>(first: T) { return useState<T>(first) }
 
 // a number with its "why?" chain from the sim
-function StatRow({ label, value, prov, why }: { label: string; value: string; prov?: Region['provenance'][string]; why?: Why }) {
+function StatRow({ label, value, prov, why, raw }: { label: string; value: string; prov?: Region['provenance'][string]; why?: Why; raw?: number }) {
   const [open, setOpen] = useState(false)
+  // a stat the sim has not reported yet is hidden, not shown as zero
+  if (raw !== undefined && raw === 0) return null
   return (
     <div className="border-b border-ink/8 py-1">
       <div className="flex items-baseline justify-between gap-2">
@@ -190,13 +192,13 @@ function RegionDossier({ r, frame, record, idx }: { r: Region; frame: Frame; rec
       {tab === 'stats' && (
         <Section title="every number, with its why">
           <StatRow label="population" value={fmt.people(r.population)} prov={p.population} why={w('population')} />
-          <StatRow label="period life expectancy" value={`${r.periodLifeExpectancy.toFixed(1)}y`} prov={p.periodLifeExpectancy} why={w('periodLifeExpectancy')} />
-          <StatRow label="cohort life expectancy" value={`${r.lifeExpectancy.toFixed(1)}y`} prov={p.lifeExpectancy} />
-          <StatRow label="approval of the core" value={fmt.pct(r.approval)} why={w('approval')} />
+          <StatRow label="period life expectancy" value={`${r.periodLifeExpectancy.toFixed(1)}y`} prov={p.periodLifeExpectancy} why={w('periodLifeExpectancy')}  raw={r.periodLifeExpectancy} />
+          <StatRow label="cohort life expectancy" value={`${r.lifeExpectancy.toFixed(1)}y`} prov={p.lifeExpectancy}  raw={r.lifeExpectancy} />
+          <StatRow label="approval of the core" value={fmt.pct(r.approval)} why={w('approval')}  raw={r.approval} />
           <StatRow label="unrest" value={fmt.pct(r.unrest)} prov={p.unrest} why={w('unrest')} />
           <StatRow label="kcal / person" value={fmt.kcal(r.foodKcalPerCapita)} prov={p.foodKcalPerCapita} why={w('foodKcalPerCapita')} />
-          <StatRow label="fertility" value={r.fertility.toFixed(2)} prov={p.fertility} />
-          <StatRow label="disease burden" value={fmt.pct(r.diseaseBurden)} prov={p.diseaseBurden} />
+          <StatRow label="fertility" value={r.fertility.toFixed(2)} prov={p.fertility}  raw={r.fertility} />
+          <StatRow label="disease burden" value={fmt.pct(r.diseaseBurden)} prov={p.diseaseBurden}  raw={r.diseaseBurden} />
           <StatRow label="aged 65+" value={fmt.pct(r.share65plus)} prov={p.share65plus} />
           <StatRow label="education" value={fmt.pct(r.education)} prov={p.education} why={w('education')} />
           <StatRow label="tech level" value={fmt.pct(r.techLevel)} prov={p.techLevel} why={w('techLevel')} />
@@ -204,7 +206,7 @@ function RegionDossier({ r, frame, record, idx }: { r: Region; frame: Frame; rec
           <StatRow label="faith" value={fmt.pct(r.faith)} prov={p.faith} />
           <StatRow label="gdp" value={fmt.usd(r.gdpUsd)} prov={p.gdpUsd} />
           <StatRow label="energy twh" value={fmt.twh(r.energyTWh)} prov={p.energyTWh} />
-          <StatRow label="hours to nearest city" value={r.travelHoursToNearest.toFixed(1)} prov={p.travelHoursToNearest} />
+          <StatRow label="hours to nearest city" value={r.travelHoursToNearest.toFixed(1)} prov={p.travelHoursToNearest}  raw={r.travelHoursToNearest} />
           {twin && <div className="mt-2 text-[11px] text-ink/50">no-ai twin: population <Num>{fmt.people(twin.population)}</Num> · unrest <Num>{fmt.pct(twin.unrest)}</Num> · kcal <Num>{fmt.kcal(twin.foodKcalPerCapita)}</Num></div>}
         </Section>
       )}

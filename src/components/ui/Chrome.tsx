@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import type { Budget, Frontier } from '@/lib/types'
 import { mockRuns } from '@/lib/mock/run'
 import { LEARNING_CURVE } from '@/lib/mock/v2'
@@ -36,15 +37,17 @@ function Clock() {
 export function TopLeft() {
   const { frame, record } = useCurrentFrame()
   const source = useStore((s) => s.source)
+  const compare = useStore((s) => s.compare)
   return (
     <div className="panel pointer-events-auto shrink-0 whitespace-nowrap px-3 py-2 xl:px-4 xl:py-2.5">
       <Clock />
       <div className="mt-1 flex items-center gap-2">
         <StatusPill status={frame.status} />
-        {source === 'mock' && <span className="rounded border border-dashed border-ink/40 px-1.5 font-mono text-[10px] tracking-[0.2em] text-ink/60">MOCK</span>}
-        {source === 'live' && <span className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.2em]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ink" />live</span>}
+        {source === 'mock' && !compare && <span className="rounded border border-dashed border-ink/40 px-1.5 font-mono text-[10px] tracking-[0.2em] text-ink/60">MOCK</span>}
+        {source === 'live' && !compare && <span className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.2em]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ink" />live</span>}
+        {compare && <span className="text-[11px] text-ink/55">comparing <Num>{compare.records.length}</Num> worlds</span>}
       </div>
-      {record.branchedFrom && (
+      {!compare && record.branchedFrom && (
         <button onClick={() => openRun(record.branchedFrom!.runId, record.branchedFrom!.tick)} className="mt-1 block text-[11px] text-ink/60 underline decoration-ink/25 underline-offset-2 hover:text-ink">
           branched from <Num>{record.branchedFrom.runId}</Num> at <Num>{formatDay(tickToDate(record.branchedFrom.tick))}</Num>
         </button>
@@ -58,7 +61,9 @@ export function MissionBar() {
   const { frame, record, mode } = useCurrentFrame()
   const select = useStore((s) => s.select)
   const setPanel = useStore((s) => s.setPanel)
-  const n = Number(record.runId.match(/(\d+)$/)?.[1] ?? record.generation)
+  // mock ids end in a world number; real ids end in a seed, so fall back to the generation
+  const worldNo = record.runId.match(/-(\d{3,4})$/)?.[1]
+  const worldLabel = worldNo ? `world #${Number(worldNo)}` : `gen ${record.generation}`
   const cost = frame.humanCost
   const item = (label: string, value: React.ReactNode, onClick?: () => void, danger = false) => (
     <button onClick={onClick} disabled={!onClick} className={`flex flex-col items-start px-2.5 text-left ${onClick ? 'hover:bg-ink/5' : 'cursor-default'} rounded-xl py-0.5`}>
@@ -68,13 +73,13 @@ export function MissionBar() {
   )
   return (
     <div className="panel pointer-events-auto flex shrink-0 items-center divide-x divide-ink/10 whitespace-nowrap px-1.5 py-1.5">
-      {item('people', <Num>{fmt.people(frame.globalPopulation)}</Num>)}
-      {item('life exp.', <Num>{frame.globalPeriodLifeExpectancy.toFixed(1)}y</Num>, () => setPanel('longevity'))}
+      {frame.globalPopulation > 0 && item('people', <Num>{fmt.people(frame.globalPopulation)}</Num>)}
+      {frame.globalPeriodLifeExpectancy > 0 && item('life exp.', <Num>{frame.globalPeriodLifeExpectancy.toFixed(1)}y</Num>, () => setPanel('longevity'))}
       {item('frontier', frontierLabel(frame.frontier), () => setPanel('offworld'))}
       {mode === 'ai' && cost.deaths > 0 && item('deaths', <Num>{fmt.people(cost.deaths)}</Num>, undefined, true)}
       {mode === 'ai' && cost.displaced > 0 && item('displaced', <Num>{fmt.people(cost.displaced)}</Num>)}
-      {item('approval', <Num>{fmt.pct(cost.approval)}</Num>)}
-      {item(`world #${n}`, <span>lessons <Num>{frame.lessonsKnown}</Num></span>, () => select({ kind: 'core' }))}
+      {cost.approval > 0 && item('approval', <Num>{fmt.pct(cost.approval)}</Num>)}
+      {item(worldLabel, frame.lessonsKnown > 0 ? <span>lessons <Num>{frame.lessonsKnown}</Num></span> : <span>first lessons pending</span>, () => select({ kind: 'core' }))}
     </div>
   )
 }
@@ -114,10 +119,12 @@ export function TopRight({ onLive }: { onLive: () => void }) {
       <button onClick={() => setPanel(panel === 'longevity' ? null : 'longevity')} className={btn(panel === 'longevity')}>200 years</button>
       <button onClick={() => setPanel(panel === 'agents' ? null : 'agents')} className={btn(panel === 'agents')}>agents</button>
       <button onClick={() => setPanel(panel === 'hall' ? null : 'hall')} className={btn(panel === 'hall')}>hall</button>
+      <Link href="/mission" className={`${btn(false)} flex items-center`}>mission</Link>
       <DirectorToggle />
       <SoundControls />
       <button onClick={onLive} className={btn(!!liveRunId)}>{liveRunId ? 'live on' : 'play live'}</button>
       <button onClick={() => setDrawer(!drawerOpen)} className={btn(drawerOpen)}>rules</button>
+      <button onClick={() => useStore.getState().setShortcuts(true)} aria-label="keyboard shortcuts" title="keyboard shortcuts (?)" className={`${btn(false)} flex w-9 items-center justify-center px-0 font-mono`}>?</button>
       <button onClick={() => setAdvanced(!advanced)} aria-label="advanced settings" title="advanced settings" className={`${btn(advanced)} flex w-9 items-center justify-center px-0`}><Gear /></button>
     </div>
   )
@@ -160,6 +167,21 @@ function LineageCurve({ rows, agents }: { rows: { generation: number; bestScore:
   const x = (g: number) => 3 + (g / gMax) * (W - 6)
   const y = (v: number) => H - 3 - (v / sMax) * (H - 8)
   const color = (i: number) => AGENT_COLORS[i % AGENT_COLORS.length]
+  // one generation so far: a line needs two points, so show the best score per lineage as bars
+  if (gMax === 0 || new Set(rows.map((r) => r.generation)).size < 2) {
+    const best = lineages.map((l) => ({ l, v: Math.max(...rows.filter((r) => (r.lineage ?? 'all') === l).map((r) => r.bestScore)) })).sort((a, b) => b.v - a.v)
+    return (
+      <ul className="space-y-0.5">
+        {best.slice(0, 7).map(({ l, v }, i) => (
+          <li key={l} className="flex items-center gap-2 text-[10px]">
+            <span className="w-16 truncate" style={{ color: color(i) }}>{agents.find((a) => a.id === l)?.name ?? l}</span>
+            <span className="h-1.5 flex-1 rounded-full bg-ink/10"><span className="block h-full rounded-full" style={{ width: `${(v / sMax) * 100}%`, background: color(i) }} /></span>
+            <Num className="w-8 text-right">{v.toFixed(2)}</Num>
+          </li>
+        ))}
+      </ul>
+    )
+  }
   return (
     <div>
       <svg width={W} height={H} className="block overflow-visible">

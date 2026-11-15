@@ -120,7 +120,7 @@ export default function Timeline() {
           <div key={`d${f.tick}`} className="absolute top-1/2 h-1.5 w-1.5 -translate-x-1/2 translate-y-2 rounded-full bg-ember" style={{ left: `${x(f.tick)}%` }} />
         ))}
         {decisions.map((f) => (
-          <div key={f.tick} className="absolute top-1/2 h-4 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink"
+          <div key={f.tick} className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full ${decisions.length > 30 ? 'h-2.5 w-px bg-ink/60' : 'h-4 w-1 bg-ink'}`}
             style={{ left: `${x(f.tick)}%` }}
             onPointerEnter={() => setHover({ x: x(f.tick), text: f.text, date: f.date })}
             onPointerLeave={() => setHover(null)} />
