@@ -5,7 +5,7 @@ import path from 'node:path'
 import nodemailer from 'nodemailer'
 import type { RunRecord } from '../types'
 import { dirs } from '../evolve/store'
-import { digestPdf, moonPdf, type DigestInput } from './pdf'
+import { digestPdf, goalPdf, type DigestInput } from './pdf'
 
 let warned = false
 function emailEnv() {
@@ -47,17 +47,17 @@ export async function sendDigest(input: DigestInput) {
   }
 }
 
-export async function sendMoonReport(record: RunRecord) {
+export async function sendGoalReport(record: RunRecord, agentName: string) {
   try {
-    const pdf = await moonPdf(record)
+    const pdf = await goalPdf(record, agentName)
     const s = record.summary
     const r = await sendReport(
-      `hypothetical: moon landing, ${s.runId}`,
-      `world ${s.runId} (gen ${record.generation}) landed a crew on ${s.endDate}. the full story is attached.`,
-      `moon-${s.runId}.pdf`, pdf,
+      `hypothetical: GOAL ACHIEVED, ${agentName}`,
+      `${agentName} achieved the mission in world ${s.runId} (gen ${record.generation}) by ${s.endDate}: a self-sustaining mars civilization, life expectancy ${s.peakPeriodLifeExpectancy.toFixed(1)}, a population that holds. the full story is attached.`,
+      `goal-${s.runId}.pdf`, pdf,
     )
-    console.log(`[email] moon report ${r.sent ? 'sent' : 'saved'}: ${r.saved}`)
+    console.log(`[email] goal report ${r.sent ? 'sent' : 'saved'}: ${r.saved}`)
   } catch (e) {
-    console.log(`[email] moon report failed: ${(e as Error).message}`)
+    console.log(`[email] goal report failed: ${(e as Error).message}`)
   }
 }

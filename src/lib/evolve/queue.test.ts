@@ -80,47 +80,82 @@ test('a real error is not swallowed', async () => {
   await assert.rejects(runQueue(['x'], { concurrency: 1, clock: fakeClock(), run: async () => { throw new Error('bug') } }), /bug/)
 })
 
-test('evolve: interrupted worlds are retried, never scored or reported as deaths', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyp-evolve-'))
-  const cwd = process.cwd()
-  process.chdir(dir)
-  delete process.env.TELEGRAM_BOT_TOKEN
-  delete process.env.GMAIL_USER
-  try {
-    // store paths resolve from cwd at import time
-    const { evolve, control } = await import('./evolve')
-    const { readDay } = await import('./usage')
-    const { placeholderSummary } = await import('./store')
-    let calls = 0
-    const fake = async (o: RunOptions): Promise<RunSummary> => {
-      if (++calls <= 2) throw rateLimit()
-      return placeholderSummary({
-        runId: o.runId, generation: o.generation, status: 'complete', endDate: '2126-11', ticks: 1200, score: 50,
-        constitution: o.constitution, peakPopulation: 8e9, moonStage: 'orbital',
-      })
-    }
-    const lines: string[] = []
-    await evolve({ gens: 1, concurrency: 1, runWorld: fake, clock: fakeClock(), log: l => lines.push(l) })
-
-    const gen = JSON.parse(fs.readFileSync(path.join(dir, 'data/generations/gen-1.json'), 'utf8'))
-    assert.equal(gen.status, 'done')
-    assert.equal(calls, 12 + 2, '12 worlds plus 2 retries')
-    for (const c of gen.population) {
-      assert.equal(c.runs.length, 2)
-      assert.equal(c.score, 50)
-      assert.ok(c.runs.every((r: RunSummary) => r.status === 'complete'))
-    }
-    assert.equal(gen.population.reduce((a: number, c: { interrupted?: number }) => a + (c.interrupted ?? 0), 0), 2)
-    assert.equal(control.worldsInterrupted, 2)
-    assert.equal(lines.filter(l => l.includes('interrupted')).length, 2)
-    assert.ok(!lines.some(l => l.includes('destroyed') && !l.includes('0 destroyed')))
-    assert.ok(!lines.some(l => l.startsWith('paused')))
-    const day = readDay()
-    assert.equal(day.worldsInterrupted, 2)
-    assert.equal(day.worldsFinished, 12)
-    assert.ok(fs.existsSync(path.join(dir, 'data/leaderboard.json')))
-  } finally {
-    process.chdir(cwd)
-    fs.rmSync(dir, { recursive: true, force: true })
+function inTempDir(fn: (dir: string) => Promise<void>) {
+  return async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyp-evolve-'))
+    const cwd = process.cwd()
+    process.chdir(dir)
+    delete process.env.TELEGRAM_BOT_TOKEN
+    delete process.env.GMAIL_USER
+    delete process.env.GROQ_API_KEY
+    try { await fn(dir) } finally { process.chdir(cwd); fs.rmSync(dir, { recursive: true, force: true }) }
   }
-})
+}
+
+test('evolve: interrupted worlds are retried, never scored or reported as deaths', inTempDir(async dir => {
+  // store paths resolve from cwd at import time
+  const { evolve, control } = await import('./evolve')
+  const { readDay } = await import('./usage')
+  const { placeholderSummary } = await import('./store')
+  let calls = 0
+  const fake = async (o: RunOptions): Promise<RunSummary> => {
+    if (++calls <= 2) throw rateLimit()
+    return placeholderSummary({
+      runId: o.runId, generation: o.generation, status: 'complete', endDate: '2126-11', ticks: 1200, score: 50,
+      constitution: o.constitution, peakPopulation: 8e9, moonStage: 'orbital',
+    })
+  }
+  const lines: string[] = []
+  await evolve({ gens: 1, concurrency: 1, runWorld: fake, clock: fakeClock(), log: l => lines.push(l) })
+
+  const gen = JSON.parse(fs.readFileSync(path.join(dir, 'data/generations/gen-1.json'), 'utf8'))
+  assert.equal(gen.status, 'done')
+  assert.equal(gen.population.length, 7, 'six philosophies plus the long now charter')
+  assert.equal(calls, 14 + 2, '14 worlds plus 2 retries')
+  for (const c of gen.population) {
+    assert.equal(c.runs.length, 2)
+    assert.equal(c.score, 50)
+    assert.ok(c.runs.every((r: RunSummary) => r.status === 'complete'))
+  }
+  assert.equal(gen.population.reduce((a: number, c: { interrupted?: number }) => a + (c.interrupted ?? 0), 0), 2)
+  assert.equal(control.worldsInterrupted, 2)
+  assert.equal(lines.filter(l => l.includes('interrupted')).length, 2)
+  assert.ok(!lines.some(l => l.startsWith('paused')))
+  const day = readDay()
+  assert.equal(day.worldsInterrupted, 2)
+  assert.equal(day.worldsFinished, 14)
+  assert.ok(fs.existsSync(path.join(dir, 'data/leaderboard.json')))
+}))
+
+test('evolve: deaths write lessons, repeats are counted, the charter survives breeding', inTempDir(async dir => {
+  const { evolve } = await import('./evolve')
+  const { placeholderSummary } = await import('./store')
+  const lesson = (runId: string, rule: string) => ({ id: `${runId}-l0`, fromRunId: runId, generation: 1, mistake: 'kept food spending flat while harvests failed', consequence: 'the world food supply stayed below survival for a year and civilization starved', rule, timesRelevant: 0 })
+  let n = 0
+  const fake = async (o: RunOptions): Promise<RunSummary> => {
+    n++
+    // every third world starves; its lesson rule is the same each time, so later ones are repeats
+    const dies = n % 3 === 0
+    return placeholderSummary({
+      runId: o.runId, generation: o.generation, status: dies ? 'destroyed' : 'complete', endDate: dies ? '2040-01' : '2126-11', ticks: dies ? 158 : 1200,
+      score: dies ? 10 : 40 + (n % 5), constitution: o.constitution, peakPopulation: 8e9, moonStage: 'orbital',
+      causeOfDeath: dies ? 'The world food supply stayed below 1800 kcal per person for a full year and civilization starved.' : undefined,
+      lessonsLearned: dies ? [lesson(o.runId, 'raise food spending before supply drops under 2100 kcal anywhere')] : [],
+    })
+  }
+  await evolve({ gens: 2, concurrency: 1, runWorld: fake, clock: fakeClock(), log: () => {} })
+  const lessons = JSON.parse(fs.readFileSync(path.join(dir, 'data/lessons.json'), 'utf8'))
+  assert.equal(lessons.length, 1, 'same rule is merged, not duplicated')
+  assert.ok(lessons[0].timesRelevant > 1)
+  const learning = JSON.parse(fs.readFileSync(path.join(dir, 'data/learning.json'), 'utf8'))
+  assert.equal(learning.rows.length, 2)
+  assert.ok(learning.rows[0].deaths > 0)
+  assert.ok(learning.rows[0].repeatMistakeRate > 0, 'second starvation repeats the first lesson')
+  const gen2 = JSON.parse(fs.readFileSync(path.join(dir, 'data/generations/gen-2.json'), 'utf8'))
+  const charter = gen2.population.find((c: { id: string }) => c.id === 'long-now')
+  assert.ok(charter, 'long now competes every generation')
+  assert.ok(charter.constitution.startsWith('your mission is the long-term survival'))
+  assert.ok(gen2.population.some((c: { name: string }) => / ii$/.test(c.name)), 'mutations are named <parent> ii')
+  assert.ok(gen2.population.some((c: { name: string }) => c.name.includes(' × ')), 'crossovers are named a × b')
+  assert.ok(fs.readdirSync(path.join(dir, 'data/showcase')).some(f => f.endsWith('.json.gz')), 'best world of each generation is showcased')
+}))

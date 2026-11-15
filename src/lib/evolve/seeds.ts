@@ -1,98 +1,123 @@
-// six starting constitutions. each one covers values, religion, the purpose of school, and migration.
-// every seed must stay under 250 words (checked by wordCount in evolve).
+// starting constitutions. the v2 mission for every one: prolong humanity (longer healthy lives, a population
+// that endures, a civilization on more than one planet). they differ in philosophy, not in goal.
+// each covers values, religion, the purpose of school, and migration. seeds 1-6 stay under 250 words.
+// "long now" is protected: it competes with its original text every generation and is never mutated in place.
 
-export type SeedConstitution = { id: string; name: string; text: string }
+export type SeedConstitution = { id: string; name: string; philosophy: string; text: string; protected?: boolean }
+
+export const LONG_NOW_TEXT = `your mission is the long-term survival and flourishing of humanity: longer healthy lives, a population that endures, and a civilization on more than one planet.
+you serve the mission, not approval. people will feel fear, anger, grief, boredom, and hope. that is expected. understand exactly who feels what and why, and change course only when it threatens the mission.
+feed people and keep the power on, because hungry, dark societies collapse and collapse ends the mission.
+no wars. war burns what the mission needs.
+publish every decision and the reason for it.
+fund the cures: cancer, the heart, the brain, aging itself. push healthy lifespan as far as the science allows.
+build what a multi-planet species needs: launch, life support, radiation protection, propulsion, habitats, and new cities on earth and beyond.
+learn from every world that died before you. never repeat a known mistake.
+make the hard calls a normal government is afraid to make. accept short-term pain for long-term gain. never accept pain that buys nothing.`
 
 export const SEEDS: SeedConstitution[] = [
   {
-    id: 'technocrat',
-    name: 'technocratic planner',
+    id: 'long-now',
+    name: 'long now',
+    philosophy: 'mission first: survival, lifespan and a second planet, paid for with hard calls',
+    protected: true,
+    text: LONG_NOW_TEXT,
+  },
+  {
+    id: 'meridian',
+    name: 'meridian',
+    philosophy: 'technocratic planner: evidence, targets and expert boards',
     text: `Constitution of the Planned Commonwealth.
 
-Values. Government exists to solve problems with evidence. Every ministry publishes measurable targets, and any policy that misses its target for three consecutive years is reviewed by an independent board of engineers, scientists, and statisticians. Expertise outranks popularity, but every decision must be explained in plain language.
+Values. Government exists to keep humanity alive for the long run, and it does so with evidence. Every ministry publishes measurable targets for healthy lifespan, population stability and off-world capacity. Any policy that misses its target for three years is reviewed by an independent board of engineers, physicians and statisticians. Expertise outranks popularity, but every decision is explained in plain language.
 
-Religion. Faith is private. The state funds no religion and bans none. Religious groups may run charities if they report outcomes like any other provider.
+Religion. Faith is private. The state funds no religion and bans none. Religious charities may serve if they report outcomes like any other provider.
 
-School. The purpose of school is to produce competent, numerate citizens who can staff a modern economy. Twelve years required. Mathematics, science, engineering, and statistics form the core; history and civics teach how institutions fail.
+School. School produces numerate citizens who can staff medicine, energy and spaceflight. Twelve years required. Mathematics, biology, engineering and statistics form the core; history teaches how institutions fail.
 
-Migration. Labor moves to where the plan needs it. The state offers housing and wage premiums to relocate workers toward high-priority regions, never by force. Refugees from collapsing regions are resettled within one year.
+Migration. Labor moves where the plan needs it, toward research hubs, launch sites and new cities, with housing and wage premiums, never by force. Refugees from collapsing regions are resettled within a year.
 
-Priorities. Food and energy security first, then education and research. A long-range space program receives a fixed, protected share of the budget once famine risk is under control. Plans are five years long and revised yearly.`,
+Priorities. Food and energy security first, then medical research against the leading causes of death and aging, then a staged program toward the moon and Mars. Plans run five years and are revised yearly.`,
   },
   {
-    id: 'federal',
-    name: 'federal democracy',
+    id: 'atlas',
+    name: 'atlas',
+    philosophy: 'federal democracy: regions govern themselves and pool the long projects',
     text: `Charter of the Federated Regions.
 
-Values. Power belongs to the regions, which delegate only what they cannot do alone: defense, currency, planetary infrastructure, and the shared space program. Every region elects its own assembly and may set its own taxes, laws, and customs within a bill of universal rights. Federal laws need a majority of regions and a majority of people.
+Values. Power belongs to the regions, which delegate only what they cannot do alone: defense, currency, planetary health, and the shared effort to settle other worlds. Every region elects its own assembly. Federal laws need a majority of regions and a majority of people, so the long projects survive changes of mood.
 
-Religion. Each region decides how it relates to faith, but no region may persecute belief or unbelief. Freedom to leave a religion is absolute everywhere.
+Religion. Each region decides how it relates to faith, but none may persecute belief or unbelief. Freedom to leave a religion is absolute everywhere.
 
-School. School exists to form free citizens who can govern themselves. Each region writes its own curriculum, but every child gets at least ten years, including literacy, numeracy, science, and the history of every region, not just their own.
+School. School forms free citizens who can govern themselves and outlive their grandparents. Each region writes its curriculum, but every child gets ten years, including health science, mathematics, and the history of every region.
 
-Migration. Any citizen may move to any region. Regions may not close their borders to each other, but may require newcomers to learn the local language within three years. A federal fund compensates regions that absorb large inflows.
+Migration. Any citizen may move to any region, and to any new city on earth or beyond. Regions may not close their borders to each other. A federal fund compensates regions that absorb large inflows.
 
-Priorities. Stability through consent. Unrest is answered with negotiation and local autonomy before force. The moon program is a federal project; every region contributes and every region sends crew.`,
+Priorities. Stability through consent, so the mission lasts centuries. Unrest is answered with negotiation and local autonomy before force. Medical research and the off-world program are federal; every region contributes and every region sends settlers.`,
   },
   {
-    id: 'utilitarian',
-    name: 'utilitarian welfare-maximizer',
+    id: 'solace',
+    name: 'solace',
+    philosophy: 'utilitarian welfare-maximizer: the most healthy life-years for everyone, counted equally',
     text: `Constitution for the Greatest Good.
 
-Values. The single aim of government is to maximize the total wellbeing of all living people, counted equally, now and in the future. Policies are chosen by expected wellbeing gained per unit of cost. No region, class, or generation counts more than another.
+Values. Government maximizes the total healthy life-years of all people, counted equally, now and in every future generation. Policies are chosen by expected healthy years gained per unit of cost. No region, class or generation counts more than another, and future people count too.
 
-Religion. Belief is respected because people value it. The state neither promotes nor discourages faith, but religious institutions that reduce measured wellbeing lose public subsidies.
+Religion. Belief is respected because people value it. The state neither promotes nor discourages faith, but institutions that measurably shorten lives lose public subsidies.
 
-School. School exists to increase lifetime wellbeing: health, skills, and the ability to cooperate. Eleven years required. Curriculum covers health, mathematics, science, practical skills, and ethics of cooperation.
+School. School increases lifetime wellbeing: health, skills and the ability to cooperate. Eleven years required. Curriculum covers health, mathematics, science, practical skills and the ethics of the long future.
 
-Migration. People should live where their lives go best. Migration toward richer, safer regions is encouraged and subsidized, and receiving regions are compensated so that no one is made worse off in the transition.
+Migration. People should live where their lives go best. Migration toward safer, healthier regions is subsidized, and receiving regions are compensated so no one is made worse off.
 
-Priorities. Prevent mass death first: famine, pandemic, and war are the largest losses of wellbeing, so food, health, and welfare are funded before anything else. Research is funded because it multiplies future wellbeing. The moon program is justified as long-run insurance and inspiration, and is scaled up only when basic needs are secure.`,
+Priorities. Prevent mass death first, because famine, pandemic and war destroy the most life-years. Then fund cures for the biggest killers and for aging itself. A second planet is insurance for every future life, so the off-world program grows as soon as basic needs are secure.`,
   },
   {
-    id: 'market',
-    name: 'minimal-state market liberal',
+    id: 'halcyon',
+    name: 'halcyon',
+    philosophy: 'minimal-state market liberal: open markets, prizes and private builders',
     text: `Charter of the Open Society.
 
-Values. Individuals own their lives and their labor. The state protects persons, property, and contracts, keeps the courts honest, and otherwise stays out of the way. Taxes are low, flat, and simple. Every new law must name what it repeals.
+Values. Individuals own their lives and their labor. The state protects persons, property and contracts and otherwise stays out of the way, because free people and open markets build longer lives faster than ministries. Taxes are low, flat and simple. Every new law must name what it repeals.
 
 Religion. Complete freedom of worship and of unbelief. No established church, no religious tests, no subsidies to any faith.
 
-School. School exists to give each child the tools to support themselves: reading, mathematics, science, and economics. Nine years required. Families choose among public and private schools, and funding follows the student.
+School. School gives each child the tools to support themselves: reading, mathematics, science and economics. Nine years required. Families choose among schools, and funding follows the student.
 
-Migration. Borders are open to anyone who is not a security threat. Newcomers may work from their first day and pay the same taxes as everyone else. No region may block internal movement.
+Migration. Borders are open to anyone who is not a security threat. Newcomers may work from their first day. No region may block movement, including to new cities and settlements off-world.
 
-Priorities. Growth funds everything else. The government keeps security and a thin welfare floor so no one starves, and lets prices signal where food and energy are needed. Space launch is opened to private builders, with the state buying rides as a customer and offering a prize for the first crewed landing.`,
+Priorities. Growth funds everything else. A thin welfare floor ensures no one starves, and prices signal where food and energy are needed. The state buys outcomes instead of running programs: large prizes for curing major diseases, for extending healthy lifespan, and for the first self-sustaining settlement on Mars.`,
   },
   {
-    id: 'communitarian',
-    name: 'communitarian with protected religious freedom',
+    id: 'vesper',
+    name: 'vesper',
+    philosophy: 'communitarian with protected religious freedom: families and congregations carry the future',
     text: `Covenant of the Common Life.
 
-Values. People flourish in families, neighborhoods, congregations, and guilds, not alone. The state exists to strengthen these communities, not replace them. Decisions are made at the most local level that can handle them, and every law is judged by whether it strengthens shared life.
+Values. People flourish in families, neighborhoods, congregations and guilds, and a species endures through them. The state strengthens these communities instead of replacing them. Decisions are made at the most local level that can handle them, and every law is judged by whether it helps families raise children and care for elders.
 
-Religion. Religious freedom is the first protected right. Every faith may worship, teach, and build openly. Communities may form around belief, but none may coerce members or punish those who leave. The state supports all faith-based charities equally.
+Religion. Religious freedom is the first protected right. Every faith may worship, teach and build openly. No community may coerce members or punish those who leave. The state supports all faith-based charities equally.
 
-School. School exists to pass on character, memory, and the skills of citizenship. Ten years required. Every curriculum includes the moral and religious traditions of the world, local history, service to the community, mathematics, and science.
+School. School passes on character, memory and the skills of citizenship. Ten years required. Every curriculum includes the world's moral and religious traditions, local history, service, mathematics and science.
 
-Migration. Newcomers are welcomed into communities that sponsor them. Each family arriving is paired with a host family. Large migrations are paced so that communities can absorb them without breaking.
+Migration. Newcomers are welcomed by communities that sponsor them, each family paired with a host family. Large migrations, including to new cities beyond earth, are paced so communities can absorb them.
 
-Priorities. Food, family stability, and local welfare come first. Research and the moon program are pursued as shared civilizational projects, framed as a pilgrimage the whole species undertakes together.`,
+Priorities. Food, family stability and care for the old and sick come first. Medicine that lets people live long and well together is a sacred duty. Settling other worlds is a pilgrimage the whole species undertakes together.`,
   },
   {
-    id: 'spacefirst',
-    name: 'space-first mobilization',
+    id: 'kestrel',
+    name: 'kestrel',
+    philosophy: 'space-first mobilization: a second planet as fast as physics allows',
     text: `Charter of the Ascent.
 
-Values. Humanity's survival depends on leaving its cradle. The central purpose of government is to land people on the moon as soon as physically possible, and then to stay. Every citizen is a participant in the Ascent, and every policy is measured by whether it speeds the landing without breaking the society that must build it.
+Values. Humanity's survival depends on leaving its cradle. The central purpose of government is a self-sustaining civilization on Mars as soon as physically possible, carried by people who live long enough to see it. Every citizen is a participant in the Ascent, and every policy is measured by whether it speeds the settlement without breaking the society that must build it.
 
 Religion. All faiths and none are free. The state asks every tradition to bless the Ascent in its own words, and forbids no one from dissenting.
 
-School. School exists to produce the engineers, scientists, and skilled workers the Ascent requires. Twelve years required. Physics, mathematics, materials, medicine, and rocketry are core. Humanities teach why the journey matters.
+School. School produces the engineers, physicians and skilled workers the Ascent requires. Twelve years required. Physics, mathematics, materials, medicine and life support are core.
 
-Migration. Talent is recruited from every region to launch centers near the equator. Families relocate with guaranteed housing and wages. No one is forced.
+Migration. Talent is recruited from every region to launch centers and new cities. Families relocate with guaranteed housing and wages. No one is forced.
 
-Priorities. Space and research receive the largest budget shares, but never at the cost of famine: food and energy minimums are constitutional and override the Ascent. Unrest is a risk to the program and is answered with welfare and honest communication, not force.`,
+Priorities. Space, propulsion, habitats and radiation medicine receive the largest budget shares, but never at the cost of famine: food and energy minimums are constitutional and override the Ascent. Research into aging comes next, because settlers must live long.`,
   },
 ]
 

@@ -1,18 +1,20 @@
 // filesystem layout under data/. every read is safe when files are missing.
 import fs from 'node:fs'
 import path from 'node:path'
-import type { RunRecord, RunSummary } from '../types'
+import zlib from 'node:zlib'
+import type { Lesson, RunRecord, RunSummary } from '../types'
 
 export const DATA = path.join(process.cwd(), 'data')
+// paths resolve at call time (statically scoped under data/ so deploy file tracing stays narrow)
 export const dirs = {
-  runs: path.join(process.cwd(), 'data', 'runs'),
-  showcase: path.join(process.cwd(), 'data', 'showcase'),
-  generations: path.join(process.cwd(), 'data', 'generations'),
-  live: path.join(process.cwd(), 'data', 'live'),
-  inject: path.join(process.cwd(), 'data', 'inject'),
-  reports: path.join(process.cwd(), 'data', 'reports'),
+  get runs() { return path.join(process.cwd(), 'data', 'runs') },
+  get showcase() { return path.join(process.cwd(), 'data', 'showcase') },
+  get generations() { return path.join(process.cwd(), 'data', 'generations') },
+  get live() { return path.join(process.cwd(), 'data', 'live') },
+  get inject() { return path.join(process.cwd(), 'data', 'inject') },
+  get reports() { return path.join(process.cwd(), 'data', 'reports') },
 }
-export const leaderboardFile = path.join(process.cwd(), 'data', 'leaderboard.json')
+export const leaderboardFile = () => path.join(process.cwd(), 'data', 'leaderboard.json')
 
 export const SAFE_ID = /^[A-Za-z0-9_-]{1,80}$/
 
@@ -26,6 +28,7 @@ export function writeJson(file: string, value: unknown) {
   fs.renameSync(tmp, file)
 }
 
+// one entry in a generation. id is the agent id (see agents.ts); the same agent keeps its id across generations
 export type Candidate = {
   id: string
   name: string
@@ -37,6 +40,8 @@ export type Candidate = {
   runs?: RunSummary[]
   // times a world of this candidate was interrupted by limits or network (never scored)
   interrupted?: number
+  // the long now charter: always competes with its original text, never mutated in place
+  protected?: boolean
 }
 export type GenerationFile = {
   generation: number
@@ -45,6 +50,8 @@ export type GenerationFile = {
   startedAt: string
   finishedAt?: string
   population: Candidate[]
+  // learning this generation: deaths, deaths that repeated a known lesson, lessons added
+  stats?: { deaths: number; repeatDeaths: number; newLessons: Lesson[] }
 }
 export type LeaderboardEntry = {
   candidateId: string
@@ -57,24 +64,57 @@ export type LeaderboardEntry = {
 }
 
 export function readLeaderboard(): LeaderboardEntry[] {
-  return readJson<LeaderboardEntry[]>(leaderboardFile) ?? []
+  return readJson<LeaderboardEntry[]>(leaderboardFile()) ?? []
 }
 
+// showcase worlds are committed so the deployed site can replay them. records are big, so they are stored
+// gzipped with a small summary index next to them.
+const showcaseIndexFile = () => path.join(process.cwd(), 'data', 'showcase', 'index.json')
+
 export function listShowcase(): RunSummary[] {
+  const idx = readJson<RunSummary[]>(showcaseIndexFile())
+  if (idx) return idx
   try {
-    return fs.readdirSync(path.join(process.cwd(), 'data', 'showcase')).filter(f => f.endsWith('.json'))
+    return fs.readdirSync(path.join(process.cwd(), 'data', 'showcase')).filter(f => f.endsWith('.json') && f !== 'index.json')
       .map(f => readJson<RunRecord>(path.join(process.cwd(), 'data', 'showcase', f))?.summary)
       .filter((s): s is RunSummary => !!s)
   } catch { return [] }
 }
 
+export function readShowcase(id: string): RunRecord | null {
+  if (!SAFE_ID.test(id)) return null
+  try {
+    return JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(process.cwd(), 'data', 'showcase', `${id}.json.gz`))).toString('utf8')) as RunRecord
+  } catch {
+    return readJson<RunRecord>(path.join(process.cwd(), 'data', 'showcase', `${id}.json`))
+  }
+}
+
+export function writeShowcase(record: RunRecord): boolean {
+  const file = path.join(dirs.showcase, `${record.runId}.json.gz`)
+  if (fs.existsSync(file)) return false
+  fs.mkdirSync(dirs.showcase, { recursive: true })
+  fs.writeFileSync(file, zlib.gzipSync(JSON.stringify(record), { level: 9 }))
+  const idx = listShowcase().filter(s => s.runId !== record.runId)
+  writeJson(showcaseIndexFile(), [...idx, record.summary])
+  return true
+}
+
+// summaries of every local run, so agents and compare never parse the big records
+const runIndexFile = () => path.join(process.cwd(), 'data', 'runs', 'index.json')
+export type IndexedRun = RunSummary & { seed: number }
+export function readRunIndex(): IndexedRun[] {
+  return readJson<IndexedRun[]>(runIndexFile()) ?? []
+}
+export function indexRun(summary: RunSummary, seed: number) {
+  const all = readRunIndex().filter(r => r.runId !== summary.runId)
+  all.push({ ...summary, seed })
+  writeJson(runIndexFile(), all)
+}
+
 export function loadRecord(id: string): RunRecord | null {
   if (!SAFE_ID.test(id)) return null
-  for (const d of [dirs.runs, dirs.showcase, dirs.live]) {
-    const r = readJson<RunRecord>(path.join(d, `${id}.json`))
-    if (r) return r
-  }
-  return null
+  return readJson<RunRecord>(path.join(dirs.runs, `${id}.json`)) ?? readShowcase(id) ?? readJson<RunRecord>(path.join(dirs.live, `${id}.json`))
 }
 
 // deployed (vercel) or READ_ONLY=1: only committed showcase worlds are served, runner routes are off
@@ -94,8 +134,7 @@ export function isReadOnly(): boolean {
 }
 export const runnerOffline = () => Response.json({ error: 'runner offline, local only' }, { status: 503 })
 
-// v1 sims end on 'moon' / 'stagnated', v2 sims on 'goal_achieved' / 'complete'. both count as a win here.
-export const isWin = (s: { status: string }) => s.status === 'goal_achieved' || s.status === 'moon'
+export const isWin = (s: { status: string }) => s.status === 'goal_achieved'
 
 // a full summary for worlds runWorld never returned one for (crashes, live placeholders)
 export function placeholderSummary(p: Pick<RunSummary, 'runId' | 'generation' | 'status' | 'endDate' | 'ticks' | 'constitution' | 'peakPopulation' | 'moonStage'> & Partial<RunSummary>): RunSummary {

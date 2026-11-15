@@ -1,4 +1,5 @@
-// npm run evolve -- --gens 10 --concurrency 2 [--pop 6]
+// npm run evolve -- [--gens 10] [--concurrency 2] [--pop 7]
+// without --gens it keeps going until a world achieves the goal
 // env first, then the fetch counter, so both are in place before the sim modules load
 import '../src/lib/evolve/env'
 import '../src/lib/evolve/usage'
@@ -7,9 +8,10 @@ import { startCommands } from '../src/lib/notify/commands'
 import { arg } from './args'
 
 async function main() {
-  const gens = Number(arg('gens', '10'))
+  const gensArg = arg('gens')
+  const gens = gensArg ? Number(gensArg) : undefined
   const concurrency = Number(arg('concurrency', '2'))
-  const popSize = Number(arg('pop', '6'))
+  const popSize = Number(arg('pop', '7'))
   const stopCommands = startCommands()
   process.on('SIGINT', () => {
     if (control.stopRequested) process.exit(130)

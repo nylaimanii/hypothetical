@@ -1,6 +1,6 @@
 // mutation (groq 70b rewrite) and crossover (section splice) of constitutions.
 import Groq from 'groq-sdk'
-import type { RunSummary } from '../types'
+import type { Lesson, RunSummary } from '../types'
 import type { Candidate } from './store'
 import { wordCount } from './seeds'
 
@@ -66,7 +66,8 @@ async function chat(prompt: string): Promise<string | null> {
 function deathSummary(runs: RunSummary[]) {
   return runs.map(r => {
     const ev = r.topEvents.slice(0, 3).map(e => `${e.kind}: ${e.text}`).join('; ')
-    return `- seed run ${r.runId}: ${r.status} at ${r.endDate}, score ${r.score}${r.causeOfDeath ? `, cause of death: ${r.causeOfDeath}` : ''}. top events: ${ev || 'none'}`
+    const reach = `frontier ${r.frontier}, peak period life expectancy ${r.peakPeriodLifeExpectancy.toFixed(1)}, final population ${(r.finalPopulation / 1e9).toFixed(2)}B`
+    return `- world ${r.runId}: ${r.status} at ${r.endDate}, score ${r.score}, ${reach}${r.causeOfDeath ? `. cause of death: ${r.causeOfDeath}` : ''}. top events: ${ev || 'none'}`
   }).join('\n')
 }
 
@@ -91,13 +92,18 @@ function offlineMutation(parent: Candidate, runs: RunSummary[], salt: number): {
   return { constitution: text, changes: `offline amendment: ${add}` }
 }
 
-export async function mutate(parent: Candidate, salt: number): Promise<{ constitution: string; changes: string }> {
+export async function mutate(parent: Candidate, salt: number, lessons: Lesson[] = []): Promise<{ constitution: string; changes: string }> {
   const runs = parent.runs ?? []
-  const prompt = `You are revising a constitution for a single world government whose goal is a crewed moon landing.
+  const lessonText = lessons.length ? lessons.map(l => `- ${l.rule} (mistake: ${l.mistake}; result: ${l.consequence})`).join('\n') : '- none yet'
+  const sections = /\n\s*Values\./.test(parent.constitution) ? 'Keep the sections Values, Religion, School, Migration, Priorities.' : 'Keep its structure and voice.'
+  const prompt = `You are revising a constitution for a single world government. The mission: prolong humanity. Longer healthy lives, a population that endures, and a self-sustaining civilization on Mars and beyond.
 It was tested in simulated worlds. Results:
 ${deathSummary(runs)}
 
-Rewrite it. Fix what killed it or held it back, keep what worked. Keep the sections Values, Religion, School, Migration, Priorities.
+Lessons every earlier world taught (do not repeat these mistakes):
+${lessonText}
+
+Rewrite it. Fix what killed it or held it back, apply the lessons, keep what worked. ${sections}
 Under 230 words. Plain language. No real politician or party names. Do not use em-dashes.
 Respond as JSON: {"constitution": "<full new text>", "changes": "<one sentence on what you changed and why>"}
 

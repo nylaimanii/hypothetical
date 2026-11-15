@@ -1,5 +1,5 @@
 // telegram notifications. missing env logs once and every call becomes a no-op. never throws.
-import type { RunRecord, RunSummary } from '../types'
+import type { Lesson, RunRecord, RunSummary } from '../types'
 
 let warned = false
 export function telegramEnv(): { token: string; chatId: string } | null {
@@ -31,32 +31,45 @@ export async function send(text: string): Promise<boolean> {
   return !!(await tg('sendMessage', { chat_id: env.chatId, text: text.slice(0, 4000), disable_web_page_preview: true }))
 }
 
-const fmtPop = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : String(Math.round(n))
+export const fmtPop = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(0)}k` : String(Math.round(n))
+const frontier = (f: string) => f === 'none' ? 'no frontier yet' : f.replace(/_/g, ' ')
 
-export function deathMessage(s: RunSummary, record: RunRecord | null, gen: number): string {
-  const last = record?.frames[record.frames.length - 1]
-  const laws = (last?.laws ?? []).filter(l => !l.vetoed)
-  const weakest = laws.length ? laws.reduce((a, b) => (b.compliance < a.compliance ? b : a)) : null
+export type DeathContext = { generation: number; worldNo: number; agentName: string; added: Lesson[]; repeat: Lesson | null }
+
+// the no-ai twin is deliberately absent: it only shows in the pdf reports
+export function deathMessage(s: RunSummary, ctx: DeathContext): string {
+  const c = s.humanCost
+  const lesson = ctx.added[0]
   const lines = [
-    `world ${s.runId} (gen ${gen}) died ${s.endDate}`,
+    `world #${ctx.worldNo} (gen ${ctx.generation}, ${ctx.agentName}) died ${s.endDate}`,
     s.causeOfDeath ? `cause: ${s.causeOfDeath}` : '',
-    s.topEvents.length ? 'biggest events:' : '',
-    ...s.topEvents.slice(0, 3).map(e => `- ${e.kind}: ${e.text}`),
-    weakest ? `least obeyed law: ${weakest.title} (${Math.round(weakest.compliance * 100)}% compliance)` : '',
-    last ? `religion: ${last.religionPolicy.replace('_', ' ')}. school: ${last.schoolPolicy.purpose} (${last.schoolPolicy.yearsRequired} yrs)` : '',
-    `score ${s.score}, peak pop ${fmtPop(s.peakPopulation)}`,
-    `no-ai twin: ${s.baselineStatus} ${s.baselineEndDate}`,
+    lesson ? `got wrong: ${lesson.mistake}` : ctx.repeat ? `got wrong: ${ctx.repeat.mistake}` : '',
+    lesson ? `lesson added: ${lesson.rule}` : '',
+    ctx.repeat ? `repeat mistake: a known lesson already said "${ctx.repeat.rule}"` : '',
+    `got as far as: ${frontier(s.frontier)}, life expectancy ${s.peakPeriodLifeExpectancy.toFixed(1)}, population ${fmtPop(s.finalPopulation)}`,
+    c ? `human cost: ${fmtPop(c.deaths)} deaths (${fmtPop(c.famineDeaths)} famine, ${fmtPop(c.unrestDeaths)} unrest), ${fmtPop(c.displaced)} displaced` : '',
+    `score ${s.score}`,
   ]
   return lines.filter(Boolean).join('\n')
 }
 
-export async function notifyWorldDied(s: RunSummary, record: RunRecord | null, gen: number) {
-  await send(deathMessage(s, record, gen))
+export async function notifyWorldDied(s: RunSummary, _record: RunRecord | null, ctx: DeathContext) {
+  await send(deathMessage(s, ctx))
 }
 
-export async function notifyMoon(s: RunSummary, gen: number) {
+export async function notifyGoal(s: RunSummary, record: RunRecord, ctx: { generation: number; agentName: string }) {
   const firstLines = s.constitution.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 2).join('\n')
-  await send(`MOON. world ${s.runId} (gen ${gen}) landed a crew on ${s.endDate}.\nscore ${s.score}, no-ai twin: ${s.baselineStatus}\n\n${firstLines}`)
+  const last = record.frames[record.frames.length - 1]
+  const mars = last?.cities.filter(c => c.offWorld === 'mars').reduce((a, c) => a + c.population, 0) ?? 0
+  await send([
+    '🚀🚀🚀 GOAL ACHIEVED 🚀🚀🚀',
+    `${ctx.agentName} did it. world ${s.runId} (gen ${ctx.generation}), ${s.endDate}.`,
+    `a self-sustaining civilization on mars${mars ? ` (${fmtPop(mars)} people)` : ''}, period life expectancy ${s.peakPeriodLifeExpectancy.toFixed(1)} years, population ${fmtPop(s.finalPopulation)} and holding.`,
+    `human cost on the way: ${fmtPop(s.humanCost.deaths)} deaths.`,
+    `score ${s.score}. evolution stops here.`,
+    '',
+    firstLines,
+  ].join('\n'))
 }
 
 export async function notifyGeneration(line: string) {
