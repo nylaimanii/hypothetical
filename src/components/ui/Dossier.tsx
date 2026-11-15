@@ -30,7 +30,7 @@ function Chip({ children, tone = 'ink' }: { children: React.ReactNode; tone?: 'i
 function Tabs<T extends string>({ tabs, value, onChange }: { tabs: T[]; value: T; onChange: (t: T) => void }) {
   if (tabs.length < 2) return null
   return (
-    <div className="sticky top-0 z-10 -mx-5 mt-3 flex gap-1 overflow-x-auto border-b border-ink/10 bg-bone/95 px-5 pb-2 backdrop-blur">
+    <div className="sticky top-0 z-10 -mx-5 mt-3 flex gap-1 overflow-x-auto border-b border-ink/10 bg-bone/95 px-5 pb-2">
       {tabs.map((t) => (
         <button key={t} onClick={() => onChange(t)} className={`whitespace-nowrap rounded-full px-3 py-1 text-[12px] ${value === t ? 'bg-ink text-bone' : 'text-ink/60 hover:bg-ink/5'}`}>{t}</button>
       ))}

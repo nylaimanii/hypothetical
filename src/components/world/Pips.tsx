@@ -5,12 +5,15 @@ import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Outlines } from '@react-three/drei'
 import type { Behavior, Citizen, Frame } from '@/lib/types'
 import { dominant, valence } from '@/lib/mock/mood'
-import { C, HAIR_HEX, LAND_TOP, MONK, groundRadius, latLonToVec3, sceneRefs, shade, surfaceQuat, tangentBasis, vinyl } from './lib'
+import { C, HAIR_HEX, LAND_TOP, MONK, groundRadius, latLonToVec3, shade, surfaceQuat, tangentBasis, vinyl } from './lib'
 import { HAIRS, P, buildW, hairGeometries, headScale, partGeometries, pipRegistry, pipScale, shoulderX, usePhys, type Agent } from './pipShared'
 import { CONFETTI_COLORS, EMOTION_ICON, EMOTION_TINT, ICONS, iconGeometries, propGeometries } from './pipProps'
 import { useStore } from '../state/store'
 
 const N = 220
+const _frustum = new THREE.Frustum()
+const _pm = new THREE.Matrix4()
+const _sphere = new THREE.Sphere()
 const CONFETTI = 360
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0)
 
@@ -172,6 +175,8 @@ function speedOf(a: Agent) {
   return Math.max(0.25, s) * (0.85 + ((c.personalitySeed >> 4) % 30) / 100)
 }
 
+const RAGDOLLS = 30
+
 export default function Pips({ frame }: { frame: Frame }) {
   const zoom = useStore((s) => s.zoom)
   const quality = useStore((s) => s.quality)
@@ -231,24 +236,19 @@ export default function Pips({ frame }: { frame: Frame }) {
     pipRegistry.agents = new Map(agents.map((a) => [a.key, a]))
   }, [agents])
 
-  // per instance colors
+  // per pip colors, parsed once. perf: only on-screen pips are drawn, packed into the first slots
+  // each frame, so colors are written per slot in the frame loop
+  const cols = useMemo(() => agents.map((a) => {
+    const skin = new THREE.Color(MONK[Math.max(0, Math.min(9, a.citizen.skinTone - 1))])
+    return {
+      body: new THREE.Color(a.color), skin, leg: new THREE.Color(shade(a.color, 0.6)), foot: new THREE.Color('#2d2925'),
+      hair: new THREE.Color(HAIR_HEX[a.citizen.hairColor] ?? '#222'), box: new THREE.Color(a.behavior === 'volunteering' ? '#EDEAE2' : '#C8A27A'), icon: new THREE.Color(EMOTION_TINT[a.emo] ?? '#ffffff'),
+    }
+  }), [agents])
+  const slotAgent = useRef(new Int32Array(N))
   useLayoutEffect(() => {
     const col = new THREE.Color()
     const set = (m: THREE.InstancedMesh | null | undefined, i: number, c: THREE.ColorRepresentation | THREE.Color) => m?.setColorAt(i, c instanceof THREE.Color ? c : col.set(c))
-    agents.forEach((a, i) => {
-      const skin = MONK[Math.max(0, Math.min(9, a.citizen.skinTone - 1))]
-      set(refs.torso.current, i, a.color)
-      set(refs.head.current, i, skin)
-      for (const k of [0, 1]) {
-        set(refs.arm.current, i * 2 + k, a.color)
-        set(refs.hand.current, i * 2 + k, skin)
-        set(refs.leg.current, i * 2 + k, shade(a.color, 0.6))
-        set(refs.foot.current, i * 2 + k, '#2d2925')
-      }
-      set(hairRefs.current[a.citizen.hair], i, HAIR_HEX[a.citizen.hairColor] ?? '#222')
-      set(refs.box.current, i, a.behavior === 'volunteering' ? '#EDEAE2' : '#C8A27A')
-      for (const k of ICONS) set(iconRefs.current[k], i, EMOTION_TINT[a.emo] ?? '#ffffff')
-    })
     for (let i = 0; i < CONFETTI; i++) set(refs.confetti.current, i, CONFETTI_COLORS[i % CONFETTI_COLORS.length])
     for (const m of Object.values(refs)) if (m.current?.instanceColor) m.current.instanceColor.needsUpdate = true
     for (const h of Object.values(hairRefs.current)) if (h?.instanceColor) h.instanceColor.needsUpdate = true
@@ -267,24 +267,27 @@ export default function Pips({ frame }: { frame: Frame }) {
     }
   }, [juice, agents])
 
-  // which pips get real physics: walkers near the camera focus (posed pips keep their pose)
+  // which pips get real physics: the ~30 walkers nearest the camera that are actually on screen.
+  // everyone else walks procedurally on the instanced bodies (posed pips keep their pose)
   useEffect(() => {
     if (!(visible && quality === 'high')) { setKeys([]); return }
     const pick = () => {
-      const f = sceneRefs.focus.clone().normalize()
-      // adaptive level 3: only pips actually on screen keep physics
       const frustum = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse))
-      const onScreen = (k: string) => adaptive < 3 || frustum.intersectsSphere(new THREE.Sphere(pipRegistry.roots.get(k)!.pos, 0.3))
+      const cam = camera.position
+      // on screen means inside the view AND on our side of the planet (the frustum alone includes the far side)
+      const camDir = cam.clone().normalize()
+      const horizonCos = Math.cos(Math.acos(Math.min(1, LAND_TOP / cam.length())) + 0.04)
+      const onScreen = (k: string) => { const p = pipRegistry.roots.get(k)!.pos; return p.clone().normalize().dot(camDir) >= horizonCos && frustum.intersectsSphere(new THREE.Sphere(p, 0.3)) }
       const scored = agents
         .filter((a) => !a.migrant && !a.parentKey && !STILL.includes(a.behavior) && a.behavior !== 'celebrating' && a.behavior !== 'trend_following' && pipRegistry.roots.has(a.key) && onScreen(a.key))
-        .map((a) => ({ k: a.key, d: a.home.dot(f) })).filter((x) => x.d > Math.cos(0.32)).sort((x, y) => y.d - x.d).slice(0, 40).map((x) => x.k).sort()
+        .map((a) => ({ k: a.key, d: pipRegistry.roots.get(a.key)!.pos.distanceToSquared(cam) })).sort((x, y) => x.d - y.d).slice(0, RAGDOLLS).map((x) => x.k).sort()
       const cur = usePhys.getState().keys
       if (scored.join() !== cur.join()) setKeys(scored)
     }
     pick()
     const id = setInterval(pick, 600)
     return () => clearInterval(id)
-  }, [visible, quality, agents, setKeys, adaptive, camera])
+  }, [visible, quality, agents, setKeys, camera])
 
   useFrame(({ clock }) => {
     if (!visible) return
@@ -294,6 +297,13 @@ export default function Pips({ frame }: { frame: Frame }) {
     const camQ = camera.quaternion
     let confettiN = 0
     const confettiM = refs.confetti.current
+    // perf: which pips are worth drawing: in front of the horizon and inside the view
+    const camD = camera.position.length()
+    const camDir = camera.position.clone().divideScalar(camD)
+    const horizonCos = Math.cos(Math.acos(Math.min(1, LAND_TOP / camD)) + 0.04)
+    _frustum.setFromProjectionMatrix(_pm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse))
+    let j = 0
+    const hairN: Record<string, number> = {}, iconN: Record<string, number> = {}
     agents.forEach((a, i) => {
       const c = a.citizen
       const B = a.behavior
@@ -323,6 +333,12 @@ export default function Pips({ frame }: { frame: Frame }) {
       let root = pipRegistry.roots.get(a.key)
       if (!root) { root = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), heading: new THREE.Vector3() }; pipRegistry.roots.set(a.key, root) }
       root.pos.copy(pos); root.quat.copy(quat); root.heading.copy(heading).normalize()
+      // off screen or past the horizon: keep its root (physics and labels read it) but draw nothing
+      // ragdolls are drawn where their bodies are, not at the root (which keeps walking), and they are already on screen
+      if (!pipRegistry.ragdolls.has(a.key) && (normal.dot(camDir) < horizonCos || !_frustum.intersectsSphere(_sphere.set(pos, 0.6)))) return
+      const slot = j++
+      slotAgent.current[slot] = i
+      const cc = cols[i]
 
       const b = bases[i]
       // ragdoll bodies can be removed from the world before the registry hears about it
@@ -392,15 +408,20 @@ export default function Pips({ frame }: { frame: Frame }) {
       }
 
       // write instances
-      refs.torso.current!.setMatrixAt(i, _m.copy(b.torso).multiply(off.torso(bw)))
+      refs.torso.current!.setMatrixAt(slot, _m.copy(b.torso).multiply(off.torso(bw)))
+      refs.torso.current!.setColorAt(slot, cc.body)
+      refs.head.current!.setColorAt(slot, cc.skin)
+      refs.box.current!.setColorAt(slot, cc.box)
       const head = _m2.copy(b.head).scale(_s.set(hs, hs, hs))
-      refs.head.current!.setMatrixAt(i, _m.copy(head).multiply(off.head))
+      refs.head.current!.setMatrixAt(slot, _m.copy(head).multiply(off.head))
       const arms = [b.armL, b.armR], legs = [b.legL, b.legR]
       for (const k of [0, 1]) {
-        refs.arm.current!.setMatrixAt(i * 2 + k, _m.copy(arms[k]).multiply(off.arm))
-        refs.hand.current!.setMatrixAt(i * 2 + k, _m.copy(arms[k]).multiply(off.hand))
-        refs.leg.current!.setMatrixAt(i * 2 + k, _m.copy(legs[k]).multiply(off.leg))
-        refs.foot.current!.setMatrixAt(i * 2 + k, _m.copy(legs[k]).multiply(off.foot))
+        refs.arm.current!.setMatrixAt(slot * 2 + k, _m.copy(arms[k]).multiply(off.arm))
+        refs.arm.current!.setColorAt(slot * 2 + k, cc.body); refs.hand.current!.setColorAt(slot * 2 + k, cc.skin)
+        refs.leg.current!.setColorAt(slot * 2 + k, cc.leg); refs.foot.current!.setColorAt(slot * 2 + k, cc.foot)
+        refs.hand.current!.setMatrixAt(slot * 2 + k, _m.copy(arms[k]).multiply(off.hand))
+        refs.leg.current!.setMatrixAt(slot * 2 + k, _m.copy(legs[k]).multiply(off.leg))
+        refs.foot.current!.setMatrixAt(slot * 2 + k, _m.copy(legs[k]).multiply(off.foot))
       }
       // face: eyes blink, brows carry mood
       const blink = (t + (sd % 7)) % 4.3 < 0.12 ? 0.15 : 1
@@ -409,25 +430,24 @@ export default function Pips({ frame }: { frame: Frame }) {
       for (const k of [0, 1]) {
         const sxx = k === 0 ? 1 : -1
         const eyeM = _m.copy(head).multiply(T(sxx * 0.062, 0.165, 0.131)).scale(_s.set(1, B === 'praying' ? 0.2 : blink, 1))
-        refs.eye.current!.setMatrixAt(i * 2 + k, a.angry ? ZERO : eyeM)
-        refs.eyeA.current!.setMatrixAt(i * 2 + k, a.angry ? eyeM : ZERO)
+        refs.eye.current!.setMatrixAt(slot * 2 + k, a.angry ? ZERO : eyeM)
+        refs.eyeA.current!.setMatrixAt(slot * 2 + k, a.angry ? eyeM : ZERO)
         const browM = _m.copy(head).multiply(T(sxx * 0.066, 0.228 + browY, 0.134)).multiply(Rx(0, 0, sxx * tilt))
-        refs.brow.current!.setMatrixAt(i * 2 + k, a.angry ? ZERO : browM)
-        refs.browA.current!.setMatrixAt(i * 2 + k, a.angry ? browM : ZERO)
+        refs.brow.current!.setMatrixAt(slot * 2 + k, a.angry ? ZERO : browM)
+        refs.browA.current!.setMatrixAt(slot * 2 + k, a.angry ? browM : ZERO)
       }
       // belief accessory
-      refs.halo.current!.setMatrixAt(i, c.belief === 'religious' ? _m.copy(head).multiply(T(0, 0.43 + Math.sin(t * 2 + sd) * 0.015, 0)) : ZERO)
-      refs.dot.current!.setMatrixAt(i, c.belief === 'spiritual' ? _m.copy(head).multiply(T(Math.cos(t * 2.2 + sd) * 0.24, 0.3, Math.sin(t * 2.2 + sd) * 0.24)) : ZERO)
-      for (const h of HAIRS) {
-        const hm = hairRefs.current[h]
-        if (hm) hm.setMatrixAt(i, h === c.hair ? head : ZERO)
-      }
+      refs.halo.current!.setMatrixAt(slot, c.belief === 'religious' ? _m.copy(head).multiply(T(0, 0.43 + Math.sin(t * 2 + sd) * 0.015, 0)) : ZERO)
+      refs.dot.current!.setMatrixAt(slot, c.belief === 'spiritual' ? _m.copy(head).multiply(T(Math.cos(t * 2.2 + sd) * 0.24, 0.3, Math.sin(t * 2.2 + sd) * 0.24)) : ZERO)
+      // each hair mesh only draws the pips that wear that style
+      const hm = hairRefs.current[c.hair]
+      if (hm) { const hs2 = hairN[c.hair] ?? 0; hm.setMatrixAt(hs2, head); hm.setColorAt(hs2, cc.hair); hairN[c.hair] = hs2 + 1 }
       // props
-      refs.sign.current!.setMatrixAt(i, B === 'protesting' ? _m.copy(b.armL) : ZERO)
+      refs.sign.current!.setMatrixAt(slot, B === 'protesting' ? _m.copy(b.armL) : ZERO)
       const carrying = B === 'hoarding' || B === 'panic_buying' || B === 'volunteering'
-      refs.box.current!.setMatrixAt(i, carrying ? _m.copy(b.torso).multiply(T(0, 0.26, 0.24)) : ZERO)
-      refs.phone.current!.setMatrixAt(i, B === 'conspiracy_posting' ? _m.copy(b.armR).multiply(T(0, -0.36, 0.06)).multiply(Rx(1.2)) : ZERO)
-      refs.glow.current!.setMatrixAt(i, B === 'praying' ? _m.compose(pos, quat, _s.set(s, s, s)).multiply(T(0, 0.012, 0)).scale(_s.set(1 + Math.sin(t * 1.5 + sd) * 0.08, 1, 1 + Math.sin(t * 1.5 + sd) * 0.08)) : ZERO)
+      refs.box.current!.setMatrixAt(slot, carrying ? _m.copy(b.torso).multiply(T(0, 0.26, 0.24)) : ZERO)
+      refs.phone.current!.setMatrixAt(slot, B === 'conspiracy_posting' ? _m.copy(b.armR).multiply(T(0, -0.36, 0.06)).multiply(Rx(1.2)) : ZERO)
+      refs.glow.current!.setMatrixAt(slot, B === 'praying' ? _m.compose(pos, quat, _s.set(s, s, s)).multiply(T(0, 0.012, 0)).scale(_s.set(1 + Math.sin(t * 1.5 + sd) * 0.08, 1, 1 + Math.sin(t * 1.5 + sd) * 0.08)) : ZERO)
       // emotion bubble: the dominant feeling, only when it is strong
       const iconKind = a.emoLevel > 0.5 ? EMOTION_ICON[a.emo] : undefined
       if (iconKind) {
@@ -435,7 +455,7 @@ export default function Pips({ frame }: { frame: Frame }) {
         const sc = s * 1.05
         _m.compose(top, camQ, new THREE.Vector3(sc, sc, sc))
       }
-      for (const k of ICONS) iconRefs.current[k]?.setMatrixAt(i, k === iconKind ? _m : ZERO)
+      if (iconKind) { const im2 = iconRefs.current[iconKind]; if (im2) { const n2 = iconN[iconKind] ?? 0; im2.setMatrixAt(n2, _m); im2.setColorAt(n2, cc.icon); iconN[iconKind] = n2 + 1 } }
       // confetti: little bursts over celebrating pips
       if (B === 'celebrating' && confettiM) {
         const cycle = 1.8
@@ -451,22 +471,27 @@ export default function Pips({ frame }: { frame: Frame }) {
         }
       }
     })
-    for (let i = agents.length; i < N; i++) {
-      for (const r of [refs.torso, refs.head, refs.halo, refs.dot, refs.sign, refs.box, refs.phone, refs.glow]) r.current!.setMatrixAt(i, ZERO)
-      for (const r of [refs.arm, refs.hand, refs.leg, refs.foot, refs.eye, refs.eyeA, refs.brow, refs.browA]) { r.current!.setMatrixAt(i * 2, ZERO); r.current!.setMatrixAt(i * 2 + 1, ZERO) }
-      for (const h of HAIRS) hairRefs.current[h]?.setMatrixAt(i, ZERO)
-      for (const k of ICONS) iconRefs.current[k]?.setMatrixAt(i, ZERO)
-    }
     if (confettiM) for (let i = confettiN; i < CONFETTI; i++) confettiM.setMatrixAt(i, ZERO)
-    for (const r of Object.values(refs)) if (r.current) r.current.instanceMatrix.needsUpdate = true
-    for (const h of Object.values(hairRefs.current)) if (h) h.instanceMatrix.needsUpdate = true
-    for (const h of Object.values(iconRefs.current)) if (h) h.instanceMatrix.needsUpdate = true
+    // perf: draw only the packed slots. outlines are child instanced meshes and follow the same count
+    const setCount = (m: THREE.InstancedMesh | null | undefined, n: number) => {
+      if (!m) return
+      m.count = n
+      m.instanceMatrix.needsUpdate = true
+      if (m.instanceColor) m.instanceColor.needsUpdate = true
+      // drei wraps an instanced outline in a group under the mesh: reach every instanced descendant
+      m.traverse((ch) => { if (ch !== m && (ch as THREE.InstancedMesh).isInstancedMesh) (ch as THREE.InstancedMesh).count = n })
+    }
+    for (const r of [refs.torso, refs.head, refs.halo, refs.dot, refs.sign, refs.box, refs.phone, refs.glow]) setCount(r.current, j)
+    for (const r of [refs.arm, refs.hand, refs.leg, refs.foot, refs.eye, refs.eyeA, refs.brow, refs.browA]) setCount(r.current, j * 2)
+    for (const h of HAIRS) setCount(hairRefs.current[h], hairN[h] ?? 0)
+    for (const k of ICONS) setCount(iconRefs.current[k], iconN[k] ?? 0)
+    if (confettiM) confettiM.instanceMatrix.needsUpdate = true
   })
 
   const onClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
     if (e.instanceId == null) return
-    const a = agents[e.instanceId]
+    const a = agents[slotAgent.current[e.instanceId]]
     if (a) select({ kind: 'pip', id: a.parentKey ?? a.citizen.id })
   }
   const hover = {

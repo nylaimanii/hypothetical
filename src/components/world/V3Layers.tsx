@@ -201,7 +201,7 @@ export function ExplainLayer() {
         if (!x) { b.style.opacity = '0'; continue }
         if (b.dataset.id !== x.id) {
           b.dataset.id = x.id
-          b.className = `pointer-events-none w-max max-w-[13rem] rounded-xl border bg-bone/92 px-2.5 py-1.5 text-[11px] leading-snug text-ink shadow-md backdrop-blur transition-opacity ${x.danger ? 'border-ember/60' : 'border-ink/15'}`
+          b.className = `pointer-events-none w-max max-w-[13rem] rounded-xl border bg-bone/92 px-2.5 py-1.5 text-[11px] leading-snug text-ink shadow-md transition-opacity ${x.danger ? 'border-ember/60' : 'border-ink/15'}`
           const t = b.firstChild as HTMLDivElement, d = b.lastChild as HTMLDivElement
           t.textContent = x.title; t.className = `font-display text-[12.5px] ${x.danger ? 'text-ember' : ''}`
           d.textContent = x.text

@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
@@ -8,6 +8,7 @@ import type { Biome } from './geodata'
 import { buildTiles, C, LAND_TOP, OCEAN_TOP, R, STEP, toonGradient } from './lib'
 import { tickToDate } from './time'
 import { useStore } from '../state/store'
+import { ChunkSet } from './chunks'
 import { regionModeColor } from './modes'
 
 const TILE_H = 0.5
@@ -58,12 +59,6 @@ function animated(base: THREE.MeshToonMaterial, kind: 'ocean' | 'foam') {
 
 export default function Planet({ frame }: { frame: Frame }) {
   const { tiles, neighbors } = useMemo(() => buildTiles(frame.regions), [frame.regions])
-  const landRef = useRef<THREE.InstancedMesh>(null)
-  const stackRef = useRef<THREE.InstancedMesh>(null)
-  const oceanRef = useRef<THREE.InstancedMesh>(null)
-  const foamRef = useRef<THREE.InstancedMesh>(null)
-  const glowRef = useRef<THREE.InstancedMesh>(null)
-  const glowMat = useRef<THREE.MeshBasicMaterial>(null)
   const select = useStore((s) => s.select)
   const quality = useStore((s) => s.quality)
   // seasons move monthly: recolor when the month changes, not every frame
@@ -77,9 +72,13 @@ export default function Planet({ frame }: { frame: Frame }) {
     return frame.regions.map((r) => Math.sqrt(r.population / max) * 0.55)
   }, [popKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // lod: rounded clay tiles up close, a 1-segment bevel (about a sixth of the triangles) further out
   const geo = useMemo(() => new RoundedBoxGeometry(1, TILE_H, 1, 2, 0.09), [])
+  const geoLo = useMemo(() => new RoundedBoxGeometry(1, TILE_H, 1, 1, 0.09), [])
   const blockGeo = useMemo(() => new RoundedBoxGeometry(1, STEP, 1, 2, 0.03), [])
-  const foamGeo = useMemo(() => new RoundedBoxGeometry(0.13, 0.035, 0.08, 2, 0.015), [])
+  const blockGeoLo = useMemo(() => new RoundedBoxGeometry(1, STEP, 1, 1, 0.03), [])
+  const foamGeo = useMemo(() => new THREE.BoxGeometry(0.13, 0.035, 0.08), [])
+  const glowMat = useMemo(() => new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.BackSide, toneMapped: false }), [])
   const landMat = useMemo(() => new THREE.MeshToonMaterial({ gradientMap: toonGradient() }), [])
   const ocean = useMemo(() => animated(new THREE.MeshToonMaterial({ gradientMap: toonGradient() }), 'ocean'), [])
   const foam = useMemo(() => animated(new THREE.MeshToonMaterial({ color: '#E4EEEE', gradientMap: toonGradient() }), 'foam'), [])
@@ -101,9 +100,20 @@ export default function Planet({ frame }: { frame: Frame }) {
     return { land, sea, stacks, coast, border }
   }, [tiles, neighbors])
 
+  const shadow = quality === 'high'
+  // perf: every tile type is batched into cube-sphere patches (see chunks.ts): culled off screen and past the horizon, lod by distance
+  const sets = useMemo(() => {
+    const L = new ChunkSet(layout.land, tiles, geo, geoLo, landMat, { cast: shadow, receive: true, pick: true })
+    const S = new ChunkSet(layout.stacks.map((x) => x.tile), tiles, blockGeo, blockGeoLo, landMat, { cast: shadow, receive: true, pick: true })
+    const O = new ChunkSet(layout.sea, tiles, geoLo, geoLo, ocean.mat, { receive: true })
+    const F = new ChunkSet(layout.coast.map((x) => x.tile), tiles, foamGeo, foamGeo, foam.mat)
+    const G = new ChunkSet(layout.land, tiles, geoLo, geoLo, glowMat, { renderOrder: 2 })
+    return { L, S, O, F, G }
+  }, [layout, tiles, geo, geoLo, blockGeo, blockGeoLo, foamGeo, landMat, ocean.mat, foam.mat, glowMat, shadow])
+  useEffect(() => () => { for (const x of Object.values(sets)) x.dispose() }, [sets])
+
   useLayoutEffect(() => {
-    const L = landRef.current, S = stackRef.current, O = oceanRef.current, F = foamRef.current, G = glowRef.current
-    if (!L || !S || !O || !F || !G) return
+    const { L, S, O, F, G } = sets
     const mtx = new THREE.Matrix4(), pos = new THREE.Vector3(), scl = new THREE.Vector3()
     layout.land.forEach((ti, k) => {
       const t = tiles[ti]
@@ -137,13 +147,12 @@ export default function Planet({ frame }: { frame: Frame }) {
       const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3().crossVectors(t.normal, dir), t.normal, dir))
       F.setMatrixAt(k, mtx.compose(pos, q, scl.set(1 + Math.abs(jitter), 1, 1)))
     })
-    for (const m of [L, S, O, F, G]) { m.instanceMatrix.needsUpdate = true; m.computeBoundingSphere() }
-  }, [tiles, layout, lift])
+    for (const m of [L, S, O, F, G]) m.commitMatrices()
+  }, [tiles, layout, lift, sets])
 
   // colors: biome tinted by region, real seasonal snow, drought pales, unrest glows ember on borders
   useEffect(() => {
-    const L = landRef.current, S = stackRef.current, O = oceanRef.current, G = glowRef.current
-    if (!L || !S || !O || !G) return
+    const { L, S, O, G } = sets
     const d = tickToDate(month)
     const doy = (d.getTime() - Date.UTC(d.getUTCFullYear(), 0, 0)) / 86400000
     // northern snow line: about 40N in mid january, back to 60N by mid july
@@ -190,50 +199,50 @@ export default function Planet({ frame }: { frame: Frame }) {
       else if (murk > 0.2) col.lerp(MURK, (murk - 0.2) * 0.7)
       O.setColorAt(k, col)
     })
-    for (const m of [L, S, O, G]) if (m.instanceColor) m.instanceColor.needsUpdate = true
-  }, [frame, tiles, layout, month, overlay])
+    for (const m of [L, S, O, G]) m.commitColors()
+  }, [frame, tiles, layout, month, overlay, sets])
 
-  useFrame(({ clock }) => {
+  useFrame(({ clock, camera }) => {
     ocean.uniforms.uTime.value = clock.elapsedTime
     foam.uniforms.uTime.value = clock.elapsedTime
-    if (glowMat.current) glowMat.current.opacity = 0.55 + Math.sin(clock.elapsedTime * 2.4) * 0.25
+    glowMat.opacity = 0.55 + Math.sin(clock.elapsedTime * 2.4) * 0.25
+    // high poly only for patches within ~9 units of the camera: only ever true up close
+    for (const x of Object.values(sets)) x.update(camera.position, LAND_TOP, 9)
   })
 
-  const pick = (list: number[]) => (e: ThreeEvent<MouseEvent>) => {
+  const pick = (list: number[], set: ChunkSet) => (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
     if (e.instanceId == null) return
-    const t = tiles[list[e.instanceId]]
+    const k = set.globalId(e.object, e.instanceId)
+    const t = k !== undefined ? tiles[list[k]] : undefined
     if (t && t.region >= 0) select({ kind: 'region', id: frame.regions[t.region].id })
   }
   const stackTiles = useMemo(() => layout.stacks.map((s) => s.tile), [layout])
   // hovering land names its region in one plain line: the labels only show the biggest few
-  const tipFor = (list: number[]) => (e: ThreeEvent<PointerEvent>) => {
-    const t = e.instanceId != null ? tiles[list[e.instanceId]] : undefined
+  const tipFor = (list: number[], set: ChunkSet) => (e: ThreeEvent<PointerEvent>) => {
+    const k = e.instanceId != null ? set.globalId(e.object, e.instanceId) : undefined
+    const t = k !== undefined ? tiles[list[k]] : undefined
     const r = t && t.region >= 0 ? frame.regions[t.region] : undefined
     if (!r) return
     const pop = r.population >= 1e9 ? `${(r.population / 1e9).toFixed(2)}B` : `${Math.round(r.population / 1e6)}M`
     useStore.getState().setTip({ title: r.name, text: `${pop} people · approval ${Math.round(r.approval * 100)}%`, x: e.nativeEvent.clientX, y: e.nativeEvent.clientY })
   }
-  const hoverOn = (list: number[]) => ({
+  const hoverOn = (list: number[], set: ChunkSet) => ({
     onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer' },
-    onPointerMove: tipFor(list),
+    onPointerMove: tipFor(list, set),
     onPointerOut: () => { document.body.style.cursor = ''; useStore.getState().setTip(null) },
   })
-  const shadow = quality === 'high'
-
   return (
     <group>
       <mesh>
         <sphereGeometry args={[R - 0.2, 64, 48]} />
         <meshToonMaterial color={C.grout} gradientMap={toonGradient()} />
       </mesh>
-      <instancedMesh ref={oceanRef} args={[geo, ocean.mat, layout.sea.length]} receiveShadow raycast={() => null} />
-      <instancedMesh ref={foamRef} args={[foamGeo, foam.mat, Math.max(1, layout.coast.length)]} raycast={() => null} />
-      <instancedMesh ref={landRef} args={[geo, landMat, layout.land.length]} castShadow={shadow} receiveShadow onClick={pick(layout.land)} {...hoverOn(layout.land)} />
-      <instancedMesh ref={stackRef} args={[blockGeo, landMat, Math.max(1, layout.stacks.length)]} castShadow={shadow} receiveShadow onClick={pick(stackTiles)} {...hoverOn(stackTiles)} />
-      <instancedMesh ref={glowRef} args={[geo, undefined, layout.land.length]} raycast={() => null} renderOrder={2}>
-        <meshBasicMaterial ref={glowMat} transparent depthWrite={false} blending={THREE.AdditiveBlending} side={THREE.BackSide} toneMapped={false} />
-      </instancedMesh>
+      <primitive object={sets.O.group} />
+      <primitive object={sets.F.group} />
+      <primitive object={sets.L.group} onClick={pick(layout.land, sets.L)} {...hoverOn(layout.land, sets.L)} />
+      <primitive object={sets.S.group} onClick={pick(stackTiles, sets.S)} {...hoverOn(stackTiles, sets.S)} />
+      <primitive object={sets.G.group} />
     </group>
   )
 }

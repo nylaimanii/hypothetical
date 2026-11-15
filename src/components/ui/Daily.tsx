@@ -104,7 +104,7 @@ export function DailyPaper() {
   if (!daily.open) return null
   const close = () => setDaily({ open: false, year: null })
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-ink/35 p-4 backdrop-blur-[1px]" onClick={close}>
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-ink/35 p-4" onClick={close}>
       <div className="dossier-in flex max-h-full w-full max-w-4xl flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="mb-2 flex items-center justify-between gap-3 text-bone">
           <div className="flex items-center gap-1.5">

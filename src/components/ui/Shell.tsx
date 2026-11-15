@@ -54,7 +54,7 @@ const Burger = () => <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden
 export function MenuButton() {
   const menu = useStore((s) => s.menu)
   return (
-    <button onClick={() => useStore.getState().setMenu(!menu)} aria-label="menu" aria-expanded={menu} className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full bg-bone/70 text-ink shadow-sm backdrop-blur hover:bg-bone">
+    <button onClick={() => useStore.getState().setMenu(!menu)} aria-label="menu" aria-expanded={menu} className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full bg-bone/85 text-ink shadow-sm hover:bg-bone">
       <Burger />
     </button>
   )
@@ -77,7 +77,7 @@ export function SideMenu({ onLive }: { onLive: () => void }) {
   const s = useStore.getState()
   const view = (v: View) => () => s.setView(v)
   return (
-    <aside className="sheet-in pointer-events-auto absolute bottom-0 right-0 top-0 z-40 flex w-72 flex-col border-l border-ink/10 bg-bone/96 px-2 py-4 shadow-2xl backdrop-blur" aria-label="menu">
+    <aside className="sheet-in pointer-events-auto absolute bottom-0 right-0 top-0 z-40 flex w-72 flex-col border-l border-ink/10 bg-bone/96 px-2 py-4 shadow-2xl" aria-label="menu">
       <div className="flex items-center justify-between px-3">
         <span className="font-display text-[18px]">hypothetical</span>
         <button onClick={() => s.setMenu(false)} aria-label="close menu" className="text-[18px] leading-none text-ink/50 hover:text-ink">×</button>
@@ -121,7 +121,7 @@ export function StatsLine() {
   if (cost.approval > 0) parts.push(<span key="a">approval <Num>{fmt.pct(cost.approval)}</Num></span>)
   if (mode === 'ai' && cost.deaths > 0) parts.push(<span key="d" className="text-ember"><Num>{fmt.people(cost.deaths)}</Num> dead</span>)
   return (
-    <div className="pointer-events-auto flex items-center gap-2 whitespace-nowrap rounded-full bg-bone/45 px-3 py-0.5 text-[11.5px] text-ink/75 backdrop-blur-sm">
+    <div className="pointer-events-auto flex items-center gap-2 whitespace-nowrap rounded-full bg-bone/75 px-3 py-0.5 text-[11.5px] text-ink/75">
       {parts.map((p, i) => <span key={i} className="flex items-center gap-2">{i > 0 && <span className="text-ink/25">·</span>}{p}</span>)}
     </div>
   )
@@ -263,7 +263,7 @@ export function LayerHint() {
   const { frame } = useCurrentFrame()
   if (overlay === 'real' || view !== 'globe') return null
   return (
-    <button onClick={() => useStore.getState().setSheet('layers')} className="pointer-events-auto max-w-[36rem] truncate rounded-full bg-bone/45 px-3 py-0.5 text-[11.5px] text-ink/70 backdrop-blur-sm hover:text-ink">
+    <button onClick={() => useStore.getState().setSheet('layers')} className="pointer-events-auto max-w-[36rem] truncate rounded-full bg-bone/75 px-3 py-0.5 text-[11.5px] text-ink/70 hover:text-ink">
       <span className="text-ink/45">{overlay}:</span> {legendFor(overlay, frame).line}
     </button>
   )

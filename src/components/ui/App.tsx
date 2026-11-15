@@ -220,7 +220,7 @@ export default function App() {
     <main className="relative h-screen w-screen overflow-hidden">
       {compare ? <CompareView /> : <Globe />}
       {globeOnly && (
-        <button onClick={() => toggleGlobeOnly(false)} className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-full bg-bone/70 px-3 py-1 text-[11px] text-ink/60 backdrop-blur hover:text-ink">press f or esc for the ui</button>
+        <button onClick={() => toggleGlobeOnly(false)} className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-full bg-bone/70 px-3 py-1 text-[11px] text-ink/60 hover:text-ink">press f or esc for the ui</button>
       )}
       <div className={`pointer-events-none absolute inset-0 z-10 flex flex-col px-4 pb-3 pt-3 transition-opacity duration-300 ${globeOnly ? 'invisible opacity-0' : ''}`}>
         {/* top: the world, its tabs, the one menu */}

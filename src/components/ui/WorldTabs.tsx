@@ -224,7 +224,7 @@ export default function WorldTabs({ onLive }: { onLive: () => void }) {
           const year = f ? tickToDate(f.tick).getUTCFullYear() : undefined
           return (
             <div key={id} draggable onDragStart={() => { drag.current = id }} onDragOver={(e) => e.preventDefault()} onDrop={() => drop(id)}
-              className={`group flex h-7 shrink-0 items-center gap-1.5 rounded-full pl-0.5 pr-1.5 text-[12px] backdrop-blur transition ${on ? 'bg-ink/90 text-bone' : 'bg-bone/50 text-ink/75 hover:bg-bone/80'} ${tone.ring}`}>
+              className={`group flex h-7 shrink-0 items-center gap-1.5 rounded-full pl-0.5 pr-1.5 text-[12px] transition ${on ? 'bg-ink/90 text-bone' : 'bg-bone/80 text-ink/75 hover:bg-bone/95'} ${tone.ring}`}>
               <button onClick={() => switchTab(id)} className="flex items-center gap-1.5" title={`${a?.name ?? prettyAgent(rec?.agentId)} · world #${worldNumber(id, runs)}${year ? ` · ${year}` : ''} · ${tone.word} · ctrl+${i + 1}`}>
                 <Thumb frame={f} dead={status === 'destroyed'} />
                 <span className="max-w-[8rem] truncate font-display text-[12.5px]">{a?.name ?? (rec ? prettyAgent(rec.agentId) : 'loading')}</span>
@@ -237,7 +237,7 @@ export default function WorldTabs({ onLive }: { onLive: () => void }) {
         })}
       </div>
       <div className="relative shrink-0">
-        <button onClick={() => setPicker((p) => !p)} aria-label="open another world" className="flex h-7 w-7 items-center justify-center rounded-full bg-bone/50 text-[16px] leading-none text-ink/70 backdrop-blur hover:bg-bone/80">+</button>
+        <button onClick={() => setPicker((p) => !p)} aria-label="open another world" className="flex h-7 w-7 items-center justify-center rounded-full bg-bone/80 text-[16px] leading-none text-ink/70 hover:bg-bone/80">+</button>
         {picker && <Picker onClose={() => setPicker(false)} onLive={onLive} />}
       </div>
     </nav>

@@ -71,7 +71,7 @@ export function ShortcutSheet() {
   const setOpen = useStore((s) => s.setShortcuts)
   if (!open) return null
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-ink/30 backdrop-blur-[1px]" onClick={() => setOpen(false)}>
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-ink/30" onClick={() => setOpen(false)}>
       <div className="panel dossier-in w-[22rem] p-5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between"><div className="font-display text-xl">shortcuts</div><button onClick={() => setOpen(false)} className="text-lg text-ink/50 hover:text-ink" aria-label="close">×</button></div>
         <ul className="mt-3 space-y-1.5">

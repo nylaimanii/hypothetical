@@ -173,14 +173,14 @@ export default function MissionControl() {
               <div key={shown.key} className="fade-in absolute inset-0">
                 <WorldGlobe frame={shown.frame} prev={shown.prev} pulseKey={shown.frame.tick} gray={!!death} autoRotate distance={46} />
               </div>
-              <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2.5 rounded-full bg-bone/85 py-1.5 pl-1.5 pr-4 shadow-sm backdrop-blur">
+              <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2.5 rounded-full bg-bone/85 py-1.5 pl-1.5 pr-4 shadow-sm">
                 {agent ? <Emblem seed={agent.emblemSeed} size={34} glow={agent.champion} /> : <Skel className="h-8 w-8 rounded-full" />}
                 <div>
                   <div className="font-display text-[17px] leading-tight">{agent?.name ?? shown.agentId}</div>
                   <div className="text-[10.5px] text-ink/55"><Num>{shown.runId}</Num>{d && <> · <Num>{formatDay(d)} {formatTime(d)}</Num></>}</div>
                 </div>
               </div>
-              <div className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-bone/85 px-3 py-1 text-[11.5px] backdrop-blur">
+              <div className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-bone/85 px-3 py-1 text-[11.5px]">
                 <Num>{fmt.people(shown.frame.globalPopulation)}</Num> · <Num>{shown.frame.globalPeriodLifeExpectancy.toFixed(1)}y</Num> · {frontierLabel(shown.frame.frontier)}
                 {shown.frame.humanCost.deaths > 0 && <> · <Num className="text-ember">{fmt.people(shown.frame.humanCost.deaths)}</Num> dead</>}
               </div>

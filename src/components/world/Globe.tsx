@@ -1,8 +1,8 @@
 'use client'
-import { Suspense, useEffect, useMemo, useRef } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { Environment, Lightformer, OrbitControls, SoftShadows, Stats } from '@react-three/drei'
+import { Environment, Lightformer, OrbitControls, PerformanceMonitor, SoftShadows, Stats } from '@react-three/drei'
 import { Bloom, EffectComposer, N8AO, SMAA, ToneMapping, Vignette } from '@react-three/postprocessing'
 import { ToneMappingMode } from 'postprocessing'
 import { Physics } from '@react-three/rapier'
@@ -72,9 +72,20 @@ export function KeyLight({ high }: { high: boolean }) {
       target = dir.multiplyScalar(30).addScaledVector(up, 14 + real.y * 10).addScaledVector(right, -12).normalize()
     }
     sceneRefs.sunDir.lerp(target, 1 - Math.exp(-dt * 2.5)).normalize()
-    l.position.copy(sceneRefs.sunDir).multiplyScalar(30)
-    l.target.position.set(0, 0, 0)
+    // perf: the shadow map only covers a small box around where the camera looks. far away that
+    // box is the whole planet; up close it shrinks to a few tiles, so the same map is sharp and cheap
+    const d = sceneRefs.camDist
+    const half = Math.max(3.5, Math.min(14, (d - R) * 0.55))
+    const center = d > 36 ? new THREE.Vector3() : sceneRefs.focus
+    l.position.copy(center).addScaledVector(sceneRefs.sunDir, 30)
+    l.target.position.copy(center)
     l.target.updateMatrixWorld()
+    const sc = l.shadow.camera
+    if (Math.abs(sc.right - half) > 0.25) {
+      sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half
+      sc.near = 30 - half - 2; sc.far = 30 + half + 2
+      sc.updateProjectionMatrix()
+    }
     // a faint fill from the viewer keeps the night side readable without lighting it
     if (fill.current) { fill.current.position.copy(camera.position); fill.current.target.updateMatrixWorld() }
   })
@@ -191,19 +202,41 @@ function AdaptiveQuality({ high }: { high: boolean }) {
     const capped = jitter < 1.5
     if (fps < 50 && !capped) { w.low += w.window; w.good = 0 } else if (fps >= 58 || capped) { w.good += w.window; w.low = 0 } else { w.low = 0; w.good = 0 }
     w.frames = 0; w.window = 0; w.sq = 0
-    const cap = s.zoom === 'close' ? 3 : 1
-    if (w.low >= 2 && s.adaptive < cap) { s.setAdaptive((s.adaptive + 1) as 1 | 2 | 3); w.low = 0 }
+    // dpr is the first lever (PerformanceMonitor); this only sheds clouds, then pip shadows up close.
+    // ragdolls are already limited to the 30 nearest on-screen pips, so level 3 is no longer needed
+    const cap = s.zoom === 'close' ? 2 : 1
+    if (w.low >= 2 && s.adaptive < cap) { s.setAdaptive((s.adaptive + 1) as 1 | 2); w.low = 0 }
     if (w.good >= 2 && s.adaptive > 0) { s.setAdaptive((s.adaptive - 1) as 0 | 1 | 2); w.good = 0 }
     if (s.adaptive > cap && w.good >= 2) { s.setAdaptive(cap as 1); w.good = 0 }
   })
   return null
 }
 
+type N8AORef = { configuration: { transparencyAware: boolean; aoSamples: number; denoiseSamples: number; denoiseRadius: number } }
+
+// n8ao auto-detects transparent materials (atmosphere, clouds, glow) and then re-renders the whole
+// scene twice more per frame for them. those surfaces don't need ao, so turn that off: 3 scene renders become 1.
+// n8ao only offers full or half resolution, so up close it stays half res and drops to fewer samples instead
+function AOTuner({ ao }: { ao: React.RefObject<N8AORef | null> }) {
+  const zoom = useStore((s) => s.zoom)
+  useEffect(() => {
+    const c = ao.current?.configuration
+    if (!c) return
+    c.transparencyAware = false
+    c.aoSamples = zoom === 'close' ? 8 : 16
+    c.denoiseSamples = zoom === 'close' ? 4 : 8
+    c.denoiseRadius = zoom === 'close' ? 8 : 12
+  }, [ao, zoom])
+  return null
+}
+
 function Effects({ high }: { high: boolean }) {
+  const ao = useRef<N8AORef | null>(null)
   if (high && !dbg('noao'))
     return (
       <EffectComposer multisampling={0} key="high">
-        <N8AO halfRes aoRadius={0.5} distanceFalloff={0.6} intensity={2.4} quality="medium" />
+        <N8AO ref={ao as never} halfRes aoRadius={0.5} distanceFalloff={0.6} intensity={2.4} quality="medium" />
+        <AOTuner ao={ao} />
         <Bloom mipmapBlur luminanceThreshold={1} luminanceSmoothing={0.15} intensity={0.85} />
         <ToneMapping mode={ToneMappingMode.AGX} />
         <SMAA />
@@ -236,6 +269,11 @@ export default function Globe() {
   const swapping = useStore((s) => s.swapping)
   const overlay = useStore((s) => s.overlay)
   const view = useStore((s) => s.view)
+  // perf: device pixel ratio capped at 1.5 on high, 1 on fast. the monitor drops it when fps dips, raises it when fps recovers
+  const cap = high ? 1.5 : 1
+  const [dpr, setDpr] = useState(cap)
+  const [lastCap, setLastCap] = useState(cap)
+  if (lastCap !== cap) { setLastCap(cap); setDpr(cap) }
   const sky = death.kind === 'collapse' || death.kind === 'war' ? death.level : 0
   // a dying world goes quiet and low
   useEffect(() => { setDeathMuffle(destroyed ? 1 : death.level * 0.5) }, [destroyed, death.level])
@@ -253,7 +291,7 @@ export default function Globe() {
       <Canvas
         key={quality}
         shadows={high ? { type: THREE.PCFShadowMap } : false}
-        dpr={[1, 2]}
+        dpr={dpr}
         flat
         gl={{ antialias: false, powerPreference: 'high-performance', stencil: false }}
         camera={{ position: [20, 16, 56], fov: 38, near: 0.05, far: 500 }}
@@ -261,6 +299,7 @@ export default function Globe() {
         frameloop={view === 'globe' ? 'always' : 'never'}
         onPointerMissed={() => select(null)}
       >
+        <PerformanceMonitor bounds={() => [50, 58]} flipflops={6} onIncline={() => setDpr((d) => Math.min(cap, d + 0.25))} onDecline={() => setDpr((d) => Math.max(1, d - 0.25))} onFallback={() => setDpr(1)} />
         <AdaptiveQuality high={high} />
         <Sky grey={sky} />
         <KeyLight high={high} />

@@ -52,7 +52,7 @@ export function EventFeed() {
             requestShot(it.kind === 'decision' || !it.regionId ? { target: 'core', force: true } : { target: 'region', regionId: it.regionId, force: true })
             select(it.kind === 'decision' ? { kind: 'core' } : it.kind === 'crowd' && it.regionId ? { kind: 'region', id: it.regionId } : it.index !== undefined ? { kind: 'event', tick: it.tick, index: it.index } : null)
           }}
-            className={`feed-in rounded-xl border-l-2 bg-bone/80 px-2.5 py-1.5 text-left shadow-sm backdrop-blur hover:bg-bone ${it.danger ? 'border-ember' : 'border-ink/25'}`}>
+            className={`feed-in rounded-xl border-l-2 bg-bone/80 px-2.5 py-1.5 text-left shadow-sm hover:bg-bone ${it.danger ? 'border-ember' : 'border-ink/25'}`}>
             <div className="flex items-baseline justify-between gap-2 whitespace-nowrap text-[10px]">
               <span className={it.danger ? 'text-ember' : 'text-ink/60'}>{KIND_LABEL[it.kind] ?? it.kind}</span>
               <Num className="text-ink/45">{it.date}</Num>
@@ -209,7 +209,7 @@ function IntroScreen() {
   const show = (n: number) => `transition-all duration-[1400ms] ease-out ${step >= n ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'}`
   const buttonStep = beats
   return (
-    <div onClick={() => setStep(buttonStep)} className={`absolute inset-0 z-50 flex items-center justify-center bg-ink/55 px-6 backdrop-blur-[1.5px] transition-opacity duration-[900ms] ${leaving ? 'opacity-0' : 'opacity-100'}`}>
+    <div onClick={() => setStep(buttonStep)} className={`absolute inset-0 z-50 flex items-center justify-center bg-ink/55 px-6 transition-opacity duration-[900ms] ${leaving ? 'opacity-0' : 'opacity-100'}`}>
       <div className="max-w-2xl text-center text-bone">
         <p className={`font-mono text-[12px] uppercase tracking-[0.42em] text-bone/70 ${show(1)}`}>november 2026</p>
         <p className={`mt-10 font-display text-3xl leading-snug md:text-[2.3rem] ${show(2)}`}>every government on earth hands control to one ai.</p>

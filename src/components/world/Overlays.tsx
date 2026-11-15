@@ -55,7 +55,7 @@ export function Labels({ frame }: { frame: Frame }) {
       {spots.map((s, i) => (
         <Html key={s.r.id} position={s.pos} center zIndexRange={[5, 0]}>
           <div ref={(el) => { refs.current[i] = el }} onClick={() => select({ kind: 'region', id: s.r.id })}
-            style={{ opacity: 0 }} className="cursor-pointer select-none whitespace-nowrap rounded-full border border-ink/15 bg-bone/85 px-3 py-1 font-display text-[13px] text-ink shadow-sm backdrop-blur transition-opacity duration-200 hover:bg-bone">
+            style={{ opacity: 0 }} className="cursor-pointer select-none whitespace-nowrap rounded-full border border-ink/15 bg-bone/85 px-3 py-1 font-display text-[13px] text-ink shadow-sm transition-opacity duration-200 hover:bg-bone">
             {s.r.name}
             {s.r.unrest > 0.6 && <span className="ml-2 inline-block h-1.5 w-1.5 rounded-full bg-ember align-middle" />}
           </div>

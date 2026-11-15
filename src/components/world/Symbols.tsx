@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { Outlines, RoundedBox } from '@react-three/drei'
 import type { Frame, Layer, MoonStage, Region } from '@/lib/types'
-import { C, LAND_TOP, LAYERS, groundRadius, latLonToVec3, layerMetric, surfaceQuat, tangentBasis, vinyl } from './lib'
+import { C, LAND_TOP, LAYERS, R, groundRadius, latLonToVec3, layerMetric, surfaceQuat, tangentBasis, vinyl } from './lib'
 import { useStore } from '../state/store'
 
 export const STAGE_INDEX: Record<MoonStage, number> = { none: 0, orbital: 1, heavy_lift: 2, life_support: 3, lander: 4, crewed_landing: 5 }
@@ -28,7 +28,11 @@ export function spaceportId(frames: Frame[], idx: number, regions: Region[]) {
   return [...regions].sort((a, b) => b.techLevel - a.techLevel)[0]?.id
 }
 
-const O = ({ t = 0.055 }: { t?: number }) => <Outlines thickness={t} color={C.ink} />
+// perf: an outline is a whole extra mesh per part. they only read up close, so only draw them there
+function O({ t = 0.055 }: { t?: number }) {
+  const close = useStore((s) => s.zoom === 'close')
+  return close ? <Outlines thickness={t} color={C.ink} /> : null
+}
 
 const mats = {
   bone: vinyl(C.bone),
@@ -201,6 +205,15 @@ export default function Symbols({ frame, spaceport }: { frame: Frame; spaceport?
   const quality = useStore((s) => s.quality)
   const stage = STAGE_INDEX[frame.moonStage]
   const root = useRef<THREE.Group>(null)
+  // perf: a region's symbols past the planet's horizon are hidden (frustum culling alone keeps the far side)
+  const regionGroups = useRef<(THREE.Group | null)[]>([])
+  const normals = useMemo(() => frame.regions.map((r) => latLonToVec3(r.lat, r.lon, 1).normalize()), [frame.regions])
+  useFrame(({ camera }) => {
+    const d = camera.position.length()
+    const dir = camera.position.clone().divideScalar(d)
+    const horizon = Math.cos(Math.acos(Math.min(1, R / d)) + 0.35)
+    normals.forEach((n, i) => { const g = regionGroups.current[i]; if (g) g.visible = n.dot(dir) > horizon })
+  })
   const [warm, setWarm] = useState(false)
   useEffect(() => { const id = setTimeout(() => setWarm(true), 400); return () => clearTimeout(id) }, [])
   useLayoutEffect(() => {
@@ -209,8 +222,8 @@ export default function Symbols({ frame, spaceport }: { frame: Frame; spaceport?
   // mounted from the start and drawn once so shaders compile at load, then hidden at far zoom
   return (
     <group ref={root} visible={zoom !== 'far' || !warm}>
-      {frame.regions.map((r) => (
-        <group key={r.id}>
+      {frame.regions.map((r, ri) => (
+        <group key={r.id} ref={(g) => { regionGroups.current[ri] = g }}>
           {LAYERS.map((layer, i) => {
             const { pos, quat } = symbolTransform(r, i)
             const m = layerMetric(layer, r, frame.regions)

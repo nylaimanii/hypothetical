@@ -98,7 +98,7 @@ export default function Timeline() {
   const dangers = record.frames.filter((f) => f.newEvents.some((e) => e.severity >= 0.7 && ['famine', 'revolt', 'war', 'disaster', 'pandemic'].includes(e.kind)))
   return (
     // minimal shell: thin, translucent, icons instead of words
-    <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-bone/55 px-2 py-1 shadow-sm backdrop-blur-md">
+    <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-bone/85 px-2 py-1 shadow-sm">
       <button onClick={() => { if (playhead >= t1) setPlayhead(t0); setPlaying(!playing) }} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink text-bone" aria-label={playing ? 'pause' : 'play'}>
         {playing ? (
           <svg width="12" height="12" viewBox="0 0 12 12"><rect x="1.5" y="1" width="3" height="10" rx="1" fill="currentColor" /><rect x="7.5" y="1" width="3" height="10" rx="1" fill="currentColor" /></svg>

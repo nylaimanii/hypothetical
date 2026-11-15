@@ -116,12 +116,12 @@ export default function CompareView() {
           return (
             <div key={r.runId} className={`relative min-h-0 overflow-hidden rounded-2xl border-2 ${focus === i ? 'border-ink' : 'border-ink/15'}`}>
               <CompareGlobe record={r} index={i} />
-              <div className="pointer-events-none absolute left-2 top-2 flex items-center gap-2 rounded-full bg-bone/85 py-1 pl-1 pr-3 shadow-sm backdrop-blur">
+              <div className="pointer-events-none absolute left-2 top-2 flex items-center gap-2 rounded-full bg-bone/85 py-1 pl-1 pr-3 shadow-sm">
                 {a && <Emblem seed={a.emblemSeed} size={26} glow={a.champion} />}
                 <span className="text-[13px]" style={{ color: AGENT_COLORS[i] }}>{a?.name ?? r.agentId}</span>
                 <span className={`text-[10px] ${f.status === 'destroyed' ? 'text-ember' : 'text-ink/50'}`}>{f.status}</span>
               </div>
-              <div className="pointer-events-none absolute bottom-2 left-2 rounded-full bg-bone/80 px-2.5 py-0.5 text-[10.5px] backdrop-blur">
+              <div className="pointer-events-none absolute bottom-2 left-2 rounded-full bg-bone/80 px-2.5 py-0.5 text-[10.5px]">
                 <Num>{fmt.people(f.globalPopulation)}</Num> · <Num>{f.globalPeriodLifeExpectancy.toFixed(1)}y</Num> · {frontierLabel(f.frontier)}{f.humanCost.deaths > 0 && <> · <Num className="text-ember">{fmt.people(f.humanCost.deaths)}</Num> dead</>}
               </div>
             </div>

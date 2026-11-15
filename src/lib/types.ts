@@ -123,7 +123,12 @@ export type HallEntry = { id: string; title: string; runId: string; agentId: str
 
 // ---- slim data for long runs: the ui loads frames lazily around the scrubber ----
 // one row per year (every 12 ticks), enough for stat races and timelines without full frames
-export type YearRow = { tick: number; date: string; globalPopulation: number; globalPeriodLifeExpectancy: number; frontier: Frontier; moonProgress: number; approval: number; deaths: number; displaced: number; status: WorldStatus }
+export type YearRow = {
+  tick: number; date: string; globalPopulation: number; globalPeriodLifeExpectancy: number; frontier: Frontier; moonProgress: number; approval: number; deaths: number; displaced: number; status: WorldStatus
+  // v3 look for that year (C sends these; regions only lists the ones that have them)
+  regions?: { id: string; visual?: RegionVisual; emotionMix?: Mood }[]
+  flows?: Flow[]; space?: SpaceAsset[]; atmosphere?: { tint: string; haze: number }
+}
 // one row per governor decision, enough for the side by side diff table
 export type DecisionRow = { tick: number; date: string; religionPolicy: ReligionPolicy; schoolPurpose: string; budget: Budget; lawsEnacted: string[]; citiesFounded: string[] }
 // a run without frames: GET /api/runs/[id]?slim=1 and each entry of GET /api/compare. firstTick/lastTick bound the frames endpoint
