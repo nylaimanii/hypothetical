@@ -145,29 +145,48 @@ function ollamaPost(url: string, body: Record<string, unknown>, timeoutMs: numbe
 // ---------- one ollama-heavy job at a time ----------
 // data/.ollama.lock holds the pid of the process running llm worlds. other processes wait for it. the lock is
 // reentrant inside one process (evolve can run several worlds in parallel) and a lock whose pid is dead is stale.
-const LOCK = () => path.join(process.cwd(), 'data', '.ollama.lock')
+// HYP_OLLAMA_LOCK points runs started from another worktree at the shared lock. waiters take a ticket in
+// .ollama.queue/ next to the lock and are served in arrival order, so a back-to-back job cannot starve the rest.
+const LOCK = () => process.env.HYP_OLLAMA_LOCK ?? path.join(process.cwd(), 'data', '.ollama.lock')
+const QUEUE = () => path.join(path.dirname(LOCK()), '.ollama.queue')
 let held = 0
 const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
 
 export async function acquireOllamaLock(label: string): Promise<() => void> {
   if (provider() !== 'ollama') return () => {}
+  if (held > 0) { held++; return releaser() }
   let warned = false
-  for (;;) {
-    if (held > 0) { held++; break }
-    try {
-      fs.mkdirSync(path.dirname(LOCK()), { recursive: true })
-      fs.writeFileSync(LOCK(), JSON.stringify({ pid: process.pid, label, since: new Date().toISOString() }), { flag: 'wx' })
-      held = 1
-      break
-    } catch {
-      let pid = 0
-      try { pid = (JSON.parse(fs.readFileSync(LOCK(), 'utf8')) as { pid: number }).pid } catch { /* half written */ }
-      if (pid === process.pid) { held = 1; break }
-      if (pid && !alive(pid)) { try { fs.unlinkSync(LOCK()) } catch { /* raced */ } continue }
-      if (!warned) { console.error(`[ollama lock] another job (pid ${pid}) is using ollama, waiting...`); warned = true }
-      await sleep(5000)
+  fs.mkdirSync(QUEUE(), { recursive: true })
+  const ticket = path.join(QUEUE(), `${String(Date.now()).padStart(15, '0')}-${process.pid}`)
+  fs.writeFileSync(ticket, label)
+  try {
+    for (;;) {
+      // only the oldest live ticket may take the lock (dead tickets are cleared)
+      const tickets = fs.readdirSync(QUEUE()).sort()
+      const live = tickets.filter(t => { const pid = Number(t.split('-')[1]); if (alive(pid)) return true; try { fs.unlinkSync(path.join(QUEUE(), t)) } catch { /* raced */ } return false })
+      const mine = path.basename(ticket)
+      if (live[0] === mine || !live.includes(mine)) {
+        try {
+          fs.writeFileSync(LOCK(), JSON.stringify({ pid: process.pid, label, since: new Date().toISOString() }), { flag: 'wx' })
+          held = 1
+          break
+        } catch {
+          let pid = 0
+          try { pid = (JSON.parse(fs.readFileSync(LOCK(), 'utf8')) as { pid: number }).pid } catch { /* half written */ }
+          if (pid === process.pid) { held = 1; break }
+          if (pid && !alive(pid)) { try { fs.unlinkSync(LOCK()) } catch { /* raced */ } continue }
+        }
+      }
+      if (!warned) { console.error(`[ollama lock] waiting for ollama (queue position ${Math.max(1, live.indexOf(mine) + 1)})...`); warned = true }
+      await sleep(3000)
     }
+  } finally {
+    try { fs.unlinkSync(ticket) } catch { /* gone */ }
   }
+  return releaser()
+}
+
+function releaser(): () => void {
   let released = false
   return () => {
     if (released) return
