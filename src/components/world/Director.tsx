@@ -83,7 +83,9 @@ export default function Director() {
     if (lastIdx.current === idx) return
     lastIdx.current = idx
     if (mode !== 'ai') return
-    if (frame.decision) offer({ kind: 'decision', severity: 0.4, text: frame.decision.rationale, score: shotScore('decision', 0.4), at: performance.now() / 1000 })
+    // the core's decision in two short lines: what it saw -> what it chose, then why
+    const rz = frame.decision?.reasoning
+    if (frame.decision) offer({ kind: 'decision', severity: 0.4, text: rz ? `saw ${rz.saw[0]} → chose ${rz.chose[0]}\nwhy: ${rz.expected}` : frame.decision.rationale, score: shotScore('decision', 0.4), at: performance.now() / 1000 })
     // a crowd boiling over is worth a shot
     for (const r of frame.regions) for (const c of r.crowds ?? []) {
       if (c.phase === 'outraged' && c.sinceTick === frame.tick) offer({ kind: 'crowd', regionId: r.id, severity: c.intensity, text: `outraged over ${c.topic}`, score: shotScore('crowd', c.intensity), at: performance.now() / 1000 })

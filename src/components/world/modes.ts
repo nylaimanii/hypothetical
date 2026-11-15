@@ -1,6 +1,6 @@
 // v3 overlay modes: one color per region for each mode, plus a legend in plain words.
 // shared by the planet (tile colors) and the ui (legend). ember only where something is dangerous.
-import type { Emotion, Frame, Mood, Region } from '@/lib/types'
+import type { Country, Emotion, Frame, Mood, PlaceStats, Region } from '@/lib/types'
 import type { Overlay } from '../state/store'
 
 export const EMOTION_HEX: Record<Emotion, string> = {
@@ -73,6 +73,7 @@ export function regionModeColor(mode: Overlay, f: Frame, r: Region): string | nu
     case 'emotion': { const d = dominantOf(regionMood(f, r)); return d ? EMOTION_HEX[d.emotion] : null }
     case 'population': return populationColor(r.population, Math.max(...f.regions.map((x) => x.population)))
     case 'energy': return energyColor(r)
+    case 'happiness': case 'economy': case 'livability': case 'trend': return statColor(mode, regionPlaceStats(r))
     case 'damage': return damageColor(r.visual?.damage.level ?? (r.unrest > 0.6 ? r.unrest - 0.4 : 0))
     default: return null
   }
@@ -82,6 +83,7 @@ export type LegendItem = { color: string; text: string }
 
 // every overlay explains itself in words, built from what is actually on the globe now
 export function legendFor(mode: Overlay, f: Frame): { line: string; items: LegendItem[] } {
+  if (isStatMode(mode)) return statLegend(mode, f)
   if (mode === 'emotion') {
     const counts = new Map<Emotion, Region[]>()
     for (const r of f.regions) { const d = dominantOf(regionMood(f, r)); if (d) counts.set(d.emotion, [...(counts.get(d.emotion) ?? []), r]) }
@@ -123,3 +125,55 @@ export function legendFor(mode: Overlay, f: Frame): { line: string; items: Legen
 }
 
 export const fmtPeople = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(Math.round(n)))
+
+// ---- v4: place stats. countries color their own tiles; tiles of countries the sim doesn't track yet
+// fall back to their region's numbers ----
+export const STAT_MODES = ['happiness', 'economy', 'livability', 'trend'] as const
+export type StatMode = (typeof STAT_MODES)[number]
+export const isStatMode = (m: Overlay): m is StatMode => (STAT_MODES as readonly string[]).includes(m)
+export const TREND_HEX = { rising: '#5E8C4A', stable: '#B9B2A5', declining: '#E4572E' } as const
+const STAT_LOW = '#EFE6D4', STAT_HIGH: Record<'happiness' | 'economy' | 'livability', string> = { happiness: '#C98A1E', economy: '#2F6F8F', livability: '#3E7A4E' }
+
+export function statColor(mode: StatMode, st: PlaceStats): string {
+  if (mode === 'trend') return TREND_HEX[st.trend]
+  return mixHex(STAT_LOW, STAT_HIGH[mode], Math.max(0, Math.min(1, st[mode])))
+}
+
+// a region's numbers in PlaceStats shape, for land no tracked country covers
+export function regionPlaceStats(r: Region, prev?: Region): PlaceStats {
+  const clamp = (v: number) => Math.max(0, Math.min(1, v))
+  const one = (x: Region) => {
+    const gdpPc = x.gdpUsd / Math.max(1, x.population)
+    const economy = clamp(Math.log10(Math.max(500, gdpPc)) / 5 - 0.35 - (x.visual?.damage.level ?? 0) * 0.4)
+    const food = clamp((x.foodKcalPerCapita - 1700) / 1500), safety = clamp(1 - x.unrest * 1.1), health = clamp((x.periodLifeExpectancy - 50) / 40)
+    const air = clamp(1 - (x.visual?.pollution ?? 0.3)), happiness = clamp(x.approval * 0.6 + safety * 0.2 + food * 0.2)
+    return { happiness, economy, livability: clamp((happiness + economy + safety + health + air + food) / 6), food, safety, health, air, jobs: clamp(economy * 0.8 + 0.15 - x.unrest * 0.3) }
+  }
+  const a = one(r), b = prev ? one(prev) : null
+  const d = b ? a.happiness + a.economy - b.happiness - b.economy : 0
+  return {
+    population: r.population, happiness: a.happiness, economy: a.economy, livability: a.livability, trend: d > 0.03 ? 'rising' : d < -0.03 ? 'declining' : 'stable',
+    foodSecurity: a.food, safety: a.safety, health: a.health, jobs: a.jobs, housingCost: 2 + a.economy * 6, airQuality: a.air,
+  }
+}
+
+export function statLegend(mode: StatMode, f: Frame): { line: string; items: LegendItem[] } {
+  const cs: Country[] = f.countries ?? []
+  if (mode === 'trend') {
+    const n = (t: PlaceStats['trend']) => cs.filter((c) => c.stats.trend === t).length
+    return {
+      line: 'is life getting better here? compared with a year ago, on happiness and the economy together.',
+      items: [{ color: TREND_HEX.rising, text: `▲ rising${n('rising') ? `, ${n('rising')} countries` : ''}` }, { color: TREND_HEX.stable, text: 'steady' }, { color: TREND_HEX.declining, text: `▼ declining${n('declining') ? `, ${n('declining')} countries` : ''}` }],
+    }
+  }
+  const best = [...cs].sort((a, b) => b.stats[mode] - a.stats[mode])[0]
+  const worst = [...cs].sort((a, b) => a.stats[mode] - b.stats[mode])[0]
+  const what = mode === 'happiness' ? 'how happy people are' : mode === 'economy' ? 'how well people earn and get by' : 'a great place to live: food, safety, health, clean air, work and happiness together'
+  return {
+    line: `${what}. deeper color is better.`,
+    items: [
+      ...(best ? [{ color: STAT_HIGH[mode], text: `best: ${best.name} (${Math.round(best.stats[mode] * 100)})` }] : []),
+      ...(worst && worst !== best ? [{ color: STAT_LOW, text: `lowest: ${worst.name} (${Math.round(worst.stats[mode] * 100)})` }] : []),
+    ],
+  }
+}

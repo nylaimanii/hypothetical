@@ -28,3 +28,15 @@ export function sunDirection(d: Date, out = new THREE.Vector3()) {
   const lon = -15 * (hours - 12)
   return latLonToVec3(decl, lon, 1, out)
 }
+
+// ---- v4: a living day. paused, the world keeps its date but the hour keeps turning (store.hour,
+// utc); playing, the hour comes from the playhead. cities run on local solar time ----
+export function worldDate(playhead: number, hour: number, playing: boolean) {
+  if (playing) return tickToDate(playhead)
+  const d = tickToDate(Math.floor(playhead))
+  // mid month, so a paused frame reads as an ordinary day in that month
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 15) + hour * 3600000)
+}
+export const utcHourOf = (d: Date) => d.getUTCHours() + d.getUTCMinutes() / 60
+export const localHour = (utcHour: number, lon: number) => (((utcHour + lon / 15) % 24) + 24) % 24
+export const formatHour = (h: number) => `${pad(Math.floor(h))}:${pad(Math.floor((h % 1) * 60))}`

@@ -8,6 +8,7 @@ import { moodFrom, valence } from './mood'
 import { enrichRun } from './enrich'
 import { applyV3 } from './v3'
 import { applyV4 } from './v4'
+import { applyChains } from './chains'
 
 function mulberry32(seed: number) {
   let a = seed >>> 0
@@ -371,7 +372,7 @@ export function mockRuns(): RunRecord[] {
     // a world branched from 0007 in 2030, handed to meridian iii
     { ...enrichRun(makeMockRun('mock-g3-0021', 7, 'moon', 3, 'meridian-iii', { spacePush: 0.03, welfarePush: 0.008, pace: 1.05, constitution: 'keep humanity alive and growing. food, power and medicine before launch. compensate the regions that host the pads.' }), 'moon'), branchedFrom: { runId: 'mock-g3-0007', tick: 48, agentId: 'meridian-ii' } },
   ]
-  if (!cache[0].frames[0].atmosphere) cache = cache.map((r) => applyV4(applyV3(r)))
+  if (!cache[0].frames[0].atmosphere) cache = cache.map((r) => applyChains(applyV4(applyV3(r))))
   return cache
 }
 export const mockRun = () => mockRuns()[0]

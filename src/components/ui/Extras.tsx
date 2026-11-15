@@ -24,7 +24,7 @@ export function Caption() {
   }, [caption])
   if (!shown) return null
   return (
-    <div key={shown.id} className={`panel pointer-events-none max-w-[min(42rem,90vw)] px-4 py-2 text-center text-[13px] leading-snug ${caption ? 'caption-in' : 'caption-out'}`}>
+    <div key={shown.id} className={`panel pointer-events-none max-w-[min(42rem,90vw)] whitespace-pre-line px-4 py-2 text-center text-[13px] leading-snug ${caption ? 'caption-in' : 'caption-out'}`}>
       {shown.danger && <span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-ember align-middle" />}
       {shown.parts.map((p, i) => (p.mono ? <Num key={i}>{p.t}</Num> : <span key={i}>{p.t}</span>))}
     </div>

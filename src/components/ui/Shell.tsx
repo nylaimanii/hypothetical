@@ -6,7 +6,7 @@ import Link from 'next/link'
 import type { Frame, Region, WorldEvent } from '@/lib/types'
 import { useCurrentFrame, useStore, type Overlay, type View } from '../state/store'
 import { Num, fmt } from './bits'
-import { formatDay, formatTime, tickToDate } from '../world/time'
+import { formatDay, formatHour, formatTime, localHour, utcHourOf, worldDate } from '../world/time'
 import { legendFor } from '../world/modes'
 import { frontierLabel, Leaderboard, RulesDrawer } from './Chrome'
 import { replayIntro } from './Extras'
@@ -18,6 +18,8 @@ import Dossier from './Dossier'
 import { EpitaphCard } from './WorldViews'
 import { agentOf, prettyAgent, worldNumber } from './WorldTabs'
 import { openRun } from './worlds'
+import { PlaceCard, PlaceReport } from './PlaceCard'
+import { StoryLine, useLinks } from './chains'
 
 const DEV = process.env.NODE_ENV === 'development'
 
@@ -25,11 +27,13 @@ const DEV = process.env.NODE_ENV === 'development'
 export function WorldTitle() {
   const { frame, record } = useCurrentFrame()
   const playhead = useStore((s) => s.playhead)
+  const hour = useStore((s) => s.hour)
+  const playing = useStore((s) => s.playing)
   const source = useStore((s) => s.source)
   const compare = useStore((s) => s.compare)
   const runs = useStore((s) => s.runs)
   const agents = useStore((s) => s.agents)
-  const d = tickToDate(playhead)
+  const d = worldDate(playhead, hour, playing)
   const agent = agentOf(record, agents)
   const dot = frame.status === 'destroyed' ? 'bg-ember' : frame.status === 'goal_achieved' ? 'bg-[#C9A227]' : frame.status === 'complete' ? 'bg-ink/60' : 'bg-[#7FAE7A]'
   return (
@@ -206,7 +210,7 @@ const Arrow = ({ t }: { t: 'rising' | 'stable' | 'declining' }) => (
   <span className={t === 'rising' ? 'text-[#5E8C4A]' : t === 'declining' ? 'text-ember' : 'text-ink/40'} aria-label={t}>{t === 'rising' ? '▲' : t === 'declining' ? '▼' : '■'}</span>
 )
 
-export function RegionCard({ r, frame, prev }: { r: Region; frame: Frame; prev?: Frame }) {
+export function RegionCard({ r, frame, prev, links }: { r: Region; frame: Frame; prev?: Frame; links: ReturnType<typeof useLinks> }) {
   const now = useMemo(() => regionStats(r), [r])
   const before = useMemo(() => { const p = prev?.regions.find((x) => x.id === r.id); return p ? regionStats(p) : null }, [prev, r.id])
   const delta = before ? now.happiness + now.economy - before.happiness - before.economy : 0
@@ -226,14 +230,15 @@ export function RegionCard({ r, frame, prev }: { r: Region; frame: Frame; prev?:
         <Bar label="economy" v={now.economy} />
         <Bar label="livability" v={now.livability} />
       </div>
-      <p className="mt-3 text-[12.5px] leading-snug text-ink/75">{whyLine(r, trend)}</p>
+      <div className="mt-3"><StoryLine story={r.story} links={links} frame={frame} fallback={whyLine(r, trend)} /></div>
       <button onClick={() => useStore.getState().setReport(true)} className="mt-2 text-[12px] text-ink/60 underline decoration-ink/25 underline-offset-2 hover:text-ink">full report</button>
     </div>
   )
 }
 
 // ---------- map layers: the overlay pills live here now ----------
-const OVERLAYS: Overlay[] = ['real', 'emotion', 'population', 'movement', 'energy', 'damage']
+const OVERLAYS: Overlay[] = ['real', 'happiness', 'economy', 'livability', 'trend', 'population', 'emotion', 'movement', 'energy', 'damage']
+const OVERLAY_LABEL: Partial<Record<Overlay, string>> = { livability: 'great place to live' }
 function LayersSheet() {
   const overlay = useStore((s) => s.overlay)
   const explain = useStore((s) => s.explain)
@@ -244,7 +249,7 @@ function LayersSheet() {
     <div className="sheet-in panel pointer-events-auto w-[20rem] p-4 text-[12.5px]">
       <div className="font-display text-[17px]">map layers</div>
       <div className="mt-2 flex flex-wrap gap-1">
-        {OVERLAYS.map((o) => <button key={o} onClick={() => s.setOverlay(o)} className={`rounded-full px-2.5 py-1 ${overlay === o ? 'bg-ink text-bone' : 'border border-ink/15 text-ink/70 hover:bg-ink/5'}`}>{o}</button>)}
+        {OVERLAYS.map((o) => <button key={o} onClick={() => s.setOverlay(o)} className={`rounded-full px-2.5 py-1 ${overlay === o ? 'bg-ink text-bone' : 'border border-ink/15 text-ink/70 hover:bg-ink/5'}`}>{OVERLAY_LABEL[o] ?? o}</button>)}
       </div>
       <p className="mt-3 text-ink/75">{legend.line}</p>
       {legend.items.length > 0 && <ul className="mt-2 space-y-1">{legend.items.map((it) => <li key={it.text} className="flex items-center gap-2 text-ink/70"><span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: it.color }} />{it.text}</li>)}</ul>}
@@ -264,7 +269,7 @@ export function LayerHint() {
   if (overlay === 'real' || view !== 'globe') return null
   return (
     <button onClick={() => useStore.getState().setSheet('layers')} className="pointer-events-auto max-w-[36rem] truncate rounded-full bg-bone/75 px-3 py-0.5 text-[11.5px] text-ink/70 hover:text-ink">
-      <span className="text-ink/45">{overlay}:</span> {legendFor(overlay, frame).line}
+      <span className="text-ink/45">{OVERLAY_LABEL[overlay] ?? overlay}:</span> {legendFor(overlay, frame).line}
     </button>
   )
 }
@@ -312,10 +317,13 @@ export function PanelHost() {
   const advanced = useStore((s) => s.advancedOpen)
   const { frame, record, idx } = useCurrentFrame()
   const prev = record.frames[Math.max(0, idx - 12)]
+  const links = useLinks(record, idx)
   let right: React.ReactNode = null
-  if (selection?.kind === 'region' && !report) {
+  if (selection && (selection.kind === 'country' || selection.kind === 'admin' || selection.kind === 'city')) {
+    right = report ? <PlaceReport kind={selection.kind} id={selection.id} /> : <PlaceCard kind={selection.kind} id={selection.id} />
+  } else if (selection?.kind === 'region' && !report) {
     const r = frame.regions.find((x) => x.id === selection.id)
-    if (r) right = <RegionCard r={r} frame={frame} prev={prev} />
+    if (r) right = <RegionCard r={r} frame={frame} prev={prev} links={links} />
   } else if (selection) right = <div className="flex min-h-0 flex-col">{report && <button onClick={() => useStore.getState().setReport(false)} className="mb-1 self-end text-[11.5px] text-ink/60 underline decoration-ink/25 underline-offset-2">back to the card</button>}<Dossier /></div>
   else if (sheet === 'layers') right = <LayersSheet />
   else if (sheet === 'worlds') right = <div className="sheet-in flex w-[22rem] flex-col gap-3"><Leaderboard /><LivePanel /></div>
@@ -349,4 +357,33 @@ export function useEscape() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+}
+
+// ---------- city view: the way back, the local time, and the hour ----------
+const HOURS: { h: number; label: string }[] = [{ h: 3, label: 'night' }, { h: 8, label: '8am' }, { h: 12.5, label: 'noon' }, { h: 17.5, label: 'rush' }, { h: 20, label: '8pm' }]
+export function CityBar() {
+  const cityView = useStore((s) => s.cityView)
+  const playhead = useStore((s) => s.playhead)
+  const hour = useStore((s) => s.hour)
+  const playing = useStore((s) => s.playing)
+  const pinned = useStore((s) => s.hourPinned)
+  const { frame } = useCurrentFrame()
+  const city = frame.cities.find((c) => c.id === cityView)
+  if (!city) return null
+  const local = localHour(utcHourOf(worldDate(playhead, hour, playing)), city.lon)
+  const country = city.countryId ? frame.countries?.find((c) => c.id === city.countryId) : undefined
+  // set a local hour: convert back to utc
+  const setLocal = (h: number) => useStore.getState().setHour(h - city.lon / 15, true)
+  return (
+    <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-bone/90 px-3 py-1 text-[12.5px] shadow-sm">
+      <button onClick={() => useStore.getState().setCityView(null)} className="text-ink/60 hover:text-ink">← globe</button>
+      <span className="font-display text-[14px]">{city.name}{country && <span className="text-ink/50">, {country.name}</span>}</span>
+      <Num className="text-ink/70">{formatHour(local)} local</Num>
+      <div className="flex gap-0.5">
+        {HOURS.map((x) => <button key={x.label} onClick={() => setLocal(x.h)} className={`rounded-full px-2 py-0.5 text-[11.5px] ${pinned && Math.abs(local - x.h) < 0.3 ? 'bg-ink text-bone' : 'text-ink/60 hover:bg-ink/5'}`}>{x.label}</button>)}
+      </div>
+      <input type="range" min={0} max={23.9} step={0.1} value={local} onChange={(e) => setLocal(Number(e.target.value))} className="w-28 accent-[var(--ink)]" aria-label="time of day" />
+      {pinned && <button onClick={() => useStore.getState().setHour(useStore.getState().hour, false)} className="text-[11px] text-ink/50 underline decoration-ink/20 underline-offset-2">let the day run</button>}
+    </div>
+  )
 }

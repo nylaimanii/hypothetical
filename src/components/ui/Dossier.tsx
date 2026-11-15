@@ -1,4 +1,7 @@
 'use client'
+import { ReasoningLines, layerSentence, useLinks, whyDoing } from './chains'
+import { todayOf } from '../world/city/day'
+import { localHour, utcHourOf, worldDate } from '../world/time'
 import { useState } from 'react'
 import type { Budget, Citizen, Emotion, Frame, Law, Layer, Migration, Precedent, Region, RunRecord, Why } from '@/lib/types'
 import { EMOTIONS, valence } from '@/lib/mock/mood'
@@ -116,8 +119,19 @@ function PipDossier({ c, frame, record }: { c: Citizen; frame: Frame; record: Ru
   const partner = c.family.partnerId ? frame.citizens.find((x) => x.id === c.family.partnerId) : undefined
   const op = c.opinionOfCore
   const hits = frame.laws.filter((l) => !l.vetoed).map((l) => ({ l, hit: lawHits(l, c) })).filter((x) => x.hit)
+  const idx = record.frames.indexOf(frame)
+  const links = useLinks(record, idx < 0 ? record.frames.length - 1 : idx)
+  const why = whyDoing(c, frame, links)
+  // today: their day plan by the local hour where they live
+  const hour = useStore((s) => s.hour)
+  const playing = useStore((s) => s.playing)
+  const playhead = useStore((s) => s.playhead)
+  const home = frame.cities.find((x) => x.id === c.cityId) ?? frame.regions.find((r) => r.id === c.regionId)
+  const today = c.dayPlan && home ? todayOf(c, localHour(utcHourOf(worldDate(playhead, hour, playing)), home.lon)) : null
   return (
     <Drawer kicker={`${region?.name ?? 'citizen'} · ${words(c.archetype)}`} title={c.name}>
+      {why && <p className="mb-1 text-[12.5px] leading-snug text-ink/80">{why}</p>}
+      {today && <p className="mb-2 text-[12px] leading-snug text-ink/65"><span className="text-ink/45">today</span> {today.place}, until {today.until}. {today.why}</p>}
       <Tabs tabs={['who', 'feelings', 'life', 'laws']} value={tab} onChange={setTab} />
       {tab === 'who' && (
         <>
@@ -459,6 +473,7 @@ function CoreDossier({ record, idx, frame }: { record: RunRecord; idx: number; f
   }
   return (
     <Drawer kicker="the core · ai governor" title={frame.status === 'destroyed' ? 'the core is dark' : 'the core'}>
+      {(() => { const last = [...decisions].reverse().find(({ d }) => d.reasoning); return last ? <div className="mb-3 rounded-xl bg-ink/5 px-3 py-2"><div className="mb-0.5 text-[10.5px] uppercase tracking-[0.14em] text-ink/45">last decision · <Num>{last.f.date}</Num></div><ReasoningLines r={last.d.reasoning} />{last.d.reasoning?.outcome && <div className="mt-1 text-[11.5px] text-ink/55">{last.d.reasoning.outcome}</div>}</div> : null })()}
       <Tabs tabs={['mandate', 'decisions', 'lessons']} value={tab} onChange={setTab} />
       {tab === 'mandate' && (
         <>
@@ -552,10 +567,22 @@ function LayerDossier({ layer, regionId, frame, record, idx }: { layer: Layer; r
   const laws = frame.laws.filter((l) => l.layer === layer)
   const key = LAYER_BUDGET[layer]
   const series = record.frames.slice(0, idx + 1).map((f) => { const rr = f.regions.find((x) => x.id === regionId); return rr ? layerMetric(layer as Parameters<typeof layerMetric>[0], rr, f.regions) : 0 })
+  // never just a chart: one plain sentence first, then the chart with the big events marked on it
+  const sentence = layerSentence(layer, regionId, record, idx, series)
+  const marks = record.frames.slice(0, idx + 1).map((f, i) => ({ i, e: f.newEvents.find((e) => e.regionId === regionId && e.kind !== 'law' && e.severity >= 0.5) })).filter((x) => x.e)
   return (
     <Drawer kicker={`${layer} layer · ${r?.name ?? ''}`} title={layer}>
+      {sentence && <p className="mb-2 text-[13px] leading-snug">{sentence}</p>}
+      {series.length > 1 && (
+        <Section title="over time">
+          <div className="relative w-[300px]">
+            <Sparkline values={series} w={300} />
+            {marks.map(({ i, e }) => <span key={i} title={e!.text} className={`absolute top-0 h-full w-px ${['famine', 'war', 'disaster', 'pandemic'].includes(e!.kind) ? 'bg-ember/60' : 'bg-ink/30'}`} style={{ left: `${(i / Math.max(1, series.length - 1)) * 100}%` }} />)}
+          </div>
+          {marks.length > 0 && <div className="mt-1 text-[11px] text-ink/50">lines mark the big events: {marks.slice(-3).map(({ e }) => e!.text.toLowerCase()).join('; ')}</div>}
+        </Section>
+      )}
       {key && <Section title="budget share"><Bar value={frame.budget[key]} label={key} /></Section>}
-      {series.length > 1 && <Section title="effect over time"><Sparkline values={series} w={300} /></Section>}
       {laws.length > 0 && <Section title="laws in this layer"><ul className="space-y-1">{laws.map((l) => <li key={l.id}><Link to={{ kind: 'law', id: l.id }} className={`text-[13px] ${l.vetoed ? 'line-through opacity-50' : ''}`}>{l.title}</Link></li>)}</ul></Section>}
     </Drawer>
   )

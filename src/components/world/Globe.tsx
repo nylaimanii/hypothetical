@@ -17,13 +17,19 @@ import Launches from './Launches'
 import PhysicsLayer from './PhysicsLayer'
 import Director from './Director'
 import { soundState } from '../sound/engine'
-import { Labels, MigrationLines } from './Overlays'
+import { MigrationLines } from './Overlays'
 import { pipRegistry, usePhys } from './pipShared'
-import { sunDirection, tickToDate } from './time'
+import { sunDirection, worldDate } from './time'
 import CityLights from './CityLights'
 import { Atmosphere, Clouds, DisasterFx } from './Weather'
 import { useCurrentFrame, useStore } from '../state/store'
 import Structures from './Structures'
+import CityView from './city/CityView'
+import CrowdDots from './CrowdDots'
+import CityMarkers from './geo/CityMarkers'
+import CountryNames from './geo/CountryNames'
+import BorderRidges from './geo/BorderRidges'
+import TrendArrows from './geo/TrendArrows'
 import Orrery from './Orrery'
 import DeadWorld, { CoreShards, useDeathMood } from './DeadWorld'
 import { EmotionPulse, ExplainLayer, MovementStreams, RegionModeLabels } from './V3Layers'
@@ -63,7 +69,7 @@ export function KeyLight({ high }: { high: boolean }) {
     const l = light.current
     if (!l) return
     const s = useStore.getState()
-    sunDirection(tickToDate(s.playhead), real)
+    sunDirection(worldDate(s.playhead, s.hour, s.playing), real)
     let target = real
     if (s.playing) {
       const dir = camera.position.clone().normalize()
@@ -269,6 +275,16 @@ export default function Globe() {
   const swapping = useStore((s) => s.swapping)
   const overlay = useStore((s) => s.overlay)
   const view = useStore((s) => s.view)
+  const cityView = useStore((s) => s.cityView)
+  // leaving a city: fly back to it on the globe
+  const lastCity = useRef<string | null>(null)
+  useEffect(() => {
+    if (cityView) { lastCity.current = cityView; return }
+    const id = lastCity.current
+    lastCity.current = null
+    const c = id ? frame.cities.find((x) => x.id === id) : undefined
+    if (c) useStore.getState().requestShot({ target: 'region', regionId: c.regionId, force: true })
+  }, [cityView]) // eslint-disable-line react-hooks/exhaustive-deps
   // perf: device pixel ratio capped at 1.5 on high, 1 on fast. the monitor drops it when fps dips, raises it when fps recovers
   const cap = high ? 1.5 : 1
   const [dpr, setDpr] = useState(cap)
@@ -311,6 +327,9 @@ export default function Globe() {
           <Lightformer form="rect" intensity={0.6} color={C.bone} position={[0, -9, 0]} rotation-x={Math.PI / 2} scale={[24, 24, 1]} />
         </Environment>
         <Suspense fallback={null}>
+          <ExplainLayer />
+          {/* v4: visiting a city swaps the planet for its diorama (sky, light, environment and effects stay) */}
+          {cityView ? <CityView cityId={cityView} frame={frame} agent={agent} /> : <>
           <Planet frame={frame} />
           <CityLights frame={frame} />
           <Atmosphere tint={frame.atmosphere?.tint} haze={frame.atmosphere?.haze ?? 0} />
@@ -325,13 +344,18 @@ export default function Globe() {
           <MovementStreams frame={frame} />
           <RegionModeLabels frame={frame} />
           <EmotionPulse frame={frame} />
-          <ExplainLayer />
-          <Labels frame={frame} />
+          {/* names: 5 countries at far, 5 cities at mid (the old region labels are retired) */}
+          <CountryNames frame={frame} />
+          <CityMarkers frame={frame} />
+          <BorderRidges frame={frame} />
+          <TrendArrows frame={frame} />
           {overlay === 'real' && <MigrationLines frame={frame} />}
           <Pips frame={frame} />
+          <CrowdDots frame={frame} />
           <Launches frame={frame} spaceport={spaceport} />
+          </>}
         </Suspense>
-        {high && !dbg('nophys') && (
+        {high && !dbg('nophys') && !cityView && (
           <Suspense fallback={null}>
             <Physics gravity={[0, 0, 0]} timeStep={1 / 60}>
               <PhysicsLayer />
@@ -339,8 +363,8 @@ export default function Globe() {
           </Suspense>
         )}
         <JuiceDriver />
-        <CameraRig destroyed={destroyed} />
-        <Director />
+        {!cityView && <CameraRig destroyed={destroyed} />}
+        {!cityView && <Director />}
         <Effects high={high} />
         {dev && <Stats className="!left-auto !right-4 !top-auto !bottom-[92px]" />}
       </Canvas>

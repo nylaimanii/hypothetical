@@ -19,6 +19,8 @@ export type Selection =
   | { kind: 'faction'; id: string }
   | { kind: 'event'; tick: number; index: number }
   | { kind: 'agent'; id: string }
+  | { kind: 'country'; id: string }
+  | { kind: 'admin'; id: string }
   | null
 
 export type Zoom = 'far' | 'mid' | 'close'
@@ -33,7 +35,8 @@ export type Caption = { id: number; parts: { t: string; mono?: boolean }[]; dang
 export type SlimMeta = { firstTick: number; lastTick: number; years: YearRow[]; decisions: DecisionRow[]; lazy: boolean }
 // v3: every open world is a tab; each world has these views and the globe has these overlay modes
 export type View = 'globe' | 'daily' | 'graphs' | 'people' | 'steps'
-export type Overlay = 'real' | 'emotion' | 'population' | 'movement' | 'energy' | 'damage'
+// v4 adds the place stats: happiness, economy, livability ("great place to live") and trend
+export type Overlay = 'real' | 'happiness' | 'economy' | 'livability' | 'trend' | 'emotion' | 'population' | 'movement' | 'energy' | 'damage'
 export type Tip = { title: string; text: string; x: number; y: number }
 // minimal shell: one panel at a time. sheets are the panels that live in the side menu's world
 export type Sheet = 'worlds' | 'chronicle' | 'live' | 'layers' | 'epitaph' | null
@@ -91,6 +94,13 @@ type State = {
   explain: boolean
   tip: Tip | null
   swapping: boolean // the quick zoom out / in between tabs
+  // v4: the time of day (utc hours). turns while paused unless pinned; follows the playhead while playing
+  hour: number
+  hourPinned: boolean
+  setHour: (h: number, pin?: boolean) => void
+  // v4: the city diorama being visited, or null for the globe
+  cityView: string | null
+  setCityView: (id: string | null) => void
   menu: boolean
   sheet: Sheet
   report: boolean // the selection's full report instead of its slim card
@@ -201,6 +211,11 @@ export const useStore = create<State>((set) => ({
   explain: true,
   tip: null,
   swapping: false,
+  hour: 9,
+  hourPinned: false,
+  setHour: (h, pin) => set((s) => ({ hour: ((h % 24) + 24) % 24, hourPinned: pin ?? s.hourPinned })),
+  cityView: null,
+  setCityView: (cityView) => set((s) => ({ ...closed(s), cityView })),
   menu: false,
   sheet: null,
   report: false,

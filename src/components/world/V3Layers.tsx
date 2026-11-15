@@ -169,7 +169,7 @@ export function ExplainLayer() {
   const pm = useMemo(() => new THREE.Matrix4(), [])
   useFrame((_, dt) => {
     const st = useStore.getState()
-    const allowed = on && st.view === 'globe' && (st.zoom === 'close' || sceneRefs.camDist > 85)
+    const allowed = on && st.view === 'globe' && (st.cityView !== null || st.zoom === 'close' || sceneRefs.camDist > 85)
     if (!allowed) { shown.current = []; boxes.current.forEach((b) => { if (b) b.style.opacity = '0' }); return }
     acc.current += dt
     if (acc.current > 0.4) {

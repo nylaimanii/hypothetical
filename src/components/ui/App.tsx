@@ -13,7 +13,7 @@ import CompareView from './Compare'
 import Timeline from './Timeline'
 import WorldTabs from './WorldTabs'
 import { HoverTip, ViewHost } from './WorldViews'
-import { EventLine, LayerHint, MenuButton, PanelHost, SideMenu, StatsLine, WorldTitle, useEscape } from './Shell'
+import { CityBar, EventLine, LayerHint, MenuButton, PanelHost, SideMenu, StatsLine, WorldTitle, useEscape } from './Shell'
 
 
 const Globe = dynamic(() => import('../world/Globe'), { ssr: false })
@@ -26,6 +26,8 @@ function usePlayback() {
       const dt = Math.min(0.1, (now - last) / 1000)
       last = now
       const s = useStore.getState()
+      // the day keeps turning while paused (about 4s per game hour), unless someone pinned the hour
+      if (!s.playing && !s.hourPinned) s.setHour(s.hour + dt / 4)
       if (s.playing) {
         const lastOf = (r: typeof s.record) => { const m = s.slim[r.runId]; return m?.lazy ? m.lastTick : r.frames.at(-1)!.tick }
         const end = s.compare ? Math.max(...s.compare.records.map(lastOf)) : lastOf(s.record)
@@ -226,7 +228,7 @@ export default function App() {
         {/* top: the world, its tabs, the one menu */}
         <div className="flex items-start gap-4">
           <div className="w-56 shrink-0"><WorldTitle /></div>
-          <div className="flex min-w-0 flex-1 justify-center"><WorldTabs onLive={startLive} /></div>
+          <div className="flex min-w-0 flex-1 flex-col items-center gap-2"><WorldTabs onLive={startLive} /><CityBar /></div>
           <div className="flex w-56 shrink-0 justify-end"><MenuButton /></div>
         </div>
         {/* middle: the globe, and at most one panel */}

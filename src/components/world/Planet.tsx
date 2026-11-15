@@ -5,11 +5,12 @@ import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import type { Frame } from '@/lib/types'
 import type { Biome } from './geodata'
-import { buildTiles, C, LAND_TOP, OCEAN_TOP, R, STEP, toonGradient } from './lib'
+import { buildTiles, C, LAND_TOP, OCEAN_TOP, R, STEP, latLonToVec3, toonGradient } from './lib'
 import { tickToDate } from './time'
 import { useStore } from '../state/store'
 import { ChunkSet } from './chunks'
-import { regionModeColor } from './modes'
+import { isStatMode, regionModeColor, statColor } from './modes'
+import { COUNTRY_TABLE, tileCountries } from './geo/countries'
 
 const TILE_H = 0.5
 
@@ -163,9 +164,14 @@ export default function Planet({ frame }: { frame: Frame }) {
     const ember = new THREE.Color(C.ember), off = new THREE.Color(0, 0, 0)
     const col = new THREE.Color(), tmp = new THREE.Color()
     const modeCols = frame.regions.map((r) => { const h = regionModeColor(overlay, frame, r); return h ? new THREE.Color(h) : null })
+    // v4: the place-stat overlays use the tile's real country when the sim tracks it
+    const byIso = new Map((frame.countries ?? []).map((c) => [c.id, c]))
+    const countryCols = isStatMode(overlay) ? COUNTRY_TABLE.map((ct) => { const c = byIso.get(ct.iso3); return c ? new THREE.Color(statColor(overlay, c.stats)) : null }) : null
+    const tc = countryCols ? tileCountries(tiles) : null
     const surface = (ti: number, level: number) => {
       const t = tiles[ti]
-      const mc = t.region >= 0 ? modeCols[t.region] : null
+      const cc = tc && countryCols && tc[ti] >= 0 ? countryCols[tc[ti]] : null
+      const mc = cc ?? (t.region >= 0 ? modeCols[t.region] : null)
       if (mc) return col.copy(mc).multiplyScalar(0.94 + hash01(ti) * 0.08 + level * 0.03)
       col.set(BIOME_HEX[t.biome])
       if (t.region >= 0) col.lerp(regionCols[t.region], 0.22)
@@ -214,8 +220,33 @@ export default function Planet({ frame }: { frame: Frame }) {
     e.stopPropagation()
     if (e.instanceId == null) return
     const k = set.globalId(e.object, e.instanceId)
-    const t = k !== undefined ? tiles[list[k]] : undefined
-    if (t && t.region >= 0) select({ kind: 'region', id: frame.regions[t.region].id })
+    const ti = k !== undefined ? list[k] : -1
+    const t = ti >= 0 ? tiles[ti] : undefined
+    if (!t) return
+    const sel = placeForTile(ti)
+    if (sel) select(sel)
+    else if (t.region >= 0) select({ kind: 'region', id: frame.regions[t.region].id })
+  }
+  // the most specific real place a tile belongs to. far: the country (states are too small to aim at).
+  // mid and close: the city whose footprint it falls in, else the country
+  const placeForTile = (ti: number) => {
+    const zoom = useStore.getState().zoom
+    const t = tiles[ti]
+    if (zoom !== 'far') {
+      const p = t.normal
+      let best: { id: string; d: number } | null = null
+      for (const c of frame.cities) {
+        if (c.offWorld) continue
+        const radius = (0.6 + Math.min(1, Math.sqrt(c.population / 37e6)) * 1.0) * t.w
+        const d = latLonToVec3(c.lat, c.lon, 1).distanceTo(p) * R
+        if (d < radius && (!best || d < best.d)) best = { id: c.id, d }
+      }
+      if (best) return { kind: 'city' as const, id: best.id }
+    }
+    const ci = tileCountries(tiles)[ti]
+    const iso = ci >= 0 ? COUNTRY_TABLE[ci].iso3 : undefined
+    if (iso && frame.countries?.some((c) => c.id === iso)) return { kind: 'country' as const, id: iso }
+    return null
   }
   const stackTiles = useMemo(() => layout.stacks.map((s) => s.tile), [layout])
   // hovering land names its region in one plain line: the labels only show the biggest few
