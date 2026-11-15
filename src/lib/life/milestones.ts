@@ -370,7 +370,7 @@ export const TRIGGERS: Trigger[] = [
     def: {
       id: 'famine', kind: 'famine', short: 'the hungry year',
       question: (p, env) => `food is short in ${p.place.city}. prices are ${env.prices.toFixed(1)}x normal.`,
-      options: (p, env) => [
+      options: (p) => [
         opt('share', 'share what you have with the neighbors', ['helping', 'community'], () => { p.help += 30; p.community = clamp(p.community + 0.15); p.savings *= 0.8; return ['shared food on the street'] }),
         opt('hoard', 'buy and hoard as much as you can', ['money', 'harm', 'safety'], () => { p.harm += 25; p.savings *= 0.6; return ['filled the cupboards. the neighbors noticed'] }, { default: p.quintile >= 4 }),
         opt('leave', 'leave for a place with food', ['move', 'safety'], () => { const c = countryById(p.place.countryId)!; const b = biggestCity(c); if (b.id !== p.place.cityId) moveTo(p, c.id, b.id, 'fleeing the famine'); return [`left for ${b.name}`] }),

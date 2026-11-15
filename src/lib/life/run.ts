@@ -9,17 +9,16 @@ import { pickBirthplace, nameFor } from './births'
 import { RESEARCH as R, PROVENANCE } from './research'
 import { SCHEDULE, TRIGGERS, lateChildCheck, type MilestoneDef, type Option } from './milestones'
 import { addEvent, ageOf, kidsOf, livingKids, luck, medianIncome, parentsAlive, partnerOf, stepMonth, type Person } from './person'
-import { decideLlm, ruleChoice, temperamentWords, politeLlm, type Decision } from './decide'
+import { decideLlm, ruleChoice, politeLlm, type Decision } from './decide'
 import { creditLessons, readLessons, relevantLessons, writeLessons, writeLifeLessons } from './lessons'
 import { scoreLife } from './score'
 import { writeLife, writeNow } from './store'
-import { LifeTelegram, lifeLink, type Category } from './telegram'
-import type { EnvYear, JournalLine, LifeEvent, LifeLesson, LifeRecord, Look, Milestone, MonthSnap, Sex, Temperament } from './types'
+import { sendEndOfLife, sendWild, lifeLink } from './telegram'
+import type { EnvYear, JournalLine, LifeLesson, LifeRecord, Look, Milestone, MonthSnap, Sex, Temperament } from './types'
 
 export const LIFE_SIM_VERSION = 'life-1.0'
 const MAX_TICKS = 125 * 12 // nobody lives past 125 here (the oldest verified human reached 122)
 const MAX_TRIGGERED = 16
-const DECISION_KINDS = new Set(['schooling', 'path', 'first_job', 'move', 'children', 'career', 'partner', 'retirement'])
 
 type Demo = { regions: Record<string, { skinTone: { weights: number[] }; hairType: { weights: Record<string, number> }; hairColor: { weights: Record<string, number> }; heightCm: { female: number; male: number; sd?: { female: number; male: number } }; vitalRates?: { tfr: number } }> }
 let demoCache: Demo | null = null
@@ -92,7 +91,8 @@ const familyStory = (p: Person) => {
 }
 
 // ---------- the life loop ----------
-type Mode = { kind: 'self' | 'twin'; lessons: LifeLesson[]; tg: LifeTelegram | null; lifeId: string; onYear?: (p: Person, snap: MonthSnap) => void }
+// twinDeath: when and how the usual-choices twin died, so a life outliving it on a lesson can be told (once)
+type Mode = { kind: 'self' | 'twin'; lessons: LifeLesson[]; telegram: boolean; lifeId: string; twinDeath?: { tick: number; cause: string }; onYear?: (p: Person, snap: MonthSnap) => void }
 type SimOut = { p: Person; snaps: MonthSnap[]; milestones: Milestone[]; journal: JournalLine[]; env: EnvYear[]; lessonsGiven: Set<string>; ruleFallbacks: number }
 
 async function simulate(world: WorldEnv, seed: number, mode: Mode): Promise<SimOut> {
@@ -101,17 +101,14 @@ async function simulate(world: WorldEnv, seed: number, mode: Mode): Promise<SimO
   const lessonsGiven = new Set<string>()
   const done = new Set<string>()
   const lastTrig = new Map<string, number>()
-  let triggered = 0, ruleFallbacks = 0, notified = 0, llmFailStreak = 0
-  let ownsHome = false, lowHealth = false, lastYearIncome = 0, inDebt = false
+  let triggered = 0, ruleFallbacks = 0, llmFailStreak = 0
+  let ownsHome = false, lowHealth = false, wildSent = false
   const burden0 = world.regionAt(12, p.place.regionId).diseaseBurden || 0.1
   const yearOf = (tick: number) => 2026 + Math.floor((tick + 10) / 12)
   const first = p.name.split(' ')[0]
-  const say = (cat: Category, body: string, tier: 1 | 2 = 1) => mode.tg?.push(tier, cat, { who: first, year: yearOf(p.tick), city: p.place.city, body, link: lifeLink(mode.lifeId, p.tick) })
 
   if (mode.kind === 'self') {
     addEvent(p, { kind: 'birth', text: `born in ${p.place.city}, ${p.place.country}: ${familyStory(p).replace(` in ${p.place.city}`, '')}`, severity: 0.6, emotion: 'joy' })
-    const parents = p.kin.filter(k => k.relation === 'mother' || k.relation === 'father').map(k => k.name).join(' and ')
-    say('born', `born. ${parents ? `${parents}'s baby, ` : ''}${familyStory(p)}. temperament: ${temperamentWords(p.temperament)}`)
   }
 
   for (let t = 0; t <= MAX_TICKS && p.alive; t++) {
@@ -141,7 +138,6 @@ async function simulate(world: WorldEnv, seed: number, mode: Mode): Promise<SimO
     if (age > 85 && p.health < 0.4 && livingKids(p).length === 0 && p.home !== 'care_home') p.home = 'care_home'
     lateChildCheck(p)
 
-    const before = p.events.length
     const snap = stepMonth(p, { env: e, burden0, regionPop: e.region.population })
     snaps.push(snap)
 
@@ -176,13 +172,19 @@ async function simulate(world: WorldEnv, seed: number, mode: Mode): Promise<SimO
       }
     }
 
-    // ---- telegram tier 1, from what happened this month ----
-    if (mode.tg) {
-      for (const ev of p.events.slice(before)) { const c = categoryOf(ev); if (c) { say(c, ev.text); notified++ } }
+    // ---- recovery, for the record ----
+    if (mode.kind === 'self') {
       if (p.health < 0.45) lowHealth = true
-      else if (lowHealth && p.health > 0.65) { lowHealth = false; addEvent(p, { kind: 'health', text: 'recovered', severity: 0.3, emotion: 'joy' }); say('health', 'recovered, back on their feet') }
-      if (!inDebt && p.savings < -median * 2) { inDebt = true; say('money', `fell into debt: ${fmt(-p.savings)} owed`) }
-      if (inDebt && p.savings >= 0) { inDebt = false; say('money', 'out of debt') }
+      else if (lowHealth && p.health > 0.65) { lowHealth = false; addEvent(p, { kind: 'health', text: 'recovered', severity: 0.3, emotion: 'joy' }) }
+    }
+
+    // ---- the one wild mid-life message: a lesson visibly saving them ----
+    if (mode.telegram && !wildSent && mode.twinDeath && p.alive && p.tick === mode.twinDeath.tick + 1 && mode.twinDeath.tick < 80 * 12) {
+      const saver = milestones.filter(m => m.lessonApplied).map(m => mode.lessons.find(l => l.id === m.lessonApplied)).find(Boolean)
+      if (saver) {
+        wildSent = true
+        void sendWild(p.name, `${first} · ${yearOf(p.tick)} · ${p.place.city.toLowerCase()}: the same ${first} with the usual choices died right here, at ${Math.floor(mode.twinDeath.tick / 12)}, of ${mode.twinDeath.cause}. this one is still going, on a lesson an earlier life left: ${saver.rule}\n${lifeLink(mode.lifeId, p.tick)}`)
+      }
     }
 
     // ---- the year ----
@@ -192,18 +194,11 @@ async function simulate(world: WorldEnv, seed: number, mode: Mode): Promise<SimO
         const yearSnaps = snaps.slice(-12)
         const line = journalLine(p, yearSnaps, milestones, t)
         journal.push(line)
-        if (mode.tg && age >= 1) {
-          const inc = yearSnaps.reduce((a, s) => a + s.income, 0) / 12
-          if (lastYearIncome > 50 && inc > lastYearIncome * 1.3 && p.job) say('money', `pay up ${Math.round((inc / lastYearIncome - 1) * 100)}%: ${fmt(inc)} a month now`)
-          lastYearIncome = inc
-          say('recap', recap(p, yearSnaps, line.text), 2)
-        }
         mode.onYear?.(p, snap)
       }
     }
   }
   if (p.alive) { p.alive = false; p.deathCause = 'old age, in their sleep' }
-  void notified
   return { p, snaps, milestones, journal, env, lessonsGiven, ruleFallbacks }
 
   async function milestone(p: Person, e: ReturnType<WorldEnv['month']>, def: MilestoneDef, world: string | undefined): Promise<Milestone | null> {
@@ -243,7 +238,6 @@ async function simulate(world: WorldEnv, seed: number, mode: Mode): Promise<SimO
     }
     if (mode.kind === 'self') {
       addEvent(p, { kind: 'milestone', text: caption, severity: 0.5 })
-      if (DECISION_KINDS.has(def.kind) || lesson) say('decision', `${decider === 'parents' ? 'the family chose' : 'chose'} ${short(chosen.label)}${over}. ${outcome[0] ?? ''}${lesson ? `\nthe lesson: ${lesson.rule}` : ''}`)
     }
     return m
   }
@@ -287,24 +281,8 @@ function parentReason(p: Person, o: Option): string {
 }
 
 const short = (label: string) => label.replace(/^(have |take |keep |join |go |start |stay |become |work |move |retire )/, m => m).split(/[,(:]/)[0].trim().toLowerCase()
-const fmt = (n: number) => `$${Math.round(n) >= 1000 ? `${(n / 1000).toFixed(1)}k` : Math.round(n)}`
-
-function categoryOf(e: LifeEvent): Category | null {
-  if (e.kind === 'death') return null // sent once at the end with the score and the lesson
-  if (e.kind === 'family') return /was born|grandchild/.test(e.text) ? 'family_birth' : /died/.test(e.text) ? 'family_death' : 'family'
-  if (e.kind === 'health') return e.severity >= 0.4 ? 'health' : null
-  if (e.kind === 'world') return e.severity >= 0.45 || /home was lost|reached our street/.test(e.text) ? 'disaster' : null
-  if (e.kind === 'personal') return /moved from/.test(e.text) ? 'move' : /home|debt/.test(e.text) ? 'money' : /job|work|laid off|business|retired|doctor/.test(e.text) ? 'work' : null
-  return null
-}
 
 // ---------- words ----------
-function topFeelings(s: MonthSnap[]): string {
-  const sum: Record<string, number> = {}
-  for (const x of s) for (const [k, v] of Object.entries(x.mood)) sum[k] = (sum[k] ?? 0) + (v ?? 0)
-  return Object.entries(sum).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k]) => k).join(', ')
-}
-
 function journalLine(p: Person, ys: MonthSnap[], ms: Milestone[], t: number): JournalLine {
   const year = 2026 + Math.floor((t - 2 + 10) / 12)
   const age = Math.floor(t / 12)
@@ -325,18 +303,6 @@ function journalLine(p: Person, ys: MonthSnap[], ms: Milestone[], t: number): Jo
   return { year, age, text: text.toLowerCase(), byLlm: false }
 }
 
-function recap(p: Person, ys: MonthSnap[], journal: string): string {
-  const s = ys[ys.length - 1]
-  const age = Math.floor(ageOf(p))
-  const inc = ys.reduce((a, x) => a + x.income, 0) / ys.length
-  const did = s.activity === 'school' ? 'school most days' : s.activity === 'studying' ? 'studying' : s.activity === 'working' ? `worked as ${s.job}` : s.activity === 'retired' ? 'retired, home most days' : s.activity === 'caregiving' ? 'caring for family' : s.activity === 'infant' ? 'a baby, carried everywhere' : s.activity === 'unemployed' ? 'looked for work' : s.activity
-  const ride = age < 6 ? 'carried' : inc > medianIncomeGuess(p) * 2.5 ? 'by car' : inc > medianIncomeGuess(p) * 0.9 ? 'by bus' : 'on foot'
-  const fun = age < 13 ? 'played on the street' : p.habits.has('exercises') ? 'sport' : p.habits.has('community') ? 'the community group' : p.habits.has('prays') ? 'worship and family meals' : 'friends and family'
-  const funds = age < 16 ? '' : `\nfunds: ${fmt(inc)}/month in, ${s.savings < 0 ? `${fmt(-s.savings)} in debt` : `${fmt(s.savings)} saved`}`
-  return `${age} years old. ${did}; around ${p.place.city} ${ride}. fun: ${fun}. felt ${topFeelings(ys)}. health ${Math.round(s.health * 100)}/100${funds}\n"${journal}"`
-}
-const medianIncomeGuess = (p: Person) => Math.max(40, p.lastIncome || 200)
-
 // ---------- the whole thing ----------
 export type RunLifeOpts = { world: WorldEnv; worldVersion: string; lifeNo: number; telegram?: boolean; log?: (l: string) => void }
 
@@ -346,16 +312,15 @@ export async function runLife(o: RunLifeOpts): Promise<LifeRecord> {
   const lifeId = `${world.id}-life-${lifeNo}`
   const log = o.log ?? (() => {})
   const lessons = readLessons().map(l => (l.simVersion === o.worldVersion ? l : { ...l, verified: l.verified && l.simVersion === o.worldVersion }))
-  const tg = o.telegram ? new LifeTelegram() : null
 
   // the twin first: no llm, no lessons, the usual choices. same birth and same monthly luck
-  const twin = await simulate(world, seed, { kind: 'twin', lessons: [], tg: null, lifeId })
+  const twin = await simulate(world, seed, { kind: 'twin', lessons: [], telegram: false, lifeId })
   const twinScore = scoreLife(twin.p)
   log(`twin: ${twin.p.name}, died at ${Math.floor(ageOf(twin.p))} (${twin.p.deathCause}), score ${twinScore.total.toFixed(3)}`)
 
   const usage = { llmCalls: 0, tokens: 0 }
   const self = await withUsage(usage, () => simulate(world, seed, {
-    kind: 'self', lessons, tg, lifeId,
+    kind: 'self', lessons, telegram: !!o.telegram, lifeId, twinDeath: { tick: twin.p.tick, cause: twin.p.deathCause ?? 'an illness' },
     onYear: (p, snap) => writeNow({ lifeId, name: p.name, age: snap.age, city: p.place.city, tick: p.tick, pid: process.pid, updatedAt: new Date().toISOString(), job: snap.job, partner: snap.partner, kids: snap.kids, savings: snap.savings, income: snap.income, health: snap.health, mood: Object.keys(snap.mood).slice(0, 2).join(', ') }, lifeId),
   }))
   const p = self.p
@@ -396,21 +361,12 @@ export async function runLife(o: RunLifeOpts): Promise<LifeRecord> {
   writeLife(record)
   writeNow(null, lifeId)
 
-  if (tg) {
-    const first = p.name.split(' ')[0]
-    const deathYear = 2026 + Math.floor((p.tick + 10) / 12)
-    const lesson = left[0]
-    tg.push(1, 'death', {
-      who: first, year: deathYear, city: p.place.city, link: lifeLink(lifeId, p.tick),
-      body: `died at ${Math.floor(deathAge)}: ${p.deathCause}.\n${epitaph}\nlife score ${score.total.toFixed(3)} (the usual choices: ${twinScore.total.toFixed(3)})${lesson ? `\nthe lesson they leave: ${lesson.rule}` : ownChoices < 2 ? '\ntoo young to leave a lesson. some lives are just unfair.' : ''}`,
-    })
-    await tg.drain()
-  }
+  if (o.telegram) await sendEndOfLife(record)
   return record
 }
 
 // calibration helper: the rule-only twin for a seed (no files, no llm)
 export async function twinOnly(world: WorldEnv, seed: number) {
-  const out = await simulate(world, seed, { kind: 'twin', lessons: [], tg: null, lifeId: 'calibration' })
+  const out = await simulate(world, seed, { kind: 'twin', lessons: [], telegram: false, lifeId: 'calibration' })
   return { p: out.p, score: scoreLife(out.p), milestones: out.milestones }
 }
