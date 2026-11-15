@@ -1,0 +1,135 @@
+// mutation (groq 70b rewrite) and crossover (section splice) of constitutions.
+import Groq from 'groq-sdk'
+import type { RunSummary } from '../types'
+import type { Candidate } from './store'
+import { wordCount } from './seeds'
+
+const MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
+const SECTIONS = ['Values', 'Religion', 'School', 'Migration', 'Priorities']
+
+let client: Groq | null | undefined
+function groq(): Groq | null {
+  if (client === undefined) {
+    client = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null
+    if (!client) console.log('[evolve] GROQ_API_KEY missing, using offline mutation fallback')
+  }
+  return client
+}
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+export const noEmDash = (s: string) => s.replace(/\s*[\u2014\u2013]\s*/g, ', ')
+
+function trimWords(text: string, max = 250) {
+  const words = text.split(/(\s+)/)
+  let n = 0, out = ''
+  for (const w of words) {
+    if (w.trim()) n++
+    if (n > max) break
+    out += w
+  }
+  return out.trim()
+}
+
+// groq free tier limits are tight: back off on 429 and retry a few times
+async function chat(prompt: string): Promise<string | null> {
+  const g = groq()
+  if (!g) return null
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const res = await g.chat.completions.create({
+        model: MODEL,
+        temperature: 0.8,
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'user', content: prompt }],
+      })
+      return res.choices[0]?.message?.content ?? null
+    } catch (e) {
+      const err = e as { status?: number; headers?: Record<string, string> }
+      if (err.status === 429 || (err.status ?? 0) >= 500) {
+        const retry = Number(err.headers?.['retry-after']) || 2 ** attempt * 4
+        console.log(`[evolve] groq ${err.status}, retrying in ${retry}s`)
+        await sleep(retry * 1000)
+        continue
+      }
+      console.log(`[evolve] groq error: ${(e as Error).message}`)
+      return null
+    }
+  }
+  return null
+}
+
+function deathSummary(runs: RunSummary[]) {
+  return runs.map(r => {
+    const ev = r.topEvents.slice(0, 3).map(e => `${e.kind}: ${e.text}`).join('; ')
+    return `- seed run ${r.runId}: ${r.status} at ${r.endDate}, score ${r.score}${r.causeOfDeath ? `, cause of death: ${r.causeOfDeath}` : ''}. top events: ${ev || 'none'}`
+  }).join('\n')
+}
+
+// offline fallback: append an amendment that targets the failure mode
+function offlineMutation(parent: Candidate, runs: RunSummary[], salt: number): { constitution: string; changes: string } {
+  const causes = runs.map(r => r.causeOfDeath).filter(Boolean).join(' ').toLowerCase()
+  const fixes = [
+    [/famine|food|starv/, 'Food reserves of one year per region are constitutional and are funded before every other line.'],
+    [/revolt|unrest|riot/, 'When unrest rises in any region, welfare and local assemblies are expanded before any use of force.'],
+    [/war/, 'Regions settle disputes through a binding planetary court; standing armies are capped.'],
+    [/pandemic|disease/, 'A permanent public health corps and vaccine reserve are funded in every region.'],
+    [/energy|blackout/, 'Energy capacity must grow ahead of demand by a protected annual margin.'],
+  ] as const
+  const hit = fixes.find(([re]) => re.test(causes))
+  const amendments = [
+    'The space and research shares rise each year that food and unrest targets are met.',
+    'Every law is reviewed after two years and repealed if compliance stays low.',
+    'Talent migration toward launch regions is subsidized once famine risk is low.',
+  ]
+  const add = hit ? hit[1] : amendments[salt % amendments.length]
+  const text = trimWords(`${parent.constitution.trim()}\n\nAmendment. ${add}`)
+  return { constitution: text, changes: `offline amendment: ${add}` }
+}
+
+export async function mutate(parent: Candidate, salt: number): Promise<{ constitution: string; changes: string }> {
+  const runs = parent.runs ?? []
+  const prompt = `You are revising a constitution for a single world government whose goal is a crewed moon landing.
+It was tested in simulated worlds. Results:
+${deathSummary(runs)}
+
+Rewrite it. Fix what killed it or held it back, keep what worked. Keep the sections Values, Religion, School, Migration, Priorities.
+Under 230 words. Plain language. No real politician or party names. Do not use em-dashes.
+Respond as JSON: {"constitution": "<full new text>", "changes": "<one sentence on what you changed and why>"}
+
+CURRENT CONSTITUTION:
+${parent.constitution}`
+  const raw = await chat(prompt)
+  if (raw) {
+    try {
+      const j = JSON.parse(raw) as { constitution?: string; changes?: string }
+      if (j.constitution && wordCount(j.constitution) > 40) {
+        return { constitution: trimWords(noEmDash(j.constitution)), changes: noEmDash(j.changes ?? 'rewritten by groq') }
+      }
+    } catch {}
+  }
+  return offlineMutation(parent, runs, salt)
+}
+
+function splitSections(text: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  const re = new RegExp(`(?:^|\\n)\\s*(${SECTIONS.join('|')})\\.`, 'g')
+  const marks = [...text.matchAll(re)].map(m => ({ key: m[1], at: m.index! + m[0].indexOf(m[1]) }))
+  marks.forEach((m, i) => { out[m.key] = text.slice(m.at, marks[i + 1]?.at ?? text.length).trim() })
+  out.__title = text.slice(0, marks[0]?.at ?? 0).trim()
+  return out
+}
+
+// section-wise splice: alternate sections between parents, deterministic in salt
+export function crossover(a: Candidate, b: Candidate, salt: number): { constitution: string; changes: string } {
+  const sa = splitSections(a.constitution), sb = splitSections(b.constitution)
+  const picks: string[] = []
+  const from: string[] = []
+  SECTIONS.forEach((k, i) => {
+    const useA = ((i + salt) % 2 === 0 && sa[k]) || !sb[k]
+    const part = useA ? sa[k] : sb[k]
+    if (part) { picks.push(part); from.push(`${k.toLowerCase()} from ${useA ? a.name : b.name}`) }
+  })
+  if (picks.length < 3) return { constitution: a.constitution, changes: 'crossover failed, cloned parent' }
+  const title = `Charter of the Joined Path.`
+  return { constitution: trimWords([title, ...picks].join('\n\n')), changes: from.join(', ') }
+}

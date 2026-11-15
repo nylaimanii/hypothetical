@@ -1,0 +1,101 @@
+// six starting constitutions. each one covers values, religion, the purpose of school, and migration.
+// every seed must stay under 250 words (checked by wordCount in evolve).
+
+export type SeedConstitution = { id: string; name: string; text: string }
+
+export const SEEDS: SeedConstitution[] = [
+  {
+    id: 'technocrat',
+    name: 'technocratic planner',
+    text: `Constitution of the Planned Commonwealth.
+
+Values. Government exists to solve problems with evidence. Every ministry publishes measurable targets, and any policy that misses its target for three consecutive years is reviewed by an independent board of engineers, scientists, and statisticians. Expertise outranks popularity, but every decision must be explained in plain language.
+
+Religion. Faith is private. The state funds no religion and bans none. Religious groups may run charities if they report outcomes like any other provider.
+
+School. The purpose of school is to produce competent, numerate citizens who can staff a modern economy. Twelve years required. Mathematics, science, engineering, and statistics form the core; history and civics teach how institutions fail.
+
+Migration. Labor moves to where the plan needs it. The state offers housing and wage premiums to relocate workers toward high-priority regions, never by force. Refugees from collapsing regions are resettled within one year.
+
+Priorities. Food and energy security first, then education and research. A long-range space program receives a fixed, protected share of the budget once famine risk is under control. Plans are five years long and revised yearly.`,
+  },
+  {
+    id: 'federal',
+    name: 'federal democracy',
+    text: `Charter of the Federated Regions.
+
+Values. Power belongs to the regions, which delegate only what they cannot do alone: defense, currency, planetary infrastructure, and the shared space program. Every region elects its own assembly and may set its own taxes, laws, and customs within a bill of universal rights. Federal laws need a majority of regions and a majority of people.
+
+Religion. Each region decides how it relates to faith, but no region may persecute belief or unbelief. Freedom to leave a religion is absolute everywhere.
+
+School. School exists to form free citizens who can govern themselves. Each region writes its own curriculum, but every child gets at least ten years, including literacy, numeracy, science, and the history of every region, not just their own.
+
+Migration. Any citizen may move to any region. Regions may not close their borders to each other, but may require newcomers to learn the local language within three years. A federal fund compensates regions that absorb large inflows.
+
+Priorities. Stability through consent. Unrest is answered with negotiation and local autonomy before force. The moon program is a federal project; every region contributes and every region sends crew.`,
+  },
+  {
+    id: 'utilitarian',
+    name: 'utilitarian welfare-maximizer',
+    text: `Constitution for the Greatest Good.
+
+Values. The single aim of government is to maximize the total wellbeing of all living people, counted equally, now and in the future. Policies are chosen by expected wellbeing gained per unit of cost. No region, class, or generation counts more than another.
+
+Religion. Belief is respected because people value it. The state neither promotes nor discourages faith, but religious institutions that reduce measured wellbeing lose public subsidies.
+
+School. School exists to increase lifetime wellbeing: health, skills, and the ability to cooperate. Eleven years required. Curriculum covers health, mathematics, science, practical skills, and ethics of cooperation.
+
+Migration. People should live where their lives go best. Migration toward richer, safer regions is encouraged and subsidized, and receiving regions are compensated so that no one is made worse off in the transition.
+
+Priorities. Prevent mass death first: famine, pandemic, and war are the largest losses of wellbeing, so food, health, and welfare are funded before anything else. Research is funded because it multiplies future wellbeing. The moon program is justified as long-run insurance and inspiration, and is scaled up only when basic needs are secure.`,
+  },
+  {
+    id: 'market',
+    name: 'minimal-state market liberal',
+    text: `Charter of the Open Society.
+
+Values. Individuals own their lives and their labor. The state protects persons, property, and contracts, keeps the courts honest, and otherwise stays out of the way. Taxes are low, flat, and simple. Every new law must name what it repeals.
+
+Religion. Complete freedom of worship and of unbelief. No established church, no religious tests, no subsidies to any faith.
+
+School. School exists to give each child the tools to support themselves: reading, mathematics, science, and economics. Nine years required. Families choose among public and private schools, and funding follows the student.
+
+Migration. Borders are open to anyone who is not a security threat. Newcomers may work from their first day and pay the same taxes as everyone else. No region may block internal movement.
+
+Priorities. Growth funds everything else. The government keeps security and a thin welfare floor so no one starves, and lets prices signal where food and energy are needed. Space launch is opened to private builders, with the state buying rides as a customer and offering a prize for the first crewed landing.`,
+  },
+  {
+    id: 'communitarian',
+    name: 'communitarian with protected religious freedom',
+    text: `Covenant of the Common Life.
+
+Values. People flourish in families, neighborhoods, congregations, and guilds, not alone. The state exists to strengthen these communities, not replace them. Decisions are made at the most local level that can handle them, and every law is judged by whether it strengthens shared life.
+
+Religion. Religious freedom is the first protected right. Every faith may worship, teach, and build openly. Communities may form around belief, but none may coerce members or punish those who leave. The state supports all faith-based charities equally.
+
+School. School exists to pass on character, memory, and the skills of citizenship. Ten years required. Every curriculum includes the moral and religious traditions of the world, local history, service to the community, mathematics, and science.
+
+Migration. Newcomers are welcomed into communities that sponsor them. Each family arriving is paired with a host family. Large migrations are paced so that communities can absorb them without breaking.
+
+Priorities. Food, family stability, and local welfare come first. Research and the moon program are pursued as shared civilizational projects, framed as a pilgrimage the whole species undertakes together.`,
+  },
+  {
+    id: 'spacefirst',
+    name: 'space-first mobilization',
+    text: `Charter of the Ascent.
+
+Values. Humanity's survival depends on leaving its cradle. The central purpose of government is to land people on the moon as soon as physically possible, and then to stay. Every citizen is a participant in the Ascent, and every policy is measured by whether it speeds the landing without breaking the society that must build it.
+
+Religion. All faiths and none are free. The state asks every tradition to bless the Ascent in its own words, and forbids no one from dissenting.
+
+School. School exists to produce the engineers, scientists, and skilled workers the Ascent requires. Twelve years required. Physics, mathematics, materials, medicine, and rocketry are core. Humanities teach why the journey matters.
+
+Migration. Talent is recruited from every region to launch centers near the equator. Families relocate with guaranteed housing and wages. No one is forced.
+
+Priorities. Space and research receive the largest budget shares, but never at the cost of famine: food and energy minimums are constitutional and override the Ascent. Unrest is a risk to the program and is answered with welfare and honest communication, not force.`,
+  },
+]
+
+export function wordCount(text: string): number {
+  return text.split(/\s+/).filter(Boolean).length
+}
