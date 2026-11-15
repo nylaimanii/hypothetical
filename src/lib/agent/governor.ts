@@ -61,6 +61,8 @@ ${lessons.length ? lessons.map(l => `- [${l.id}] mistake: ${l.mistake}. result: 
 
 A HUMAN OBSERVER may veto your laws, inject events, or force your budget. These appear in overridesSinceLastDecision. List every override id in respondedToOverrides and explain your response in the rationale. Do not re-enact a vetoed law under the same title.
 
+ACTIVE LAWS are listed in the brief. Do not re-enact an active law: a law matching one already in force does nothing and is logged as repeated. To change a law, repeal it by id and pass a different one, or pick something new.
+
 Reply with one JSON decision (laws, repeal, migrations, budget, religionPolicy, schoolPolicy, foundCities, charterCompanies, researchFocus as requirement ids or tracks, publicStatement in plain words, rationale in first person with no em-dashes, respondedToOverrides, lessonsApplied). Company sectors: ${SECTORS.join(', ')}.
 Be brief, every word costs time: at most 3 new laws, each law text under 25 words; rationale under 60 words; publicStatement one sentence; researchFocus at most 4 ids; empty lists are fine. At most 3 cities and 3 companies. Names must be original. Region ids: ${REGION_IDS.join(', ')}.`
 }

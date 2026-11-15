@@ -105,7 +105,7 @@ export function briefText(w: World, b: Brief): string {
   if (b.cities.length) L.push(`cities: ${b.cities.map(c => `${c.name} (${c.offWorld ?? c.region}, ${ppl(c.population)})`).join('; ')}`)
   if (b.companies.length) L.push(`companies: ${b.companies.map(c => `${c.name} ${c.sector} ${c.region} ${ppl(c.workers)}`).join('; ')}`)
   L.push(`factions power/hostility: ${b.factions.map(x => `${x.id} ${p2(x.power)}/${p2(x.hostility)}`).join(', ')}`)
-  L.push('laws (id | title | kind | support | compliance):')
+  L.push('ACTIVE LAWS, already in force, do not re-enact (id | title | kind | support | compliance):')
   for (const l of b.laws) L.push(`${l.id} | ${l.title} | ${l.policyKind} | ${p2(l.support)} | ${p2(l.compliance)}${l.vetoed ? ' | VETOED' : ''}`)
   const ev = w.events.filter(e => e.tick >= w.tick - 12 && e.significance >= 0.4 && e.kind !== 'law').slice(-12)
   L.push(`events, last 12 months, significance >= .4: ${ev.length ? '' : 'none'}`)

@@ -76,6 +76,9 @@ function applyOverride(w: World, o: Override, mem: GovernorMemory) {
 // agentId stamps the record; startFrom branches from a saved run at a tick; untilTick stops early (status stays alive).
 export type RunOpts = RunOptions & { agentId?: string; startFrom?: { runId: string; tick: number }; untilTick?: number }
 
+// repeated-law rate of the last finished world in this process (logged; not yet in the RunSummary contract)
+export let lawStats = { proposed: 0, repeated: 0 }
+
 export async function runWorld(opts: RunOpts): Promise<RunSummary> {
   // fail fast: a real run never quietly drops to the offline governor
   await assertLlmReady()
@@ -84,8 +87,9 @@ export async function runWorld(opts: RunOpts): Promise<RunSummary> {
   const usage: Usage = { llmCalls: 0, tokens: 0 }
   const t0 = Date.now()
   let summary: RunSummary
+  lawStats = { proposed: 0, repeated: 0 }
   try { summary = await withUsage(usage, () => runInner(opts, usage)) } finally { release() }
-  console.log(`[usage] ${opts.runId}: ${usage.llmCalls} llm calls, ${usage.tokens} tokens, ${((Date.now() - t0) / 1000).toFixed(1)}s wall`)
+  console.log(`[usage] ${opts.runId}: ${usage.llmCalls} llm calls, ${usage.tokens} tokens, ${((Date.now() - t0) / 1000).toFixed(1)}s wall, repeated laws ${lawStats.repeated}/${lawStats.proposed}`)
   return summary
 }
 
@@ -200,6 +204,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   }
   while (twin.status === 'alive' && (opts.untilTick === undefined || twin.tick < opts.untilTick)) stepTwin()
   if (w.status === 'alive' && opts.untilTick !== undefined && frames[frames.length - 1]?.tick !== w.tick) emit()
+  lawStats = { proposed: w.lawsProposed, repeated: w.lawsRepeated }
   if (w.status === 'destroyed') lessonsLearned = await extractLessons(rec(true))
   const final = rec(true)
   writeJsonAtomic(path.join(process.cwd(), 'data', 'runs', `${opts.runId}.json`), final)

@@ -87,17 +87,36 @@ export function derive(w: World) {
   w.humanCost.approval = popWeighted(w, r => r.r.approval)
 }
 
+// titles match when their meaningful words mostly overlap ("Expand Lifespan Research" ~ "Enhance Lifespan Research")
+const FILLER = new Set(['act', 'law', 'program', 'programme', 'initiative', 'plan', 'policy', 'the', 'of', 'for', 'and', 'a', 'an', 'to', 'in', 'on', 'global', 'world', 'universal', 'expand', 'expanded', 'expansion', 'increase', 'increased', 'enhance', 'enhanced', 'boost', 'new', 'national', 'more', 'further', 'support', 'fund', 'funding', 'invest', 'investment', 'strengthen', 'improve', 'accelerate', 'acceleration'])
+export function similarTitle(a: string, b: string): boolean {
+  const words = (s: string) => new Set(s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(x => x.length > 2 && !FILLER.has(x)).map(x => x.replace(/(ing|s)$/, '')))
+  const A = words(a), B = words(b)
+  if (!A.size || !B.size) return a.trim().toLowerCase() === b.trim().toLowerCase()
+  const inter = [...A].filter(x => B.has(x)).length
+  return inter / Math.min(A.size, B.size) >= 0.75
+}
+
 export function applyDecision(w: World, d: Decision): { migrations: ScheduledMigration[] } {
   if (d.repeal.length) {
     const gone = w.laws.filter(l => d.repeal.includes(l.id))
     w.laws = w.laws.filter(l => !d.repeal.includes(l.id))
     for (const l of gone) event(w, { kind: 'law', text: `repealed: ${l.title}`, severity: 0.1 })
   }
-  const fresh: Law[] = d.laws.slice(0, MAX_LAWS_PER_DECISION).map((l, i) => {
+  const fresh: Law[] = []
+  d.laws.slice(0, MAX_LAWS_PER_DECISION).forEach((l, i) => {
     const meta = lawMeta(l)
+    w.lawsProposed++
+    // a law that matches an active one (same policy kind, similar title) is a no-op, logged as repeated
+    const dup = [...w.laws, ...fresh].find(x => !x.vetoed && x.policyKind === meta.policyKind && similarTitle(x.title, l.title))
+    if (dup) {
+      w.lawsRepeated++
+      event(w, { kind: 'law', text: `repeated: "${l.title}" is already in force as "${dup.title}", nothing changes`, severity: 0.05 })
+      return
+    }
     const id = l.id && !w.laws.some(x => x.id === l.id) ? l.id : `L${w.tick}-${i}`
     w.lawMeta[id] = meta
-    return { ...l, id, enactedTick: w.tick, support: 0.5, compliance: 0.5, vetoed: false, policyKind: meta.policyKind, precedentIds: meta.precedentIds, lovedBy: meta.lovedBy, hatedBy: meta.hatedBy }
+    fresh.push({ ...l, id, enactedTick: w.tick, support: 0.5, compliance: 0.5, vetoed: false, policyKind: meta.policyKind, precedentIds: meta.precedentIds, lovedBy: meta.lovedBy, hatedBy: meta.hatedBy })
   })
   w.laws.push(...fresh)
   while (w.laws.length > MAX_ACTIVE_LAWS) w.laws.shift()
