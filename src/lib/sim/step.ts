@@ -1,7 +1,9 @@
 // one month of the world, decision application, and public snapshots.
 import type { BaselineFrame, Decision, Frame, Law, Region, Why } from '../types'
 import { dateOf } from './constants'
-import { addCrowd, stepRegionBehavior } from './behavior'
+import { addCrowd, stepRegionBehavior, valence } from './behavior'
+import { stepCountries, updateCountryStats } from './places'
+import { dressCitizen, stepClimate, stepCountryInfra, stepRealCities, trafficFrame } from './world-layer'
 import { stepDemography, stepMedicine } from './biology'
 import { migrateCitizens } from './citizens'
 import { charterCompanies, foundCities, sectorStrength, stepCities, stepCompanies, stepTravel } from './cities'
@@ -48,6 +50,11 @@ export function stepWorld(w: World) {
   }
   stepEconomy(w, popBefore)
   stepSociety(w, fx, research * (1 - TREE_SHARE) * (1 + 0.3 * sectors.computing), outrage)
+  stepCountries(w)
+  stepClimate(w)
+  if (w.tick % 12 === 11) { stepCountryInfra(w); stepRealCities(w) }
+  if (w.tick === 0) for (const rs of w.regions) rs.valence0 = valence(rs.mood)
+  if (w.tick % 12 === 11) updateCountryStats(w, rs => valence(rs.mood))
   stepFactions(w)
   stepCompanies(w)
   stepCities(w)
@@ -180,8 +187,9 @@ const q05 = (x: number) => Math.round(x * 20) / 20
 function takeWhys(rs: World['regions'][number]): Why[] {
   const out: Why[] = []
   for (const [stat, acc] of Object.entries(rs.whyAcc)) {
-    const drivers = Object.entries(acc).map(([label, v]) => ({ label, delta: Math.round(v.delta * 1e4) / 1e4, ...(v.source ? { source: v.source } : {}) }))
-      .filter((d, _i, all) => d.delta !== 0 && Math.abs(d.delta) >= 0.01 * all.reduce((t, x) => t + Math.abs(x.delta), 0)).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 3)
+    // sources are looked up by label (WHY_SOURCES in types-v5) instead of repeated in every frame
+    const drivers = Object.entries(acc).map(([label, v]) => ({ label, delta: Math.round(v.delta * 1e4) / 1e4 }))
+      .filter((d, _i, all) => d.delta !== 0 && Math.abs(d.delta) >= 0.05 * all.reduce((t, x) => t + Math.abs(x.delta), 0)).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 2)
     const value = (rs.r as unknown as Record<string, number>)[stat]
     if (drivers.length) out.push({ stat, value: typeof value === 'number' ? r4(value) : 0, drivers })
   }
@@ -202,8 +210,11 @@ export function publicRegions(w: World): Region[] {
 }
 
 export function snapshot(w: World, newEvents: Frame['newEvents'], decision?: Decision): Frame {
+  for (const c of w.citizens) dressCitizen(w, c)
   const regions = publicRegions(w)
   w.provenanceSent = true
+  const infra = w.infraAcc
+  w.infraAcc = []
   const flows = w.flowAcc.map(f => ({ ...f, people: Math.round(f.people) })).filter(f => f.people > 0)
   w.flowAcc = []
   // cause chains (not yet in A's Frame type, attached as extra fields): links since the last frame, and each
@@ -228,7 +239,7 @@ export function snapshot(w: World, newEvents: Frame['newEvents'], decision?: Dec
     humanCost: { deaths: Math.round(w.humanCost.deaths), famineDeaths: Math.round(w.humanCost.famineDeaths), unrestDeaths: Math.round(w.humanCost.unrestDeaths), displaced: Math.round(w.humanCost.displaced), approval: r4(w.humanCost.approval) },
     globalPopulation: Math.round(worldPop(w)), globalPeriodLifeExpectancy: Math.round(globalPLE(w) * 10) / 10, lessonsKnown: w.lessonsKnown,
     ...(decision ? { decision } : {}),
-    ...({ causes } as object),
+    ...({ causes, infra, traffic: trafficFrame(w), climate: { anomalyC: Math.round(w.climate.anomalyC * 100) / 100, gtCo2PerYear: Math.round(w.climate.gtPerYear * 10) / 10 } } as object),
   }
 }
 

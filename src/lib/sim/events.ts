@@ -2,9 +2,10 @@
 // policy, so the ai world and its no-ai twin face the same disasters on the same dates.
 // rates are rough ESTIMATEs anchored to the cited references.
 import type { WorldEvent } from '../types'
-import { killShare } from './biology'
 import { clamp, event, regionPop, type RegionState, type World } from './state'
 import { fmt } from './physics'
+import { killInRegion, pickCountry } from './places'
+import { damageCity } from './world-layer'
 
 // EM-DAT records ~350 to 400 disasters a year worldwide (https://www.emdat.be/). ESTIMATE: a disaster big
 // enough to dent a whole region's output hits each region about once every 3 years.
@@ -21,14 +22,16 @@ const perMonth = (pYear: number) => 1 - Math.pow(1 - pYear, 1 / 12)
 export function stepEvents(w: World) {
   const rng = w.rng.events
   for (const rs of w.regions) {
-    const a = rng(), as = rng(), b = rng(), bs = rng()
+    const a = rng(), as = rng(), b = rng(), bs = rng(), cu = rng()
     if (a < perMonth(DISASTER_P_YEAR)) {
       const sev = 0.1 + 0.6 * as * as
-      applyEvent(w, rs, 'disaster', sev, `${sevWord(sev)} disaster in ${rs.r.name}`)
+      const c = pickCountry(w, rs, cu)
+      applyEvent(w, rs, 'disaster', sev, `${sevWord(sev)} disaster in ${c ? c.name : rs.r.name}`, false, c?.id)
     }
     if (b < perMonth(DROUGHT_P_YEAR)) {
       const sev = 0.2 + 0.6 * bs
-      applyEvent(w, rs, 'famine', sev, `drought across ${rs.r.name} cuts harvests`)
+      const c = pickCountry(w, rs, (cu * 7.31) % 1)
+      applyEvent(w, rs, 'famine', sev, `drought across ${c ? c.name : rs.r.name} cuts harvests`, false, c?.id)
     }
   }
   const p = rng(), ps = rng(), po = rng()
@@ -57,13 +60,13 @@ export function startPandemic(w: World, origin: RegionState, sev: number, inject
 }
 
 // applies a shock of `kind` to a region. used by base-rate events and by user-injected events.
-export function applyEvent(w: World, rs: RegionState, kind: WorldEvent['kind'], sev: number, text: string, injected = false): WorldEvent | undefined {
+export function applyEvent(w: World, rs: RegionState, kind: WorldEvent['kind'], sev: number, text: string, injected = false, countryId?: string): WorldEvent | undefined {
   sev = clamp(sev)
   const label = injected ? `injected: ${text}` : text
   switch (kind) {
     case 'disaster': {
-      const dead = regionPop(rs) * 0.0005 * sev
-      rs.bands = killShare(rs.bands, 0.0005 * sev)
+      const dead = killInRegion(w, rs, 0.0005 * sev, countryId)
+      if (countryId) damageCity(w, countryId, 0.5 * sev, text)
       rs.r.gdpUsd *= 1 - 0.03 * sev
       rs.capacityTWh *= 1 - 0.05 * sev
       rs.shock += 0.1 * sev
@@ -84,7 +87,7 @@ export function applyEvent(w: World, rs: RegionState, kind: WorldEvent['kind'], 
       return event(w, { regionId: rs.r.id, kind: injected ? 'injected' : 'revolt', text: label, severity: sev })
     case 'war': {
       w.warTension += 0.4 * sev
-      rs.bands = killShare(rs.bands, 0.002 * sev)
+      killInRegion(w, rs, 0.002 * sev, countryId)
       rs.r.gdpUsd *= 1 - 0.05 * sev
       rs.shock += 0.2 * sev
       return event(w, { regionId: rs.r.id, kind: injected ? 'injected' : 'war', text: label, severity: sev })

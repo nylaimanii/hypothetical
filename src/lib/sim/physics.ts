@@ -8,6 +8,8 @@ import {
 import { allocShares, clamp, effectiveBudget, event, incomeIdx, regionPop, sum, why, type RegionState, type World } from './state'
 import { behaviorDrag, hoardingFactor } from './behavior'
 import { addFlow, buildShares, settleMix } from './visuals'
+import { addToRegion, removeFromRegion } from './places'
+import { climateYield } from './world-layer'
 import { reqProgress } from './requirements'
 import type { LawEffects } from './society'
 
@@ -82,7 +84,8 @@ export function stepFood(w: World, fx: Record<string, LawEffects>, sectors: Reco
     rs.yieldIdx *= 1 + gy / 12
     const drought = (w.tick < rs.droughtUntil ? rs.droughtSev : 0) * (1 - 0.4 * reqProgress(w, 'drought_crops'))
     // ESTIMATE: farm output scales with energy availability^0.25 (fertilizer, irrigation, transport)
-    const p = rs.foodBase * rs.yieldIdx * Math.pow(rs.energyRatio, 0.25) * (1 - drought) * (rs.inRevolt ? 0.92 : 1)
+    // climate: staple yields fall ~5% per C of warming above 2026 (Zhao et al. 2017)
+    const p = rs.foodBase * rs.yieldIdx * Math.pow(rs.energyRatio, 0.25) * (1 - drought) * (rs.inRevolt ? 0.92 : 1) * climateYield(w)
     prod.push(Math.min(p, KCAL_CAP * pop))
   }
   // the world government pools part of every surplus above 2,700 kcal and ships it to regions under 2,400.
@@ -177,7 +180,7 @@ export function scheduleMigrations(w: World, list: Migration[], monthlyRevenue: 
     const wts = from.bands.map((b, i) => b * (i >= 3 && i <= 9 ? 2 : 1))
     const wsum = sum(wts)
     const bands = wts.map(x => actual * x / wsum)
-    from.bands = from.bands.map((b, i) => Math.max(0, b - bands[i]))
+    removeFromRegion(w, from, bands)
     w.transit.push({ from: m.from, to: m.to, people: actual, bands, arriveTick: w.tick + MIGRATION_MONTHS })
     // ESTIMATE: unrest shock both sides, scaled by share of population moved plus a flat cost of forced relocation
     from.migrationShock += 3 * actual / pop + 0.02
@@ -197,7 +200,7 @@ export function stepArrivals(w: World) {
     const from = w.regions.find(r => r.r.id === t.from)
     if (!to || !from) continue
     const before = regionPop(to)
-    to.bands = to.bands.map((b, i) => b + t.bands[i])
+    addToRegion(w, to, t.bands)
     // arrivals bring their origin mix; regions mix over time
     const after = before + t.people
     for (const k of Object.keys(to.originMix)) to.originMix[k] *= before / after

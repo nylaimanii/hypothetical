@@ -6,6 +6,7 @@ import { MAX_MORTALITY_DECLINE_YEAR, SURVIVAL_KCAL, TFR_DECLINE, TFR_FLOOR } fro
 import { reqProgress } from './requirements'
 import { BAND_MID, CAUSE_SHARE, NBANDS, clamp, incomeIdx, regionPop, sum, why, type Cause, type RegionState, type World } from './state'
 import type { LawEffects } from './society'
+import { countriesOf, countryPop, syncRegion } from './places'
 
 // mortality multiplier from the food supply. ESTIMATE: below 2,300 kcal undernourishment adds up to 30%;
 // under the 1,800 survival threshold mortality rises with the deficit and with how long it has lasted.
@@ -59,7 +60,8 @@ export function stepMedicine(w: World, medicineStrength: number) {
   }
 }
 
-export function annualMortality(rs: RegionState, i: number, mult: number): number {
+export type MortalityParams = Pick<RegionState, 'gompertzA' | 'infantMort' | 'agingSlope' | 'causeMult' | 'oldAgeFloor'>
+export function annualMortality(rs: MortalityParams, i: number, mult: number): number {
   const age = BAND_MID[i]
   const g = rs.gompertzA * Math.exp(rs.agingSlope * (age - 60))
   // cause mix: infectious and injury weigh more at young ages (ESTIMATE)
@@ -77,7 +79,7 @@ export function annualMortality(rs: RegionState, i: number, mult: number): numbe
 }
 
 // period life expectancy at birth from current age-specific mortality (5-year life table, open last band)
-export function periodLifeExpectancy(rs: RegionState, mult: number, pandemic: number): number {
+export function periodLifeExpectancy(rs: MortalityParams, mult: number, pandemic: number): number {
   let l = 1, e = 0
   for (let i = 0; i < NBANDS; i++) {
     const m = annualMortality(rs, i, mult) + pandemic * (0.2 + 1.6 * BAND_MID[i] / 85)
@@ -91,45 +93,21 @@ export function periodLifeExpectancy(rs: RegionState, mult: number, pandemic: nu
   return e
 }
 
+// one demographic unit: a country (or a region that has no country data)
+type Unit = { bands: number[]; tfr: number; gompertzA: number; infantMort: number; kcal: number; monthsUnder: number; ple: number; pop: () => number }
+
 export function stepDemography(w: World, fx: Record<string, LawEffects>): { births: number; deaths: number } {
   let births = 0, deaths = 0
   for (const rs of w.regions) {
     const pop = regionPop(rs)
     if (pop <= 0) continue
-    const kcal = rs.r.foodKcalPerCapita
     const welfarePC = rs.spend.welfare * 12 / pop
     // ESTIMATE: health and social spending cut mortality up to 15% at saturation, relative to 2026 levels
     const welfareMult = (1 - 0.15 * fWelfare(welfarePC)) / (1 - 0.15 * fWelfare(rs.pc0.welfare))
-    const foodMult = foodMortality(kcal, rs.foodMonthsUnder)
     const lawMult = 1 - 0.02 * (fx[rs.r.id]?.redistributive ?? 0)
-    // riots and crackdowns kill (ESTIMATE: 1 in 10,000 rioters per month)
-    const mult = welfareMult * foodMult * lawMult
     const pandemic = w.tick < rs.pandemicUntil ? rs.pandemicMort * (1 - 0.5 * reqProgress(w, 'pandemic_preparedness')) : 0
-    const dead = new Array(NBANDS).fill(0)
-    let baseDead = 0
-    for (let i = 0; i < NBANDS; i++) {
-      const pw = pandemic * (0.2 + 1.6 * BAND_MID[i] / 85)
-      const base = annualMortality(rs, i, welfareMult * lawMult)
-      const annual = annualMortality(rs, i, mult) + pw
-      dead[i] = rs.bands[i] * (1 - Math.exp(-annual / 12))
-      baseDead += rs.bands[i] * (1 - Math.exp(-base / 12))
-    }
-    const totalDead = sum(dead)
-    const famine = Math.max(0, totalDead - baseDead - sum(rs.bands.map((b, i) => b * pandemic * (0.2 + 1.6 * BAND_MID[i] / 85) / 12)))
-    rs.famineDeaths += famine
-    w.humanCost.famineDeaths += famine
-    w.humanCost.deaths += Math.max(0, totalDead - baseDead)
-    const riotDeaths = pop * rs.behavior.rioting * 1e-4
-    w.humanCost.unrestDeaths += riotDeaths
-    w.humanCost.deaths += riotDeaths
-    why(rs, 'population', 'deaths', -totalDead)
-    if (famine > 1) why(rs, 'population', 'hunger deaths', -famine, 'https://www.fao.org/3/i4646e/i4646e.pdf')
-    if (pandemic > 0) why(rs, 'population', 'pandemic deaths', -sum(rs.bands.map((b, i) => b * pandemic * (0.2 + 1.6 * BAND_MID[i] / 85) / 12)), 'https://doi.org/10.1073/pnas.2105482118')
-
-    // ---------- fertility ----------
-    // long-run decline toward a floor, faster with education (UN WPP trend)
+    // ---------- region-wide fertility drivers ----------
     const eduPull = 1 + 1.5 * Math.max(0, rs.r.education - rs.base.education)
-    rs.tfr += (TFR_FLOOR - rs.tfr) * TFR_DECLINE * eduPull / 12
     // pro-natal policy is a level shift calibrated to real results: Hungary ~+0.25, France ~+0.2, Korea ~0.
     // ESTIMATE: the strongest family law's precedent effect x its compliance, phased in over ~2 years
     let pn = 0
@@ -139,46 +117,86 @@ export function stepDemography(w: World, fx: Record<string, LawEffects>): { birt
       const e = meta.tfrEffect * (rs.lawCompliance[l.id] ?? 0) / Math.max(rs.r.compliance, 0.05)
       if (Math.abs(e) > Math.abs(pn)) pn = e
     }
-    const target = clamp(pn, -1, 0.3)
-    rs.pronatal += (target - rs.pronatal) / 24
+    rs.pronatal += (clamp(pn, -1, 0.3) - rs.pronatal) / 24
     // housing and child costs: affordable housing and childcare progress, rising population pressure (ESTIMATE)
     const housing = -0.15 * clamp(rs.r.population / Math.max(rs.pop0, 1) - 1) * (1 - reqProgress(w, 'affordable_housing'))
       + 0.08 * reqProgress(w, 'universal_childcare')
     // optimism: hope above baseline raises births a little (starting_family behavior), fear lowers them
     const optimism = 0.4 * (rs.mood.hope - 0.4) - 0.3 * Math.max(0, rs.mood.fear - 0.3)
     const inc = incomeIdx(rs.r.gdpUsd / pop)
-    const effTfr = clamp(rs.tfr + rs.pronatal + housing + optimism * (0.5 + 0.5 * (1 - inc)), 0.5, 7)
-    rs.r.fertility = effTfr
-    const women = 0.5 * sum(rs.bands.slice(3, 10))
-    // ESTIMATE: hunger suppresses births (deficit below 2,100 kcal cuts conception proportionally)
-    const hunger = clamp((2100 - kcal) / 2100)
-    const born = effTfr / 35 * women * (1 - hunger) / 12
-    why(rs, 'population', 'births', born)
+    const tfrShift = rs.pronatal + housing + optimism * (0.5 + 0.5 * (1 - inc))
+
+    // the units: this region's countries, each with its own calibrated mortality, fertility and food supply
+    const cs = countriesOf(w, rs.r.id)
+    const units: Unit[] = cs.length
+      ? cs.map(c => ({ bands: c.bands, tfr: c.tfr, gompertzA: c.gompertzA, infantMort: c.infantMort, kcal: c.kcal, monthsUnder: c.foodMonthsUnder, ple: c.ple, pop: () => countryPop(c) }))
+      : [{ bands: rs.bands, tfr: rs.tfr, gompertzA: rs.gompertzA, infantMort: rs.infantMort, kcal: rs.r.foodKcalPerCapita, monthsUnder: rs.foodMonthsUnder, ple: rs.periodLE, pop: () => regionPop(rs) }]
+    let rTotalDead = 0, rFamine = 0, rPandemicDead = 0, rBorn = 0, wTfr = 0, wPle = 0, wPop = 0
+    units.forEach((u, ui) => {
+      const params = { gompertzA: u.gompertzA, infantMort: u.infantMort, agingSlope: rs.agingSlope, causeMult: rs.causeMult, oldAgeFloor: rs.oldAgeFloor }
+      const foodMult = foodMortality(u.kcal, u.monthsUnder)
+      const mult = welfareMult * foodMult * lawMult
+      const dead = new Array(NBANDS).fill(0)
+      let baseDead = 0, pandemicDead = 0
+      for (let i = 0; i < NBANDS; i++) {
+        const pw = pandemic * (0.2 + 1.6 * BAND_MID[i] / 85)
+        const base = annualMortality(params, i, welfareMult * lawMult)
+        const annual = annualMortality(params, i, mult) + pw
+        dead[i] = u.bands[i] * (1 - Math.exp(-annual / 12))
+        baseDead += u.bands[i] * (1 - Math.exp(-base / 12))
+        pandemicDead += u.bands[i] * pw / 12
+      }
+      const totalDead = sum(dead)
+      const famine = Math.max(0, totalDead - baseDead - pandemicDead)
+      rTotalDead += totalDead; rFamine += famine; rPandemicDead += pandemicDead
+      w.humanCost.deaths += Math.max(0, totalDead - baseDead)
+      // fertility: long-run decline toward a floor (UN WPP trend), plus the region's policy and mood shift
+      u.tfr += (TFR_FLOOR - u.tfr) * TFR_DECLINE * eduPull / 12
+      const effTfr = clamp(u.tfr + tfrShift, 0.5, 7)
+      const women = 0.5 * sum(u.bands.slice(3, 10))
+      // ESTIMATE: hunger suppresses births (deficit below 2,100 kcal cuts conception proportionally)
+      const born = effTfr / 35 * women * (1 - clamp((2100 - u.kcal) / 2100)) / 12
+      rBorn += born
+      // ageing: 1/60 of each band moves up each month
+      const next = u.bands.map((b, i) => b - dead[i])
+      const moved = next.map((b, i) => (i < NBANDS - 1 ? b / 60 : 0))
+      for (let i = 0; i < NBANDS; i++) { next[i] -= moved[i]; if (i > 0) next[i] += moved[i - 1] }
+      next[0] += born
+      for (let i = 0; i < NBANDS; i++) u.bands[i] = Math.max(0, next[i])
+      const ple = periodLifeExpectancy(params, mult, pandemic)
+      const up = u.pop()
+      wTfr += effTfr * up; wPle += ple * up; wPop += up
+      if (cs.length) { const c = cs[ui]; c.tfr = u.tfr; c.ple = ple } else { rs.tfr = u.tfr }
+    })
+    if (cs.length) {
+      syncRegion(w, rs)
+      rs.tfr = sum(cs.map(c => c.tfr * countryPop(c))) / Math.max(wPop, 1)
+    }
+    const riotDeaths = pop * rs.behavior.rioting * 1e-4
+    w.humanCost.unrestDeaths += riotDeaths
+    w.humanCost.deaths += riotDeaths
+    rs.famineDeaths += rFamine
+    w.humanCost.famineDeaths += rFamine
+    why(rs, 'population', 'deaths', -rTotalDead)
+    if (rFamine > 1) why(rs, 'population', 'hunger deaths', -rFamine, 'https://www.fao.org/3/i4646e/i4646e.pdf')
+    if (pandemic > 0) why(rs, 'population', 'pandemic deaths', -rPandemicDead, 'https://doi.org/10.1073/pnas.2105482118')
+    why(rs, 'population', 'births', rBorn)
+    rs.r.fertility = wTfr / Math.max(wPop, 1)
     why(rs, 'fertility', 'long-run decline', (TFR_FLOOR - rs.tfr) * TFR_DECLINE * eduPull / 12, 'https://population.un.org/wpp/')
     if (Math.abs(rs.pronatal) > 0.005) why(rs, 'fertility', 'family policy', rs.pronatal, 'https://en.wikipedia.org/wiki/Demographics_of_Hungary')
     if (Math.abs(housing) > 0.005) why(rs, 'fertility', 'housing and child costs', housing)
     if (Math.abs(optimism) > 0.01) why(rs, 'fertility', 'optimism', optimism)
+    births += rBorn
+    deaths += rTotalDead
 
-    // ageing: 1/60 of each band moves up each month
-    const next = rs.bands.map((b, i) => b - dead[i])
-    const moved = next.map((b, i) => (i < NBANDS - 1 ? b / 60 : 0))
-    for (let i = 0; i < NBANDS; i++) {
-      next[i] -= moved[i]
-      if (i > 0) next[i] += moved[i - 1]
-    }
-    next[0] += born
-    rs.bands = next.map(b => Math.max(0, b))
-    births += born
-    deaths += totalDead
-
-    // ---------- life expectancy ----------
-    const ple = periodLifeExpectancy(rs, mult, pandemic)
+    // ---------- life expectancy: population-weighted over the region's countries ----------
+    const ple = wPle / Math.max(wPop, 1)
     const prev = rs.periodLE || ple
     rs.periodLE = ple
     rs.leTrend += ((ple - prev) * 12 - rs.leTrend) * 0.05
     // ESTIMATE: cohort life expectancy at birth ~ period LE plus ~25 years of continued improvement at the current trend
     rs.cohortLE = ple + 25 * Math.max(0, rs.leTrend)
-    why(rs, 'periodLifeExpectancy', 'medicine and health systems', (ple - prev) - 0, 'https://doi.org/10.1126/science.1069675')
+    why(rs, 'periodLifeExpectancy', 'medicine and health systems', ple - prev, 'https://doi.org/10.1126/science.1069675')
     // disease burden: ESTIMATE index from infectious mortality and pandemics
     rs.diseaseBurden = clamp(0.5 * rs.causeMult.infectious * (rs.infantMort * 50) + 20 * pandemic)
   }

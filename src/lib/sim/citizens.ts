@@ -7,6 +7,7 @@ import { chat, llmEnabled } from '../agent/llm'
 import { hashString, mulberry32, normal, pick, pickWeighted, type Rng } from './rng'
 import { BAND_MID, DEMOGRAPHICS, clamp, incomeIdx, regionPop, type RegionState, type World } from './state'
 import { yearOf, ppl } from './causes'
+import { placeCitizen } from './world-layer'
 import { groupMatches } from './behavior'
 import { addLifeEvent, citizenGroup, pickArchetype, satiricalThought, stepCitizens, valence } from './behavior'
 
@@ -132,6 +133,7 @@ export function makeCitizen(w: World, rs: RegionState, rng: Rng, age?: number): 
     archetype, group: citizenGroup(w, rs, { age: a, job, belief, personalitySeed }), mood: { ...rs.mood }, behavior: 'working',
     lifeEvents: [], opinionOfCore: 0, family: { kids: a >= 25 ? Math.floor(rng() * Math.min(4, (rs.tfr || 2) + 0.5)) : 0 },
   }
+  placeCitizen(w, c)
   // hidden per-citizen attributes kept outside the public Citizen shape
   w.citizenMeta[c.id] = { origin, baseHair: baseColor, affectedTick: w.tick, prevMood: 0.5 }
   c.hairColor = hairColorFor(origin, a, personalitySeed, baseColor)
@@ -200,6 +202,7 @@ export function migrateCitizens(w: World, from: string, to: string, people: numb
   // the mover keeps their appearance; counts are rebalanced at the next yearly sync
   w.citizens = w.citizens.map(c => (c === mover ? { ...c, regionId: to } : c))
   const moved = w.citizens.find(c => c.id === mover.id)
+  if (moved) placeCitizen(w, moved)
   if (moved) addLifeEvent(w, moved, `relocated from ${src.r.name} to ${dst.r.name}`)
 }
 

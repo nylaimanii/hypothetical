@@ -346,7 +346,7 @@ export function addLifeEvent(w: World, c: Citizen, text: string) {
   const arc = (w.lifeArchive[c.id] ??= { name: c.name, regionId: c.regionId, events: [] })
   arc.events.push({ tick: w.tick, text })
   arc.regionId = c.regionId
-  c.lifeEvents = [...c.lifeEvents, { tick: w.tick, text }].slice(-10)
+  c.lifeEvents = [...c.lifeEvents, { tick: w.tick, text }].slice(-4) // the full story lives in w.lifeArchive
   const m = w.citizenMeta[c.id]
   if (m) m.affectedTick = w.tick
 }

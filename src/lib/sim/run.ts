@@ -18,6 +18,7 @@ import { fmt } from './physics'
 import { applyDecision, baselineFrame, lawPrecedents, sawOf, snapshot, stepWorld } from './step'
 import { SNAPSHOT_EVERY, restoreWorld, snapshotWorld } from './snapshot'
 import { epitaphFor } from './visuals'
+import { localLife, recordPlacesYear, writePlaces, type PlacesAcc } from './world-layer'
 import { KEYFRAME_EVERY, makeDelta } from './citizens-replay'
 import { event, initWorld, popWeighted, regionPop, worldPop, type World } from './state'
 
@@ -170,6 +171,7 @@ async function tickBody(w: World, ctx: Ctx, decideFn: (w: World) => Promise<Deci
   if (w.tick % 12 === 0) {
     // yearly: birthdays, pip counts, partners, one batched thought call (thoughts never touch sim numbers)
     if (w.tick > 0) { ageCitizens(w); syncCitizenCounts(w); pairPartners(w); personalYear(w) }
+    for (const c of w.citizens) localLife(w, c)
     updateMoods(w)
     await refreshThoughts(w, opts.llmThoughts)
   }
@@ -203,7 +205,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
     ctx.due = t => srcDecisions.has(t)
     while (w.tick < target && w.status === 'alive') {
       await tickBody(w, ctx, async x => srcDecisions.get(x.tick), { llmThoughts: false })
-      if (srcFrameTicks.has(w.tick)) { for (const rs of w.regions) rs.whyAcc = {}; w.frameCursor = w.events.length; w.flowAcc = []; w.lastFrameTick = w.tick }
+      if (srcFrameTicks.has(w.tick)) { for (const rs of w.regions) rs.whyAcc = {}; w.frameCursor = w.events.length; w.flowAcc = []; w.infraAcc = []; w.lastFrameTick = w.tick }
       stepWorld(w)
       updateMoods(w)
     }
@@ -233,8 +235,10 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
 
   const rec = (done: boolean) => record(opts, w, twin, frames, baseline, !done, usage, lessonsLearned, knownLessons, ctx.snapshots, branchedFrom)
   let roster: Map<string, import('../types').Citizen> | undefined
+  const places: PlacesAcc = { years: [], hist: new Map() }
   let rosterTick = 0
   let keyReqText = new Map<string, string>()
+  let prevReq = new Map<string, import('../types').Requirement>()
   const emit = (decision?: Decision) => {
     const fresh = w.events.slice(w.frameCursor)
     w.frameCursor = w.events.length
@@ -242,16 +246,29 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
     // citizens: full roster on keyframes (first frame, every 5 years, the last frame), deltas in between
     const key = !roster || w.tick % KEYFRAME_EVERY === 0 || w.status !== 'alive' || process.env.HYP_FULL_CITIZENS === '1'
     const full = f.citizens
-    if (key) { Object.assign(f, { citizenKeyframe: true }); keyReqText = new Map(f.requirements.map(q => [q.id, q.realWorld2026])) }
+    const reqNow = new Map(f.requirements.map(q => [q.id, { ...q }]))
+    if (key) {
+      Object.assign(f, { citizenKeyframe: true })
+      keyReqText = new Map(f.requirements.map(q => [q.id, q.realWorld2026]))
+      // countries ride on the first and the last frame; every year's country, state and city stats are in the
+      // places file (placesAt() in places-replay.ts decodes any year)
+      // provenance for every country field lives in data/geo/countries.json (not copied into records)
+      if (!frames.length || w.status !== 'alive') Object.assign(f, { countries: w.countries.map(c => ({ id: c.id, name: c.name, regionId: c.regionId, stats: { ...c.stats }, provenance: {} })) })
+    }
     else {
       Object.assign(f, { citizenDelta: makeDelta(roster!, full, rosterTick) })
       f.citizens = []
+      // emotion by group rides on keyframes (every 5 years); the yearly emotionMix stays on every frame
+      for (const reg of f.regions) delete reg.emotionByGroup
       // static requirement fields (name, track, prereqs, tier, cost, 2026 text, url) ride on keyframes only;
       // requirementsAt() restores them. in-between frames carry id, progress and unlock tick
       // (the 2026 text is kept when it differs from the keyframe's, e.g. a node stalled since then)
-      f.requirements = f.requirements.map(q => ({ id: q.id, progress: q.progress, ...(q.unlockedTick !== undefined ? { unlockedTick: q.unlockedTick } : {}), ...(keyReqText.get(q.id) !== q.realWorld2026 ? { realWorld2026: q.realWorld2026 } : {}) }) as typeof q)
+      // and only the nodes whose progress or text changed since the previous frame are listed
+      f.requirements = f.requirements.filter(q => { const p = prevReq.get(q.id); return !p || p.progress !== q.progress || p.realWorld2026 !== q.realWorld2026 || p.unlockedTick !== q.unlockedTick })
+        .map(q => ({ id: q.id, progress: q.progress, ...(q.unlockedTick !== undefined ? { unlockedTick: q.unlockedTick } : {}), ...(keyReqText.get(q.id) !== q.realWorld2026 ? { realWorld2026: q.realWorld2026 } : {}) }) as typeof q)
     }
     roster = new Map(full.map(c => [c.id, c]))
+    prevReq = reqNow
     rosterTick = w.tick
     frames.push(f)
     opts.onFrame?.(f)
@@ -262,6 +279,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
     const decision = await tickBody(w, ctx, x => decide(x, opts.constitution, ctx.pendingOverrides, ctx.mem), { overrideDir: opts.overrideDir, llmThoughts: live })
     if (w.tick % frameEvery === 0 || decision) emit(decision)
     stepWorld(w)
+    if (w.tick % 12 === 0) recordPlacesYear(w, places)
     stepTwin()
     updateMoods(w)
     if (w.status !== 'alive') { ctx.snapshots.push(snapshotWorld(w)); emit() }
@@ -273,6 +291,8 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   if (w.status === 'destroyed') lessonsLearned = await extractLessons(rec(true))
   const final = rec(true)
   writeJsonAtomic(path.join(process.cwd(), 'data', 'runs', `${opts.runId}.json`), final)
+  // yearly stats, stories and trends for every country, state and real city, loaded lazily by the ui
+  writePlaces(path.join(process.cwd(), 'data', 'runs', `${opts.runId}.places`), opts.runId, places, w)
   // full life histories of every pip that ever lived in this world, loaded lazily by the ui
   writeJsonAtomic(path.join(process.cwd(), 'data', 'runs', `${opts.runId}.lives.json`), { runId: opts.runId, lives: w.lifeArchive })
   if (live) writeJsonAtomic(path.join(process.cwd(), 'data', 'live', `${opts.runId}.json`), final)
@@ -280,7 +300,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
 }
 
 function record(opts: RunOpts, w: World, twin: World, frames: Frame[], baseline: BaselineFrame[], liveFlag: boolean, usage: Usage, lessonsLearned: Lesson[], knownLessons: Lesson[], snapshots: Snapshot[], branchedFrom?: RunRecord['branchedFrom']): RunRecord {
-  const topEvents: WorldEvent[] = w.events.filter(e => e.kind !== 'law' && e.kind !== 'override').slice().sort((a, b) => b.significance - a.significance || b.severity - a.severity || a.tick - b.tick).slice(0, 8)
+  const topEvents: WorldEvent[] = w.topEvents.map(e => ({ ...e }))
   const agentId = opts.agentId ?? 'unassigned'
   const summary: RunSummary = {
     runId: opts.runId, generation: opts.generation, status: w.status, endDate: dateOf(w.tick), ticks: w.tick,

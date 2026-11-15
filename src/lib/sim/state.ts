@@ -2,6 +2,10 @@
 import type { Behavior, Budget, Citizen, City, Company, CrowdState, Faction, Flow, Frontier, HumanCost, Law, Mood, Region, ReligionPolicy, SchoolPolicy, SpaceAsset, WorldEvent, WorldStatus } from '../types'
 import { LAND, initMix, initRail } from './visuals'
 import { onEvent, type CauseInput, type CauseLink, type Story, type Trend } from './causes'
+import { initCountries, type CountryState } from './places'
+import { initCities, initClimate, initCountryMix, type CityState, type ClimateState } from './world-layer'
+import type { InfraDiff } from '../types-v5'
+import type { Mix } from './visuals'
 import seedJson from '../../../data/seed.json'
 import demoJson from '../../../data/demographics.json'
 import { ALLOC_GDP_WEIGHT, BASELINE_BUDGET, BASELINE_RELIGION, BASELINE_SCHOOL, GOMPERTZ_B, REVENUE_SHARE, START_RESERVE } from './constants'
@@ -108,6 +112,7 @@ export type RegionState = {
   famineDeaths: number
   excessDeathsTick: number
   pop0: number
+  valence0: number // mood valence at tick 0 (happiness moves relative to it)
   // cause chains
   yearAcc: Record<string, Record<string, number>> // why-drivers summed over the current year
   yearStart: Record<string, number> // stat values at the start of the year
@@ -171,6 +176,19 @@ export type World = {
   lawsRepeated: number
   lastRepeated: string[] // titles the governor re-passed at its last decision (they did nothing)
   frameCursor: number
+  eventSeq: number
+  eventKinds: Record<string, number>
+  topEvents: WorldEvent[]
+  countries: CountryState[]
+  // phase 1 world layer
+  climate: ClimateState
+  countryMix: Record<string, Mix>
+  countryMix0: Record<string, Mix>
+  retiredPlants: string[]
+  builtPlants: Record<string, number>
+  realCities: CityState[]
+  citiesHitIdx: Record<string, number>
+  infraAcc: InfraDiff[]
   causes: CauseLink[]
   // every pip's full life story, written to data/runs/<runId>.lives.json (not part of snapshots)
   lifeArchive: Record<string, { name: string; regionId: string; events: { tick: number; text: string }[] }>
@@ -223,7 +241,7 @@ export function initWorld(seed: number, twin: boolean): World {
       crowds: [], privateApproval: 0.5, falsificationGap: 0.1, flipped: false, lastWellbeing: 0,
       periodLE: 0, cohortLE: 0, leTrend: 0.2, diseaseBurden: 0, travelHours: TRAVEL_HOURS[r.id] ?? 6,
       causeMult: { cardio: 1, cancer: 1, neuro: 1, metabolic: 1, infectious: 1, injury: 1, other: 1 },
-      agingSlope: GOMPERTZ_B, oldAgeFloor: 1 / 20, pronatal: 0, strikeBoost: 0, newCityPop: 0, whyAcc: {}, famineDeaths: 0, excessDeathsTick: 0, pop0: r.population, yearAcc: {}, yearStart: {}, trends: [], priceIdx: 1,
+      agingSlope: GOMPERTZ_B, oldAgeFloor: 1 / 20, pronatal: 0, strikeBoost: 0, newCityPop: 0, whyAcc: {}, famineDeaths: 0, excessDeathsTick: 0, pop0: r.population, valence0: 0.5, yearAcc: {}, yearStart: {}, trends: [], priceIdx: 1,
       mixCap: initMix(r.id, r.energyTWh * START_RESERVE), farmland: LAND[r.id].farmland, forest: LAND[r.id].forest, railLinks: [], landmarks: [],
     }
   })
@@ -247,9 +265,12 @@ export function initWorld(seed: number, twin: boolean): World {
     status: 'alive', wellbeingSum: 0, wellbeingN: 0, revenueShare: REVENUE_SHARE, citizens: [], crewDeaths: 0, citizenSeq: 0, citizenMeta: {},
     requirements: initRequirements(), cities: [], cityScores: {}, companies: [], factions: initFactions(), frontier: 'none', frontierState: initFrontier(),
     humanCost: { deaths: 0, famineDeaths: 0, unrestDeaths: 0, displaced: 0, approval: 0.5 }, lessonsKnown: 0, researchFocus: [], lawMeta: {}, lawsuits: {},
-    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), lawsProposed: 0, lawsRepeated: 0, lastRepeated: [], frameCursor: 0, spaceAssets: [], flowAcc: [], causes: [], causeSeq: 0, lifeArchive: {}, lastFrameTick: 0,
+    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), lawsProposed: 0, lawsRepeated: 0, lastRepeated: [], frameCursor: 0, eventSeq: 0, eventKinds: {}, topEvents: [], spaceAssets: [], flowAcc: [], causes: [], causeSeq: 0, countries: initCountries(regions), climate: undefined as unknown as ClimateState, countryMix: {}, countryMix0: {}, retiredPlants: [], builtPlants: {}, realCities: [], citiesHitIdx: {}, infraAcc: [], lifeArchive: {}, lastFrameTick: 0,
   }
   initRail(world)
+  world.climate = initClimate(world)
+  initCountryMix(world)
+  initCities(world)
   return world
 }
 
@@ -294,13 +315,18 @@ export type EventInput = Omit<WorldEvent, 'tick' | 'significance'> & { significa
 // cause: who did it and why. events above the noise floor also become CauseLinks (causes.ts)
 export function event(w: World, e: EventInput, cause?: CauseInput): WorldEvent {
   const ev: WorldEvent = { tick: w.tick, ...e, severity: clamp(e.severity), significance: 0 }
-  ;(ev as WorldEvent & { id: string }).id = `e${w.events.length}`
+  ;(ev as WorldEvent & { id: string }).id = `e${w.eventSeq++}`
   ev.significance = Math.round(clamp(e.significance ?? significanceOf(w, ev)) * 1000) / 1000
   if (ev.significance >= HEADLINE_MIN && !ev.headline) {
     const year = START_YEAR + Math.floor((START_MONTH - 1 + w.tick) / 12)
     ev.headline = headlineFor(ev, w.regions.find(r => r.r.id === ev.regionId)?.r.name, year)
   }
   w.events.push(ev)
+  w.eventKinds[ev.kind] = (w.eventKinds[ev.kind] ?? 0) + 1
+  // running top 8 for the run summary (the world only keeps two years of events)
+  if (ev.kind !== 'law' && ev.kind !== 'override') {
+    w.topEvents = [...w.topEvents, ev].sort((a, b) => b.significance - a.significance || b.severity - a.severity || a.tick - b.tick).slice(0, 8)
+  }
   const l = onEvent(w, ev, cause)
   if (l) (ev as WorldEvent & { linkId?: string }).linkId = l.id
   return ev
@@ -311,7 +337,7 @@ export function significanceOf(w: World, e: WorldEvent): number {
   const total = Math.max(1, w.regions.reduce((a, r) => a + r.r.population, 0))
   const reach = e.regionId ? (w.regions.find(r => r.r.id === e.regionId)?.r.population ?? 0) / total : 1
   const mission = e.kind === 'launch' || e.kind === 'breakthrough' ? (/mars|moon|frontier|lifespan|self sustaining|outpost|asteroid/.test(e.text) ? 0.5 : 0.15) : e.kind === 'war' ? 0.3 : 0
-  const sameKind = w.events.filter(x => x.kind === e.kind).length
+  const sameKind = w.eventKinds[e.kind] ?? 0
   const rarity = 1 / (1 + sameKind / 5)
   return clamp(e.severity * (0.35 + 0.65 * Math.sqrt(reach)) * 0.7 + mission + 0.25 * rarity * e.severity)
 }

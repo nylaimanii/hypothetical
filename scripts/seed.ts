@@ -9,6 +9,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { Provenance, Region } from '../src/lib/types'
+import { assignRegion, type RegionId } from '../src/lib/sim/regions'
+import { buildNameIndex, getJson, getText, getZipEntry, parseCsvLine, wbIndicator, type Country, type Obs } from './geo-lib'
 import { SEEDS, wordCount } from '../src/lib/evolve/seeds'
 import { DATA, dirs, writeJson } from '../src/lib/evolve/store'
 
@@ -25,7 +27,7 @@ function seedConstitutions() {
   if (!ok) { console.error('a seed is 250+ words or has an em-dash'); process.exit(1) }
 }
 
-const WB = 'https://api.worldbank.org/v2'
+import { WB } from './geo-lib'
 const wbUrl = (ind: string) => `https://data.worldbank.org/indicator/${ind}`
 const OWID_KCAL = 'https://ourworldindata.org/grapher/daily-per-capita-caloric-supply.csv?v=1&csvType=full&useColumnShortNames=true'
 const OWID_KCAL_PAGE = 'https://ourworldindata.org/grapher/daily-per-capita-caloric-supply'
@@ -36,7 +38,6 @@ const NCD_PAGE = 'https://www.ncdrisc.org/data-downloads-height.html'
 const WPP_PAGE = 'https://population.un.org/wpp/'
 const WGI_PAGE = 'https://www.worldbank.org/en/publication/worldwide-governance-indicators'
 
-type RegionId = 'na' | 'latam' | 'europe' | 'rus_ca' | 'mideast' | 'nafrica' | 'ssa' | 'sasia' | 'easia' | 'seasia' | 'oceania' | 'carib_pac'
 
 // name, map anchor (rough population centroid, ESTIMATE, display only), color (design choice, no ember tones)
 const REGION_META: Record<RegionId, { name: string; lat: number; lon: number; color: string }> = {
@@ -54,137 +55,6 @@ const REGION_META: Record<RegionId, { name: string; lat: number; lon: number; co
   carib_pac: { name: 'Caribbean + Pacific Islands', lat: 15, lon: -75, color: '#7f8fa6' },
 }
 const REGION_IDS = Object.keys(REGION_META) as RegionId[]
-
-// region assignment starts from the World Bank region of each country, with these moves
-const CARIBBEAN = new Set(['ABW', 'ATG', 'BHS', 'BRB', 'CUB', 'CUW', 'CYM', 'DMA', 'DOM', 'GRD', 'HTI', 'JAM', 'KNA', 'LCA', 'MAF', 'PRI', 'SXM', 'TCA', 'TTO', 'VCT', 'VGB', 'VIR'])
-const RUS_CA = new Set(['RUS', 'KAZ', 'UZB', 'TKM', 'KGZ', 'TJK', 'ARM', 'AZE', 'GEO'])
-const NAFRICA = new Set(['DZA', 'EGY', 'LBY', 'MAR', 'TUN', 'SDN'])
-const EASIA = new Set(['CHN', 'JPN', 'KOR', 'PRK', 'MNG', 'HKG', 'MAC', 'TWN'])
-const SEASIA = new Set(['IDN', 'PHL', 'VNM', 'THA', 'MMR', 'MYS', 'KHM', 'LAO', 'SGP', 'TLS', 'BRN'])
-const OCEANIA = new Set(['AUS', 'NZL'])
-
-function assignRegion(iso3: string, wbRegion: string): RegionId | null {
-  if (iso3 === 'TUR') return 'mideast'
-  if (iso3 === 'MLT') return 'europe'
-  if (iso3 === 'DJI') return 'ssa'
-  if (NAFRICA.has(iso3)) return 'nafrica'
-  switch (wbRegion) {
-    case 'NAC': return 'na'
-    case 'SAS': return 'sasia'
-    case 'SSF': return 'ssa'
-    case 'MEA': return 'mideast'
-    case 'ECS': return RUS_CA.has(iso3) ? 'rus_ca' : 'europe'
-    case 'LCN': return CARIBBEAN.has(iso3) ? 'carib_pac' : 'latam'
-    case 'EAS':
-      if (EASIA.has(iso3)) return 'easia'
-      if (SEASIA.has(iso3)) return 'seasia'
-      if (OCEANIA.has(iso3)) return 'oceania'
-      return 'carib_pac' // pacific island states
-    default: return null
-  }
-}
-
-async function getJson(url: string): Promise<unknown> {
-  for (let i = 0; i < 4; i++) {
-    try {
-      const res = await fetch(url, { headers: { 'User-Agent': 'hypothetical-seed/1.0' }, signal: AbortSignal.timeout(90_000) })
-      if (res.ok) return await res.json()
-    } catch { /* retry */ }
-    await new Promise(r => setTimeout(r, 1500 * (i + 1)))
-  }
-  throw new Error(`fetch failed: ${url}`)
-}
-
-async function getText(url: string): Promise<string> {
-  for (let i = 0; i < 4; i++) {
-    try {
-      const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(120_000) })
-      if (res.ok) return await res.text()
-    } catch { /* retry */ }
-    await new Promise(r => setTimeout(r, 1500 * (i + 1)))
-  }
-  throw new Error(`fetch failed: ${url}`)
-}
-
-async function getZipEntry(url: string, match: string): Promise<string> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyp-seed-'))
-  const zip = path.join(dir, 'a.zip')
-  // curl, not fetch: ncdrisc.org answers non-browser user agents with 421
-  // (and intermittently over http/2), so force http/1.1 and retry
-  for (let i = 0; ; i++) {
-    try { execFileSync('curl', ['-sSL', '--fail', '--http1.1', '-m', '180', '-A', 'Mozilla/5.0', '-o', zip, url], { stdio: 'ignore' }); break }
-    catch (e) { if (i >= 4) throw e; await new Promise(r => setTimeout(r, 2000 * (i + 1))) }
-  }
-  const list = execFileSync('unzip', ['-Z1', zip], { encoding: 'utf8' }).split('\n').filter(Boolean)
-  const entry = list.find(n => n.includes(match))
-  if (!entry) throw new Error(`no entry ${match} in ${url}`)
-  return execFileSync('unzip', ['-p', zip, entry], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
-}
-
-type Country = { iso3: string; name: string; region: RegionId }
-type Obs = Map<string, { value: number; date: string }>
-
-async function wbIndicator(ind: string, source?: number): Promise<Obs> {
-  const url = `${WB}/country/all/indicator/${ind}?format=json&mrnev=1&per_page=1000${source ? `&source=${source}` : ''}`
-  const json = await getJson(url) as [unknown, Array<{ countryiso3code: string; value: number | null; date: string }> | null]
-  const out: Obs = new Map()
-  console.log(`  ${ind}: ${(json[1] ?? []).length} rows`)
-  for (const row of json[1] ?? []) {
-    if (row.countryiso3code && row.value !== null && row.value !== undefined) out.set(row.countryiso3code, { value: row.value, date: row.date })
-  }
-  return out
-}
-
-function parseCsvLine(line: string): string[] {
-  const out: string[] = []
-  let cur = ''
-  let q = false
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i]
-    if (q) {
-      if (c === '"' && line[i + 1] === '"') { cur += '"'; i++ }
-      else if (c === '"') q = false
-      else cur += c
-    } else if (c === '"') q = true
-    else if (c === ',') { out.push(cur); cur = '' }
-    else cur += c
-  }
-  out.push(cur)
-  return out
-}
-
-function norm(s: string): string {
-  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z]/g, '')
-}
-
-// names used by Pew and NCD-RisC that differ from World Bank names
-const ALIASES: Record<string, string> = {
-  unitedstatesofamerica: 'USA', russia: 'RUS', iran: 'IRN', egypt: 'EGY', southkorea: 'KOR', republicofkorea: 'KOR',
-  northkorea: 'PRK', dprkorea: 'PRK', vietnam: 'VNM', vietnamviet: 'VNM', laos: 'LAO', laopdr: 'LAO', syria: 'SYR',
-  yemen: 'YEM', venezuela: 'VEN', bolivia: 'BOL', tanzania: 'TZA', democraticrepublicofthecongo: 'COD', drcongo: 'COD',
-  republicofthecongo: 'COG', congo: 'COG', ivorycoast: 'CIV', cotedivoire: 'CIV', gambia: 'GMB', thegambia: 'GMB',
-  kyrgyzstan: 'KGZ', slovakia: 'SVK', turkey: 'TUR', turkiye: 'TUR', macedonia: 'MKD', northmacedonia: 'MKD', tfyrmacedonia: 'MKD',
-  moldova: 'MDA', republicofmoldova: 'MDA', micronesia: 'FSM', federatedstatesofmicronesia: 'FSM', micronesiafederatedstatesof: 'FSM',
-  stkittsandnevis: 'KNA', saintkittsandnevis: 'KNA', stlucia: 'LCA', saintlucia: 'LCA', stvincentandthegrenadines: 'VCT',
-  saintvincentandthegrenadines: 'VCT', capeverde: 'CPV', caboverde: 'CPV', swaziland: 'SWZ', eswatini: 'SWZ', burma: 'MMR',
-  myanmar: 'MMR', burmamyanmar: 'MMR', palestinianterritories: 'PSE', palestine: 'PSE', occupiedpalestinianterritory: 'PSE',
-  hongkong: 'HKG', macau: 'MAC', macao: 'MAC', bahamas: 'BHS', thebahamas: 'BHS', brunei: 'BRN', czechrepublic: 'CZE', czechia: 'CZE',
-  unitedkingdom: 'GBR', greatbritain: 'GBR', saotomeandprincipe: 'STP', timorleste: 'TLS', easttimor: 'TLS', curacao: 'CUW',
-  usvirginislands: 'VIR', britishvirginislands: 'VGB', samoa: 'WSM', americansamoa: 'ASM', guineabissau: 'GNB', kosovo: 'XKX',
-  china: 'CHN', taiwan: 'TWN', unitedrepublicoftanzania: 'TZA', libya: 'LBY', libyanarabjamahiriya: 'LBY',
-  bolivarianrepublicofvenezuela: 'VEN', iranislamicrepublicof: 'IRN', syrianarabrepublic: 'SYR', egyptarabrepublic: 'EGY',
-  koreadem: 'PRK', korearep: 'KOR', republicofthegambia: 'GMB', sintmaarten: 'SXM', saintmartin: 'MAF', stmartin: 'MAF',
-  turksandcaicosislands: 'TCA', caymanislands: 'CYM', northernmarianaislands: 'MNP', guam: 'GUM', frenchpolynesia: 'PYF',
-  newcaledonia: 'NCL', marshallislands: 'MHL', solomonislands: 'SLB', puertorico: 'PRI', westernsahara: 'ESH',
-  bosniaherzegovina: 'BIH', chinahongkongsar: 'HKG', macedoniatfyr: 'MKD', centralafricanrepublic: 'CAF', southsudan: 'SSD', sudan: 'SDN', somalia: 'SOM', ethiopia: 'ETH',
-}
-
-function buildNameIndex(countries: Country[]): (name: string) => string | undefined {
-  const idx = new Map<string, string>()
-  for (const c of countries) idx.set(norm(c.name), c.iso3)
-  for (const [k, v] of Object.entries(ALIASES)) idx.set(k, v)
-  return (name: string) => idx.get(norm(name))
-}
 
 type Agg = { sum: number; pop: number; covered: number }
 
