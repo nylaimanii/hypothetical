@@ -48,7 +48,9 @@ export type Candidate = {
 export type GenerationFile = {
   generation: number
   seeds: number[]
-  status: 'running' | 'done'
+  // superseded: half-run on an older sim version, its population ran again as the next generation
+  status: 'running' | 'done' | 'superseded'
+  simVersion?: string
   startedAt: string
   finishedAt?: string
   population: Candidate[]
@@ -113,13 +115,13 @@ export function removeShowcase(runId: string) {
 
 // summaries of every local run, so agents and compare never parse the big records
 const runIndexFile = () => path.join(process.cwd(), 'data', 'runs', 'index.json')
-export type IndexedRun = RunSummary & { seed: number }
+export type IndexedRun = RunSummary & { seed: number; simVersion?: string }
 export function readRunIndex(): IndexedRun[] {
   return readJson<IndexedRun[]>(runIndexFile()) ?? []
 }
-export function indexRun(summary: RunSummary, seed: number) {
+export function indexRun(summary: RunSummary, seed: number, simVersion?: string) {
   const all = readRunIndex().filter(r => r.runId !== summary.runId)
-  all.push({ ...summary, seed })
+  all.push({ ...summary, seed, ...(simVersion ? { simVersion } : {}) })
   writeJson(runIndexFile(), all)
 }
 

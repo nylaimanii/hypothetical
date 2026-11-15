@@ -26,6 +26,7 @@ import { isTransient, realClock, runQueue, type Clock } from './queue'
 import { trackWorld } from './usage'
 import { lineageRoots, recordAgentRun, registerPopulation, settleGeneration } from './agents'
 import { indexFeatures, recomputeSteps } from './steps'
+import { enterVersion, simVersionOnDisk, verifyLessons } from './version'
 import { checkHall } from './hall'
 import { sendDigest, sendGoalReport } from '../notify/email'
 
@@ -59,6 +60,10 @@ export const control = {
   // the last 5 finished worlds, newest first, for mission control
   recent: [] as RunSummary[],
   stopRequested: false,
+  // the sim version this process runs, and the newer one found on disk at a generation boundary (then evolve exits
+  // so scripts/evolve.ts can restart it on the new code)
+  simVersion: '',
+  restartForVersion: null as string | null,
   goalReached: false,
 }
 
@@ -174,7 +179,9 @@ async function learnFromDeath(g: GenerationFile, record: RunRecord, deps: Deps):
   if (!lessons.length) {
     try { lessons = await deps.extract(record) } catch (e) { deps.log(`  lessons pending for ${s.runId}: ${(e as Error).message}`) }
   }
-  const { added, bumped } = mergeLessons(lessons)
+  const { added, bumped } = mergeLessons(lessons.map(l => ({ ...l, simVersion: control.simVersion, verified: true, verifiedIn: [control.simVersion] })))
+  // dying of a mistake a lesson named confirms that lesson on this sim version
+  verifyLessons([...(repeat ? [repeat.id] : []), ...bumped.map(l => l.id)], control.simVersion)
   g.stats = g.stats ?? { deaths: 0, repeatDeaths: 0, newLessons: [] }
   g.stats.deaths++
   if (repeat) g.stats.repeatDeaths++
@@ -223,7 +230,9 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, stage: Stag
     record = { runId, generation: g.generation, seed, constitution: c.constitution, frames, baseline: [], summary, agentId: c.id, snapshots: [] }
     writeJson(path.join(dirs.runs, `${runId}.json`), record)
   }
-  indexRun(summary, seed)
+  indexRun(summary, seed, control.simVersion)
+  // applying a lesson and surviving confirms it on this sim version
+  if (summary.status !== 'destroyed') verifyLessons([...new Set(record.frames.flatMap(f => f.decision?.lessonsApplied ?? []))], control.simVersion)
   recordAgentRun(summary, stage)
   // feature row for the steps recipe (real llm runs only)
   try { indexFeatures(record) } catch (e) { deps.log(`  steps: could not index ${runId}: ${(e as Error).message}`) }
@@ -242,7 +251,7 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, stage: Stag
   }
   // hall of history and showcase come from full 100-year runs only. hall is sent as one telegram per generation
   if (stage === 'full' && !summary.causeOfDeath?.startsWith('runner error')) {
-    const entries = checkHall(record, c.name)
+    const entries = checkHall(record, c.name, control.simVersion)
     if (entries.length) {
       g.stats = g.stats ?? { deaths: 0, repeatDeaths: 0, newLessons: [] }
       g.stats.newHall = [...(g.stats.newHall ?? []), ...entries]
@@ -382,6 +391,7 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
   const at = new Date().toISOString()
   learning.rows = learning.rows.filter(r => r.generation !== g.generation)
   learning.rows.push({
+    simVersion: control.simVersion,
     generation: g.generation, bestScore: bestRun?.score ?? 0, lessonsKnown, repeatMistakeRate: Math.round(repeatRate * 1000) / 1000,
     worlds: allRuns.length, deaths: stats.deaths, repeatDeaths: stats.repeatDeaths, goalAchieved: goals, champion: champion?.name ?? best?.name, at,
   })
@@ -391,7 +401,7 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
   for (const c of g.population) for (const r of c.runs ?? []) byLineage.set(roots(c.id), [...(byLineage.get(roots(c.id)) ?? []), r])
   for (const [lineage, runs] of byLineage) {
     learning.rows.push({
-      generation: g.generation, lineage, bestScore: Math.max(...runs.map(r => r.score)), lessonsKnown, repeatMistakeRate: Math.round(repeatRate * 1000) / 1000,
+      simVersion: control.simVersion, generation: g.generation, lineage, bestScore: Math.max(...runs.map(r => r.score)), lessonsKnown, repeatMistakeRate: Math.round(repeatRate * 1000) / 1000,
       worlds: runs.length, deaths: runs.filter(r => r.status === 'destroyed').length, repeatDeaths: 0, goalAchieved: runs.filter(isWin).length, at,
     })
   }
@@ -468,11 +478,26 @@ export async function evolve(opts: EvolveOptions) {
   control.goalReached = false
   control.recent = readRunIndex().filter(r => r.generation > 0).slice(-5).reverse()
   try {
+    control.simVersion = simVersionOnDisk()
+    const previous = enterVersion(control.simVersion)
+    if (previous) {
+      const carried = readLessons().length
+      const msg = `new sim version ${control.simVersion} (was ${previous}): leaderboard, steps, hall and learning curve start fresh. ${carried} lessons carried forward, unverified until worlds confirm them`
+      deps.log(msg); await send(msg)
+    }
     let last = lastGeneration()
     let current: GenerationFile
-    if (!last) current = firstGeneration()
+    if (!last) current = { ...firstGeneration(), simVersion: control.simVersion }
+    else if (last.status === 'running' && last.simVersion && last.simVersion !== control.simVersion) {
+      // half-run on an older sim version: same population, run again from scratch as a new generation
+      writeJson(genFile(last.generation), { ...last, status: 'superseded' })
+      const n = last.generation + 1
+      current = { generation: n, seeds: seedsFor(n), status: 'running', startedAt: new Date().toISOString(), simVersion: control.simVersion,
+        population: last.population.map(({ runs: _r, score: _s, full: _f, interrupted: _i, ...c }) => c) }
+      deps.log(`gen ${last.generation} was half-run on ${last.simVersion}; its population runs again as gen ${n} on ${control.simVersion}`)
+    }
     else if (last.status === 'running') { current = last; deps.log(`resuming gen ${current.generation}`) }
-    else current = { generation: last.generation + 1, seeds: seedsFor(last.generation + 1), status: 'running', startedAt: new Date().toISOString(), population: await breed(last, popSize, deps.log) }
+    else current = { generation: last.generation + 1, seeds: seedsFor(last.generation + 1), status: 'running', startedAt: new Date().toISOString(), simVersion: control.simVersion, population: await breed(last, popSize, deps.log) }
 
     for (let done = 0; done < gens && !control.stopRequested; done++) {
       // every active agent runs the same 2 seeds this generation, so compare mode has like-for-like worlds
@@ -483,8 +508,16 @@ export async function evolve(opts: EvolveOptions) {
       // the mission is done: finish this generation, then stop
       if (control.goalReached) { deps.log('goal achieved, evolution stops'); break }
       if (control.stopRequested || done === gens - 1) break
+      // a new sim version on disk: stop here, at the generation boundary, and let the script restart on it
+      const onDisk = simVersionOnDisk()
+      if (onDisk !== control.simVersion) {
+        control.restartForVersion = onDisk
+        const msg = `sim version changed (${control.simVersion} to ${onDisk}) after gen ${current.generation}: restarting evolution on the new version`
+        deps.log(msg); await send(msg)
+        break
+      }
       last = current
-      current = { generation: last.generation + 1, seeds: seedsFor(last.generation + 1), status: 'running', startedAt: new Date().toISOString(), population: await breed(last, popSize, deps.log) }
+      current = { generation: last.generation + 1, seeds: seedsFor(last.generation + 1), status: 'running', startedAt: new Date().toISOString(), simVersion: control.simVersion, population: await breed(last, popSize, deps.log) }
     }
   } finally {
     control.running = false

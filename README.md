@@ -76,6 +76,12 @@ If any of these is missing, that feature logs once and is skipped. Nothing crash
 - **Hall of history:** `data/hall.json` records firsts (moon, a Mars city, an eradicated disease, 150 and 200 year lifespans), records (population, lifespan, fastest moon), catastrophes (biggest collapse, deadliest famine) and milestones. Each entry links to its world and the exact tick of the event behind it.
 - Evolution keeps going, generation after generation, until a world achieves the goal. Then it finishes that generation and stops. Use `--gens n` to stop sooner.
 - Evolution is resumable: rerunning `npm run evolve` continues the unfinished generation.
+- **Sim versions:**
+  - Every world records the sim version that ran it: B's `SIM_VERSION`, or a hash of the sim and agent source if there is none.
+  - The leaderboard, steps, hall and learning curve are kept per version. When the version changes, the old files move to `data/versions/<version>/` and the new version starts clean.
+  - Lessons carry forward but are unverified until a world on the new version dies of the mistake a lesson names, or applies the lesson and survives.
+  - A running evolve checks for a new version at every generation boundary and restarts itself on it, still under caffeinate.
+  - `GET /api/versions` lists the versions; steps, hall and learning take `?version=`.
 - An unreachable LLM is never a death:
   - **Ollama down before a world starts:** the generation pauses, sends one telegram ("paused: ollama not running"), checks every 60s, and resumes on its own.
   - **Ollama dies mid-world** (so the governor fell back to offline decisions): the world is marked interrupted, is not scored, and runs again once ollama is back.

@@ -4,12 +4,13 @@ import path from 'node:path'
 import type { Frame, Frontier, HallEntry, RunRecord } from '../types'
 import { FRONTIER_ORDER } from './agents'
 import { readJson, writeJson } from './store'
+import { versionedPath } from './version'
 
 type HallFile = { entries: HallEntry[]; records: Record<string, { value: number; runId: string }> }
-const hallFile = () => path.join(process.cwd(), 'data', 'hall.json')
+const hallFile = (v?: string | null) => versionedPath('hall.json', v)
 
-export function readHall(): HallFile {
-  const raw = readJson<HallFile | HallEntry[]>(hallFile())
+export function readHall(v?: string | null): HallFile {
+  const raw = readJson<HallFile | HallEntry[]>(hallFile(v))
   if (Array.isArray(raw)) return { entries: raw, records: {} }
   return raw ?? { entries: [], records: {} }
 }
@@ -42,14 +43,14 @@ function frontierTick(frames: Frame[], f: Frontier): number | null {
 }
 
 // scans one finished world and returns the hall entries it earned (already saved to data/hall.json)
-export function checkHall(record: RunRecord, agentName: string): HallEntry[] {
+export function checkHall(record: RunRecord, agentName: string, simVersion?: string): HallEntry[] {
   const hall = readHall()
   const s = record.summary
   const frames = [...record.frames].sort((a, b) => a.tick - b.tick)
   const added: HallEntry[] = []
   const has = (key: string) => hall.entries.some(e => e.id.startsWith(`${key}:`))
   const add = (key: string, kind: HallEntry['kind'], title: string, tick: number, text: string) => {
-    const e: HallEntry = { id: `${key}:${record.runId}`, title, runId: record.runId, agentId: s.agentId, tick, kind, text }
+    const e: HallEntry & { simVersion?: string } = { id: `${key}:${record.runId}`, title, runId: record.runId, agentId: s.agentId, tick, kind, text, ...(simVersion ? { simVersion } : {}) }
     hall.entries.push(e)
     added.push(e)
   }

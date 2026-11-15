@@ -3,11 +3,13 @@
 import path from 'node:path'
 import type { Lesson, RunSummary } from '../types'
 import { readJson, writeJson } from './store'
+import { versionedPath } from './version'
 
 const lessonsFile = () => path.join(process.cwd(), 'data', 'lessons.json')
-const learningFile = () => path.join(process.cwd(), 'data', 'learning.json')
+const learningFile = (v?: string | null) => versionedPath('learning.json', v)
 
 export type LearningRow = {
+  simVersion?: string
   generation: number
   // the seed agent this row's worlds descend from; absent on the whole-generation row
   lineage?: string
@@ -29,8 +31,8 @@ export function readLessons(): Lesson[] {
   return Array.isArray(raw) ? raw : raw?.lessons ?? []
 }
 
-export function readLearning(): LearningFile {
-  return readJson<LearningFile>(learningFile()) ?? { worldsRun: 0, rows: [] }
+export function readLearning(v?: string | null): LearningFile {
+  return readJson<LearningFile>(learningFile(v)) ?? { worldsRun: 0, rows: [] }
 }
 export function writeLearning(l: LearningFile) {
   writeJson(learningFile(), l)

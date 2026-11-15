@@ -11,10 +11,11 @@ import path from 'node:path'
 import type { Budget, RunRecord, Step } from '../types'
 import { dirs, readJson, readRunIndex, writeJson } from './store'
 import { isRealLlmRun } from './showcase'
+import { currentVersion, versionedPath } from './version'
 
 const BUDGET_KEYS: (keyof Budget)[] = ['food', 'energy', 'education', 'space', 'security', 'welfare', 'research']
 const featuresFile = () => path.join(process.cwd(), 'data', 'runs', 'features.json')
-const stepsFile = () => path.join(process.cwd(), 'data', 'steps.json')
+const stepsFile = (v?: string | null) => versionedPath('steps.json', v)
 
 export type RunFeatures = {
   runId: string; agentId: string; generation: number; horizon: 'screen' | 'full'
@@ -67,8 +68,9 @@ export function indexFeatures(rec: RunRecord) {
 // fills in any real run that finished before the feature index existed
 function backfill(all: Record<string, RunFeatures>): Record<string, RunFeatures> {
   let changed = false
+  const v = currentVersion()
   for (const r of readRunIndex()) {
-    if (all[r.runId] || r.status === 'alive' && r.ticks < 600) continue
+    if (all[r.runId] || (r.simVersion && r.simVersion !== v) || (r.status === 'alive' && r.ticks < 600)) continue
     const rec = readJson<RunRecord>(path.join(dirs.runs, `${r.runId}.json`))
     if (rec && isRealLlmRun(rec)) { all[r.runId] = featuresOf(rec); changed = true }
   }
@@ -162,8 +164,8 @@ export function recomputeSteps(): StepsFile {
   return out
 }
 
-export function readSteps(): StepsFile | null {
-  return readJson<StepsFile>(stepsFile())
+export function readSteps(v?: string | null): StepsFile | null {
+  return readJson<StepsFile>(stepsFile(v))
 }
 
 // a recipe over just these worlds (the ui's open tabs). unknown ids are ignored
