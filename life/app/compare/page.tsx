@@ -4,13 +4,14 @@ import { findLife, listWorlds, readIndex } from '@/lib/life/store'
 import { lifeStory, scoreWords } from '@/lib/life/story'
 import type { LifeRecord, ScoreParts } from '@/lib/life/types'
 import { compareView } from '@/lib/life/views'
+import { firstName } from '@/lib/life/facts'
 import Portrait from '../../components/Portrait'
 
 export const metadata: Metadata = { title: 'one life · compare' }
 export const dynamic = 'force-dynamic'
 
 const PARTS: [keyof ScoreParts, string][] = [['healthyYears', 'healthy years'], ['relationships', 'people close to them'], ['contribution', 'help given to others'], ['meaning', 'sense of purpose'], ['wellbeing', 'how good the days felt']]
-const first = (r: LifeRecord) => r.name.split(' ')[0]
+const first = (r: LifeRecord) => firstName(r)
 
 // /compare?a=<lifeId>&b=<lifeId>: two lives in the same world. what did one do differently from the other?
 export default async function Compare({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {

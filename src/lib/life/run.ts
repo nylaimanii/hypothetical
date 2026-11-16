@@ -6,6 +6,7 @@ import { normal, pickWeighted, stream } from '../sim/rng'
 import { provider, withUsage } from '../agent/llm'
 import { WorldEnv } from './env'
 import { worldBrief } from './brief'
+import { nameFor as sharedName, newNameRegistry } from '../sim/names'
 import { yearOf } from './facts'
 import { pickBirthplace, nameFor, type Continent } from './births'
 import { RESEARCH as R, PROVENANCE } from './research'
@@ -52,16 +53,20 @@ export function createPerson(world: WorldEnv, seed: number, continent?: Continen
   const t = (): number => Math.max(0.03, Math.min(0.97, 0.5 + 0.17 * normal(r)))
   const temperament: Temperament = { openness: t(), conscientiousness: t(), extraversion: t(), agreeableness: t(), neuroticism: t() }
   const quintile = pickWeighted<number>(r, QUINTILE_AT_BIRTH) + 1
-  const n = nameFor(r, regionId, sex)
+  // names: B's shared generator. parents first, then her and her siblings in the family's pattern
+  const names = newNameRegistry()
+  const takenGiven = new Set<string>() // (across the whole family, whatever their family names)
+  const nm = (o: Omit<Parameters<typeof sharedName>[2], 'countryId' | 'regionId'>) => { let x = sharedName(names, Math.floor(r() * 2 ** 32) >>> 0, { countryId: country.id, regionId, ...o }); for (let k = 0; k < 20 && takenGiven.has(x.given.toLowerCase()); k++) x = sharedName(names, Math.floor(r() * 2 ** 32) >>> 0, { countryId: country.id, regionId, ...o }); takenGiven.add(x.given.toLowerCase()); return { given: x.given.toLowerCase(), family: x.family.toLowerCase(), group: x.group, full: x.full.toLowerCase(), ...(x.family2 ? { family2: x.family2.toLowerCase() } : {}) } }
+  const mother = nm({ sex: 'female' }), father = nm({ sex: 'male' })
   const informal = (R.informalUrbanShare[regionId] ?? 0.2) * (quintile <= 2 ? 1.7 : quintile === 3 ? 0.6 : 0.05)
   const mAge = MOTHER_AGE[regionId] ?? 28
   const motherAge = Math.max(16, Math.min(44, mAge + 5.5 * normal(r)))
   const fatherPresent = r() < 0.88 // ESTIMATE: most children are born with a father in the household (un women 2019)
   const tfr = d.vitalRates?.tfr ?? 2.3
   const olderSibs = Math.max(0, Math.min(8, Math.round((tfr - 1) * (motherAge - 18) / Math.max(8, mAge - 18) * 0.6 + normal(r) * 0.8)))
-  const mother = nameFor(r, regionId, 'female'), father = nameFor(r, regionId, 'male')
+  const n = nm({ sex, father: fatherPresent ? father : undefined, mother })
   const p: Person = {
-    seed, name: `${n.given} ${n.family}`, sex, look, quintile, temperament,
+    seed, name: n.full, nameParts: n, names, sex, look, quintile, temperament,
     kid: { hungerMonths: 0, displaced: false, lostParent: false, famineMonths: 0, unstableMonths: 0 }, marks: null, aces: 0,
     place: { cityId: city.id, city: city.name, countryId: country.id, country: country.name, regionId, lat: city.lat, lon: city.lon },
     places: [], tick: 0, alive: true, deathCause: null,
@@ -72,17 +77,15 @@ export function createPerson(world: WorldEnv, seed: number, continent?: Continen
     savings: 0, home: r() < informal ? 'informal_settlement' : 'family_home', saveRate: 0.03,
     habits: new Set(), quitSmokingAge: null, friends: 0.2, community: 0.2,
     kin: [
-      { id: 'mother', name: mother.given, relation: 'mother', sex: 'female', bornTick: -Math.round(motherAge * 12), bond: 0.8 },
-      ...(fatherPresent ? [{ id: 'father', name: father.given, relation: 'father' as const, sex: 'male' as const, bornTick: -Math.round((motherAge + 3 + 3 * normal(r)) * 12), bond: 0.65 }] : []),
+      { id: 'mother', name: mother.given, family: mother.family, relation: 'mother', sex: 'female', bornTick: -Math.round(motherAge * 12), bond: 0.8 },
+      ...(fatherPresent ? [{ id: 'father', name: father.given, family: father.family, relation: 'father' as const, sex: 'male' as const, bornTick: -Math.round((motherAge + 3 + 3 * normal(r)) * 12), bond: 0.65 }] : []),
       ...(() => {
         // siblings never share a name with each other or the chosen person
-        const taken = new Set([n.given, mother.given, father.given])
+        // (the registry keeps given names unique within the family)
         return Array.from({ length: olderSibs }, (_, i) => {
           const s: Sex = r() < 0.5 ? 'female' : 'male'
-          let name = nameFor(r, regionId, s).given
-          for (let k = 0; k < 6 && taken.has(name); k++) name = nameFor(r, regionId, s).given
-          taken.add(name)
-          return { id: `sib${i + 1}`, name, relation: 'sibling' as const, sex: s, bornTick: -Math.round((2 + i * 2.5 + r()) * 12), bond: 0.6 }
+          const sn = nm({ sex: s, father: fatherPresent ? father : undefined, mother })
+          return { id: `sib${i + 1}`, name: sn.given, family: sn.family, relation: 'sibling' as const, sex: s, bornTick: -Math.round((2 + i * 2.5 + r()) * 12), bond: 0.6 }
         })
       })(),
     ],
@@ -118,7 +121,7 @@ async function simulate(world: WorldEnv, seed: number, mode: Mode): Promise<SimO
   let ownsHome = false, lowHealth = false, wildSent = false
   const burden0 = world.regionAt(12, p.place.regionId).diseaseBurden || 0.1
   const yearOf = (tick: number) => 2026 + Math.floor((tick + 10) / 12)
-  const first = p.name.split(' ')[0]
+  const first = p.nameParts.given
 
   if (mode.kind === 'self') {
     addEvent(p, { kind: 'birth', text: `born in ${p.place.city}, ${p.place.country}: ${familyStory(p).replace(` in ${p.place.city}`, '')}`, severity: 0.6, emotion: 'joy' })
@@ -196,7 +199,7 @@ async function simulate(world: WorldEnv, seed: number, mode: Mode): Promise<SimO
       const saver = milestones.filter(m => m.lessonApplied).map(m => mode.lessons.find(l => l.id === m.lessonApplied)).find(Boolean)
       if (saver) {
         wildSent = true
-        void sendWild(p.name, `${first} · ${yearOf(p.tick)} · ${p.place.city.toLowerCase()}: the same ${first} with the usual choices died right here, at ${Math.floor(mode.twinDeath.tick / 12)}, of ${mode.twinDeath.cause}. this one is still going, on a lesson an earlier life left: ${saver.rule}\n${lifeLink(mode.lifeId, p.tick)}`)
+        void sendWild(p.nameParts.given, `${first} · ${yearOf(p.tick)} · ${p.place.city.toLowerCase()}: the same ${first} with the usual choices died right here, at ${Math.floor(mode.twinDeath.tick / 12)}, of ${mode.twinDeath.cause}. this one is still going, on a lesson an earlier life left: ${saver.rule}\n${lifeLink(mode.lifeId, p.tick)}`)
       }
     }
 
@@ -357,7 +360,7 @@ export async function runLife(o: RunLifeOpts): Promise<LifeRecord> {
   const record: LifeRecord = {
     lifeId, worldId: world.id, worldSeed: world.seed, worldScore: world.record.summary.score, worldStatus: world.record.summary.status, worldVersion: o.worldVersion,
     lifeNo, seed, simVersion: LIFE_SIM_VERSION,
-    name: p.name, sex: p.sex, look: p.look, temperament: p.temperament, childhood: p.marks,
+    name: p.name, given: p.nameParts.given, sex: p.sex, look: p.look, temperament: p.temperament, childhood: p.marks,
     birthTick: 0, deathTick: p.tick, deathAge, deathCause: p.deathCause,
     birthplace: p.places[0], places: p.places, family: { quintile: p.quintile, story: familyStory(createPerson(world, seed, o.continent)) },
     kin: p.kin, snaps: self.snaps, milestones: self.milestones, events: p.events, journal: self.journal, env: self.env,

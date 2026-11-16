@@ -32,7 +32,8 @@ export type ChildhoodMarks = { hungerMonths: number; displaced: boolean; lostPar
 export type Place = { cityId: string; city: string; countryId: string; country: string; regionId: string; lat: number; lon: number }
 
 export type Kin = {
-  id: string; name: string
+  id: string; name: string // their given name (what she calls them)
+  family?: string // their family name, when the record knows it (from B's nameFor)
   relation: 'mother' | 'father' | 'sibling' | 'partner' | 'child' | 'grandchild'
   sex: Sex
   bornTick: number // negative for people born before 2026-11
@@ -126,6 +127,7 @@ export type EnvYear = {
 
 export type LifeRecord = {
   lifeId: string // `${worldId}-life-${lifeNo}`
+  given?: string // her given name (some naming groups put the family name first, so never split `name` for it)
   worldId: string; worldSeed: number; worldScore: number; worldStatus: string
   lifeNo: number // 1-based: life #N in this world
   seed: number

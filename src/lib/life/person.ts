@@ -11,6 +11,9 @@ export type Habit = 'smokes' | 'drinks_heavily' | 'exercises' | 'volunteers' | '
 
 export type Person = {
   seed: number; name: string; sex: Sex; look: Look; quintile: number; temperament: Temperament
+  nameParts: Parent // her own name, for her children's names
+  names: NameRegistry // every name in her family, so nobody repeats
+  partnerParts?: Parent
   kid: { hungerMonths: number; displaced: boolean; lostParent: boolean; famineMonths: number; unstableMonths: number }
   marks: ChildhoodMarks | null // set at 16
   aces: number // adverse childhood experiences counted at 16, 0..5
@@ -372,7 +375,8 @@ function stepKin(p: Person, ctx: StepCtx) {
     const r = luck(p, 'baby')
     const sex: Sex = r() < 0.5 ? 'female' : 'male'
     const n = kidsOf(p).length
-    const kid: Kin = { id: `kid${n + 1}`, name: babyName(p, r, sex), relation: 'child', sex, bornTick: p.tick, bond: 0.7 }
+    const cn = childName(p, r, sex)
+    const kid: Kin = { id: `kid${n + 1}`, name: cn.given, family: cn.family, relation: 'child', sex, bornTick: p.tick, bond: 0.7 }
     p.kin.push(kid)
     addEvent(p, { kind: 'family', text: `${kid.name} was born`, severity: 0.7, emotion: 'joy' })
     // maternal risk for the person who gives birth (who et al. 2023)
@@ -386,7 +390,8 @@ function stepKin(p: Person, ctx: StepCtx) {
     if (already < Math.round(env.region.fertility || 2) && luck(p, `gk:${k.id}`)() < (env.region.fertility || 2) / 14 / 12) {
       const r = luck(p, `gkid:${k.id}`)
       const sex: Sex = r() < 0.5 ? 'female' : 'male'
-      p.kin.push({ id: `${k.id}-g${already + 1}`, name: babyName(p, r, sex), relation: 'grandchild', sex, bornTick: p.tick, parentId: k.id, bond: 0.5 })
+      const gn = grandchildName(p, r, sex, k)
+      p.kin.push({ id: `${k.id}-g${already + 1}`, name: gn.given, family: gn.family, relation: 'grandchild', sex, bornTick: p.tick, parentId: k.id, bond: 0.5 })
       addEvent(p, { kind: 'family', text: `a grandchild: ${k.name}'s baby`, severity: 0.5, emotion: 'joy' })
     }
   }
@@ -402,16 +407,36 @@ function relationshipCare(p: Person) {
   return clamp(c)
 }
 
-import { nameFor } from './births'
 import type { Rng } from '../sim/rng'
-// a name nobody in the family already has (up to a few redraws)
-export function freshName(p: Person, r: Rng, sex: Sex): string {
-  const taken = new Set([p.name.split(' ')[0], ...p.kin.map(k => k.name)])
-  let n = nameFor(r, p.place.regionId, sex).given
-  for (let i = 0; i < 6 && taken.has(n); i++) n = nameFor(r, p.place.regionId, sex).given
+import { nameFor, type NameRegistry, type Parent, type PersonName } from '../sim/names'
+// names come from B's shared generator (src/lib/sim/names.ts): her country's naming groups, children taking the
+// family pattern from their parents, nobody in the family sharing a name
+const seedOf = (r: Rng) => Math.floor(r() * 2 ** 32) >>> 0
+// a new name for her family: redrawn while anyone in the family already has that given name
+function familyName(p: Person, r: Rng, o: Parameters<typeof nameFor>[2]): PersonName {
+  const taken = new Set([p.nameParts.given, ...p.kin.map(k => k.name)].map(x => x.toLowerCase()))
+  let x = nameFor(p.names, seedOf(r), o)
+  for (let k = 0; k < 20 && taken.has(x.given.toLowerCase()); k++) x = nameFor(p.names, seedOf(r), o)
+  return x
+}
+const low = (n: PersonName): Parent => ({ given: n.given.toLowerCase(), family: n.family.toLowerCase(), group: n.group, ...(n.family2 ? { family2: n.family2.toLowerCase() } : {}) })
+const asParent = (x: Parent): Parent => x
+export function partnerName(p: Person, r: Rng, sex: Sex): Parent {
+  const n = low(familyName(p, r, { countryId: p.place.countryId, regionId: p.place.regionId, sex }))
+  p.partnerParts = n
   return n
 }
-const babyName = (p: Person, r: Rng, sex: Sex) => freshName(p, r, sex)
+// her child: her family pattern and her partner's (the father's family name where that is the custom)
+function childName(p: Person, r: Rng, sex: Sex): Parent {
+  const me = asParent(p.nameParts), other = p.partnerParts
+  const [father, mother] = p.sex === 'male' ? [me, other] : [other, me]
+  return low(familyName(p, r, { countryId: p.place.countryId, regionId: p.place.regionId, sex, father, mother }))
+}
+// a grandchild: their parent is her child
+function grandchildName(p: Person, r: Rng, sex: Sex, parent: Kin): Parent {
+  const pp: Parent = { given: parent.name, family: parent.family ?? p.nameParts.family, group: p.nameParts.group }
+  return low(familyName(p, r, { countryId: p.place.countryId, regionId: p.place.regionId, sex, ...(parent.sex === 'male' ? { father: pp } : { mother: pp }) }))
+}
 
 function causeOf(p: Person, which: string, env: MonthEnv): string {
   const age = ageOf(p)

@@ -49,3 +49,28 @@ for (const r of allLives()) {
     }
   })
 }
+
+// names come from the shared generator (src/lib/sim/names.ts): one naming group per family, children in the family
+// pattern, no repeats. checked on freshly generated people in a real world, every continent
+import { createPerson } from '../../../src/lib/life/run'
+import { allWorlds } from '../../../src/lib/life/worlds'
+import { WorldEnv } from '../../../src/lib/life/env'
+import fs from 'node:fs'
+import path from 'node:path'
+test('every new family is named in one naming tradition, with no repeated names', () => {
+  const w = allWorlds().find(x => x.current) ?? allWorlds()[0]
+  if (!w) return
+  const W = new WorldEnv(JSON.parse(fs.readFileSync(path.join(process.cwd(), 'data', 'runs', `${w.runId}.json`), 'utf8')))
+  for (let i = 0; i < 60; i++) {
+    const p = createPerson(W, 1000 + i * 7919, (['africa', 'asia', 'europe', 'north_america', 'south_america', 'oceania'] as const)[i % 6])
+    const kin = p.kin
+    assert.equal(p.nameParts.given, p.name.split(' ').includes(p.nameParts.given) ? p.nameParts.given : '?', `given name ${p.nameParts.given} not in ${p.name}`)
+    const givens = [p.nameParts.given, ...kin.map(k => k.name)]
+    assert.equal(new Set(givens).size, givens.length, `a repeated given name in ${p.name}'s family: ${givens.join(', ')}`)
+    const father = kin.find(k => k.relation === 'father')
+    // where the custom is the father's family name, she and her siblings carry it
+    if (father?.family && p.nameParts.family && !['patronymic', 'single'].includes(p.nameParts.group)) {
+      for (const s of kin.filter(k => k.relation === 'sibling')) assert.equal(s.family, p.nameParts.family, `${s.name} ${s.family} vs ${p.name}`)
+    }
+  }
+})

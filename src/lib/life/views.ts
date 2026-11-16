@@ -81,10 +81,10 @@ export function endView(r: LifeRecord): EndView {
 }
 
 // ---------- the life switcher on /live ----------
-export type SwitchItem = { lifeId: string; name: string; city: string; text: string }
+export type SwitchItem = { lifeId: string; name: string; first: string; city: string; text: string }
 export function switchView(l: LifeSummary & { lastCity?: string; ageNow?: number }): SwitchItem {
   const c = cardView(l)
-  return { lifeId: l.lifeId, name: l.name, city: (l.lastCity ?? l.birthplace.city).toLowerCase(), text: c.deathAge !== null ? c.status : l.ageNow !== undefined ? `living, ${Math.floor(l.ageNow)}` : 'living' }
+  return { lifeId: l.lifeId, name: l.name, first: (l as LifeSummary & { given?: string }).given ?? l.name.split(' ')[0], city: (l.lastCity ?? l.birthplace.city).toLowerCase(), text: c.deathAge !== null ? c.status : l.ageNow !== undefined ? `living, ${Math.floor(l.ageNow)}` : 'living' }
 }
 export { isDead }
 

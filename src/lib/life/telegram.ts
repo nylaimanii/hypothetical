@@ -5,6 +5,7 @@
 import { send, telegramEnv, tg } from '../notify/telegram'
 import { livesFile, readJsonSafe, readNow, writeJsonAtomic, listWorlds, readIndex, findLife } from './store'
 import type { LifeRecord } from './types'
+import { firstName } from './facts'
 
 export type TgState = { muted: string[]; quiet: boolean }
 const stateFile = () => livesFile('telegram.json')
@@ -16,20 +17,21 @@ export const lifeLink = (lifeId: string, tick?: number) => {
   return `${base}/life/${lifeId}${tick !== undefined ? `?t=${tick}` : ''}`
 }
 
-const firstName = (name: string) => name.split(' ')[0]
-const muted = (name: string) => readTgState().muted.includes(firstName(name).toLowerCase())
+// muted by first name (the given name: some names put the family name first)
+const mutedGiven = (given: string) => readTgState().muted.includes(given.toLowerCase())
+const muted = (r: LifeRecord) => mutedGiven(firstName(r))
 
 // a lesson visibly saving them: the same person making the usual choices died young at this age, and this one is
 // still alive with a lesson behind their choices. max one per life (run.ts keeps the count)
-export async function sendWild(name: string, text: string) {
-  if (!telegramEnv() || muted(name) || readTgState().quiet) return
+export async function sendWild(given: string, text: string) {
+  if (!telegramEnv() || mutedGiven(given) || readTgState().quiet) return
   await send(text)
 }
 
 const pron = (r: LifeRecord) => (r.sex === 'female' ? { their: 'her', them: 'her' } : { their: 'his', them: 'him' })
 
 export function endOfLifeLine(r: LifeRecord): string {
-  const first = firstName(r.name)
+  const first = firstName(r)
   const s = r.score!
   const age = Math.floor(r.deathAge ?? 0)
   const birth = r.birthplace.city.toLowerCase()
@@ -51,7 +53,7 @@ export function endOfLifeLine(r: LifeRecord): string {
 }
 
 export async function sendEndOfLife(r: LifeRecord) {
-  if (!telegramEnv() || muted(r.name)) return
+  if (!telegramEnv() || muted(r)) return
   await send(endOfLifeLine(r))
 }
 

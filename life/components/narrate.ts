@@ -4,7 +4,7 @@
 import type { EnvYear, LifeRecord, MonthSnap } from '@/lib/life/types'
 import type { Where } from './plan'
 import type { Present } from './day'
-import { ageYears, endTick, eventsInYear, tickOfYear } from '@/lib/life/facts'
+import { ageYears, endTick, firstName, eventsInYear, tickOfYear } from '@/lib/life/facts'
 
 const PLACE: Record<string, string> = { home: 'home', clinic: 'the clinic', school: 'school', market: 'the market', park: 'the park', square: 'the square', shrine: 'the prayer hall', office: 'the office', lab: 'the lab', factory: 'the factory', farm: 'the fields', construction: 'the building site', power_plant: 'the power plant', launch_site: 'the launch site' }
 export const fmtClock = (h: number) => { const hh = Math.floor(h) % 24, mm = Math.floor((h % 1) * 60 / 10) * 10; return `${hh % 12 || 12}:${String(mm).padStart(2, '0')}${hh < 12 ? 'am' : 'pm'}` }
@@ -25,7 +25,7 @@ export function narrate(c: NarrateCtx): string {
   if (exact < 2) {
     const days = Math.floor(exact * 365.25)
     const old = days < 1 ? 'born today' : days < 14 ? `${days} ${days === 1 ? 'day' : 'days'} old` : days < 90 ? `${Math.round(days / 7)} weeks old` : `${Math.round(exact * 12)} months old`
-    const first = c.record.name.split(' ')[0]
+    const first = firstName(c.record)
     const carrier = c.kin.find(k => k.id === c.carrierId)
     const who = carrier ? `${c.her} ${carrier.relation === 'mother' ? 'mom' : carrier.relation === 'father' ? 'dad' : carrier.relation === 'sibling' ? (carrier.sex === 'female' ? 'sister' : 'brother') : carrier.relation} ${carrier.name}` : 'the family'
     const cs = carrier?.sex === 'male' ? 'he' : 'she'
@@ -37,7 +37,7 @@ export function narrate(c: NarrateCtx): string {
     return `${t}. ${first}'s ${old}. ${doing}.`
   }
   const age = s.age
-  const name = c.record.name.split(' ')[0]
+  const name = firstName(c.record)
   const job = s.job ?? ''
   const place = PLACE[w.stop.lot.kind] ?? w.stop.lot.kind
   const kids = c.family.filter(f => f.relation === 'child')

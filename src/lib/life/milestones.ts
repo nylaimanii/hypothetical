@@ -7,7 +7,7 @@
 // harm: options that hurt or exploit others. they can pay well, and they always lower contribution.
 import type { MonthEnv } from './env'
 import { CORRIDORS, biggestCity, countryById } from './births'
-import { addEvent, ageOf, freshName, kidsOf, livingKids, luck, medianIncome, parentsAlive, partnerOf, type Habit, type Person } from './person'
+import { addEvent, ageOf, partnerName, kidsOf, livingKids, luck, medianIncome, parentsAlive, partnerOf, type Habit, type Person } from './person'
 import type { MilestoneKind, MilestoneOption, Workplace } from './types'
 
 export type Option = MilestoneOption & { default?: boolean; apply: (p: Person, env: MonthEnv) => string[] }
@@ -31,7 +31,7 @@ const at = (age: number, def: MilestoneDef) => SCHEDULE.push({ age, def })
 // parents decide these (the person is a child): rules from the family's situation, see run.ts
 at(6, {
   id: 'school_start', kind: 'schooling', short: 'the first day of school',
-  question: (p, env) => `${p.name.split(' ')[0]} is six. ${env.education < 0.4 ? 'school costs money the family barely has.' : 'school is free here.'} do the parents send them?`,
+  question: (p, env) => `${p.nameParts.given} is six. ${env.education < 0.4 ? 'school costs money the family barely has.' : 'school is free here.'} do the parents send them?`,
   options: (p, env) => [
     opt('send', 'send them to school', ['education', 'long_term'], () => { p.inSchool = true; return ['started school'] }, { default: p.quintile >= 2 || env.education >= 0.35 }),
     opt('keep_home', 'keep them home to help', ['family', 'money', 'short_term'], () => { p.inSchool = false; return ['stayed home to help the family'] }, { default: p.quintile < 2 && env.education < 0.35 }),
@@ -40,7 +40,7 @@ at(6, {
 
 at(9, {
   id: 'family_faith', kind: 'faith', short: 'the family faith',
-  question: (p, env) => `the family ${env.faith > 0.7 ? 'goes to worship every week' : 'rarely talks about faith'}. what do they raise ${p.name.split(' ')[0]} with?`,
+  question: (p, env) => `the family ${env.faith > 0.7 ? 'goes to worship every week' : 'rarely talks about faith'}. what do they raise ${p.nameParts.given} with?`,
   options: (p, env) => [
     opt('raise_faith', 'raise them in the faith and its community', ['faith', 'community'], () => { habit(p, 'prays'); p.community = clamp(p.community + 0.15); return ['grew up inside a faith community'] }, { default: env.faith > 0.6 }),
     opt('secular', 'let them decide later', ['independence'], () => ['grew up without religion'], { default: env.faith <= 0.6 }),
@@ -453,8 +453,8 @@ function moveTo(p: Person, countryId: string, cityId: string, why: string) {
 function addPartner(p: Person) {
   const r = luck(p, 'partner')
   const sex = r() < 0.92 ? (p.sex === 'female' ? 'male' : 'female') : p.sex // ESTIMATE share of same-sex couples
-  const n = { given: freshName(p, r, sex) }
-  p.kin.push({ id: `partner${p.kin.filter(k => k.relation === 'partner').length + 1}`, name: n.given, relation: 'partner', sex, bornTick: p.tick - Math.round((ageOf(p) + (r() * 6 - 2)) * 12), bond: 0.6, sinceTick: p.tick })
+  const n = partnerName(p, r, sex)
+  p.kin.push({ id: `partner${p.kin.filter(k => k.relation === 'partner').length + 1}`, name: n.given, family: n.family, relation: 'partner', sex, bornTick: p.tick - Math.round((ageOf(p) + (r() * 6 - 2)) * 12), bond: 0.6, sinceTick: p.tick })
   addEvent(p, { kind: 'family', text: `fell in love with ${n.given}`, severity: 0.5, emotion: 'joy' })
 }
 

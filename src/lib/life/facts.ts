@@ -3,19 +3,21 @@
 // recomputed with its own formula on a page, and nothing is invented. (tick 0 = 2026-11; one tick is one month.)
 // tests: tests/consistency/life
 import type { Kin, LifeRecord, MonthSnap } from './types'
+import { monthOfTick, yearOfTick } from '../sim/replay-pure'
 
 // ---------- time ----------
-// (the world's calendar; when B exports date-from-tick for the main site, these delegate to it)
-const START_YEAR = 2026, START_MONTH = 10 // november, 0-based
+// the world's calendar is B's (src/lib/sim/truth.ts, via the browser-safe replay-pure), so the life site and the main
+// site can never disagree on a date
+const START_YEAR = yearOfTick(0), START_MONTH = monthOfTick(0) - 1 // november, 0-based
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
-export const yearOf = (tick: number) => START_YEAR + Math.floor((START_MONTH + tick) / 12)
-export const monthOf = (tick: number) => (((START_MONTH + tick) % 12) + 12) % 12
+export const yearOf = (tick: number) => yearOfTick(tick)
+export const monthOf = (tick: number) => monthOfTick(tick) - 1
 export const dateLabel = (tick: number) => `${yearOf(tick)} ${MONTHS[monthOf(tick)]}`
 // the first tick of a calendar year (january), clamped to the start of the world
 export const tickOfYear = (year: number) => Math.max(0, (year - START_YEAR) * 12 - START_MONTH)
 
 // ---------- her ----------
-export const firstName = (r: LifeRecord) => r.name.split(' ')[0]
+export const firstName = (r: LifeRecord) => r.given ?? r.name.split(' ')[0]
 export const pronouns = (r: LifeRecord) => (r.sex === 'female' ? { she: 'she', her: 'her', him: 'her' } : { she: 'he', her: 'his', him: 'him' })
 /** her age in years (fractional) at a tick */
 export const ageAt = (r: LifeRecord, tick: number) => (tick - r.birthTick) / 12
