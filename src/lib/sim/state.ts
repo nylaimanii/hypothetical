@@ -196,7 +196,7 @@ export type World = {
   retiredPlants: string[]
   builtPlants: Record<string, number>
   realCities: CityState[]
-  recentRepeals: { tick: number; title: string; policyKind: string }[] // last 4 years
+  recentRepeals: { tick: number; title: string; policyKind: string; law?: Law }[] // last 4 years
   causeDeaths: { air: number; water: number } // excess over 2026 rates, from daily.ts
   skilledMigrants: number
   core: CoreBody

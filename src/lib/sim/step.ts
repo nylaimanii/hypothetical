@@ -134,11 +134,13 @@ export function applyDecision(w: World, d: Decision): { migrations: ScheduledMig
   // repeal + a new law of the same kind in one decision is an amendment: the repeal is dropped and the new law
   // rewrites the old one below (stops the repeal-and-re-enact loop)
   const newKinds = d.laws.slice(0, MAX_LAWS_PER_DECISION).map(l => lawMeta(l).policyKind)
-  const repeal = d.repeal.filter(id => { const l = w.laws.find(x => x.id === id); return !l || l.policyKind === 'other' || !newKinds.includes(l.policyKind) })
+  // and repeal + amend of the same law is an amendment (the governor wanted it changed, not gone)
+  const amendIds = new Set(((d as Decision & { amend?: Amend[] }).amend ?? []).map(a => a.id))
+  const repeal = d.repeal.filter(id => { const l = w.laws.find(x => x.id === id); return !amendIds.has(id) && (!l || l.policyKind === 'other' || !newKinds.includes(l.policyKind)) })
   if (repeal.length) {
     const gone = w.laws.filter(l => repeal.includes(l.id))
     w.laws = w.laws.filter(l => !repeal.includes(l.id))
-    for (const l of gone) { event(w, { kind: 'law', text: `repealed: ${l.title}`, severity: 0.1 }); w.recentRepeals.push({ tick: w.tick, title: l.title, policyKind: l.policyKind }) }
+    for (const l of gone) { event(w, { kind: 'law', text: `repealed: ${l.title}`, severity: 0.1 }); w.recentRepeals.push({ tick: w.tick, title: l.title, policyKind: l.policyKind, law: { ...l } }) }
   }
   w.recentRepeals = w.recentRepeals.filter(r => w.tick - r.tick < 48)
   const fresh: Law[] = []
@@ -147,7 +149,9 @@ export function applyDecision(w: World, d: Decision): { migrations: ScheduledMig
   const applied: Amend[] = []
   const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
   // amend an active law: its text changes, it is re-read (policy kind, precedents, who wins and loses)
-  const amend = (law: Law, change: string, converted: boolean, title?: string) => {
+  const amend = (law: Law, change0: string, converted: boolean, title?: string) => {
+    // a small model sometimes pastes the brief's table row ("L3 | title | kind | 0.5 | 0.4"): keep only the words
+    const change = /\|/.test(change0) ? change0.split('|').map(x => x.trim()).filter(x => x && !/^[\d.]+$/.test(x) && !/^[a-z_]+$/.test(x) && !/^L\d+$/.test(x)).join('. ') : change0
     if (!change.trim() || norm(change) === norm(law.text)) {
       w.lawsRepeated++
       w.lastRepeated.push(title ?? law.title)
@@ -174,9 +178,18 @@ export function applyDecision(w: World, d: Decision): { migrations: ScheduledMig
     const covered = meta.policyKind !== 'other' ? [...w.laws, ...fresh].find(x => !x.vetoed && x.policyKind === meta.policyKind) : undefined
     const dup = covered ?? [...w.laws, ...fresh].find(x => !x.vetoed && x.policyKind === meta.policyKind && similarTitle(x.title, l.title))
     if (dup) { amend(dup, l.text, true, l.title); return }
-    // re-passing a policy kind repealed in the last 4 years ('other' needs a similar title): it is enacted, but counted as a repeat
+    // re-passing a policy kind repealed in the last 4 years ('other' needs a similar title): the old law comes back
+    // with the new text (same id, its compliance history kept), logged as an amendment, so the repeal-and-re-pass loop
+    // wastes nothing
     const back = w.recentRepeals.find(r => r.tick < w.tick && r.policyKind === meta.policyKind && (meta.policyKind !== 'other' || similarTitle(r.title, l.title)))
-    if (back) { w.lawsRepeated++; w.lastRepeated.push(l.title); event(w, { kind: 'law', text: `re-enacted "${l.title}", repealed ${Math.round((w.tick - back.tick) / 12)} years ago`, severity: 0.05 }) }
+    if (back && back.law && !w.laws.some(x => x.id === back.law!.id)) {
+      const old = { ...back.law }
+      w.recentRepeals = w.recentRepeals.filter(r => r !== back)
+      fresh.push(old)
+      event(w, { kind: 'law', text: `restored ${old.id} "${old.title}", repealed ${Math.round((w.tick - back.tick) / 12)} years ago`, severity: 0.05 })
+      amend(old, l.text, true, l.title)
+      return
+    }
     const id = l.id && !w.laws.some(x => x.id === l.id) ? l.id : `L${w.tick}-${i}`
     w.lawMeta[id] = meta
     fresh.push({ ...l, id, enactedTick: w.tick, support: 0.5, compliance: 0.5, vetoed: false, policyKind: meta.policyKind, precedentIds: meta.precedentIds, lovedBy: meta.lovedBy, hatedBy: meta.hatedBy })
