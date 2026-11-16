@@ -10,6 +10,7 @@ import Scene, { layoutFor, type CamPreset, type WorldNow } from './Scene'
 import type { LiveState } from './ChosenPerson'
 import { DAYS_PER_TICK, SPEEDS, ageAt, householdAt, lastDay, momentsOf, moodAt, snapAt, storyHour, tickOf, whereAt, yearOf, type Moment, type Speed } from './day'
 import { feelingWords, moodToAUs } from './facs'
+import Panel, { type PanelKind } from './Panels'
 
 const HOLD_MS = 3400
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
@@ -26,6 +27,7 @@ export default function LiveView({ record, mainSiteUrl, nextLifeHref }: { record
   const [preset, setPreset] = useState<{ kind: CamPreset; at: number } | null>(null)
   const [director, setDirector] = useState(true)
   const [showFeel, setShowFeel] = useState(false)
+  const [panel, setPanel] = useState<PanelKind | null>(null)
   const [feel, setFeel] = useState<{ text: string; at: number } | null>(null)
   const lastFeel = useRef('')
   const layouts = useRef(new Map<string, ReturnType<typeof layoutFor>>())
@@ -138,11 +140,12 @@ export default function LiveView({ record, mainSiteUrl, nextLifeHref }: { record
   // ---- controls ----
   const setSpeed = (s: Speed) => { clock.current.speed = s; setUi(u => ({ ...u, speed: s })) }
   const toggle = () => { const c = clock.current; if (c.days >= end) { c.days = 0; c.momentIdx = 0 } c.playing = !c.playing; c.holdUntil = 0; setUi(u => ({ ...u, playing: c.playing })) }
+  const seekDays = (days: number) => seek(days / end)
   const seek = (frac: number) => { const c = clock.current; c.days = Math.max(0, Math.min(end, frac * end)); const t = tickOf(c.days); c.momentIdx = moments.findIndex(m => m.tick > t); if (c.momentIdx < 0) c.momentIdx = moments.length; c.holdUntil = 0; setCaption(null) }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === ' ') { e.preventDefault(); toggle() }
-      if (e.key === 'Escape') setCaption(null)
+      if (e.key === 'Escape') { setCaption(null); setPanel(null) }
       if (e.key === '1') setSpeed('day'); if (e.key === '2') setSpeed('year'); if (e.key === '3') setSpeed('decade')
     }
     window.addEventListener('keydown', onKey)
@@ -177,6 +180,8 @@ export default function LiveView({ record, mainSiteUrl, nextLifeHref }: { record
         </div>
       )}
 
+      {panel && !ui.done && <Panel kind={panel} record={record} tick={ui.tick} onSeek={seekDays} onClose={() => setPanel(null)} />}
+
       {/* death: a quiet ending card */}
       {ui.done && <EndCard record={record} worldLink={worldLink} nextLifeHref={nextLifeHref} onReplay={toggle} />}
 
@@ -196,6 +201,9 @@ export default function LiveView({ record, mainSiteUrl, nextLifeHref }: { record
             <button className="icon-btn" aria-label="director: auto camera for big moments" title="director" aria-pressed={director} onClick={() => setDirector(d => !d)}><Icon kind="director" /></button>
           </div>
           <div className="chip" style={{ display: 'flex', alignItems: 'center', padding: 3, gap: 2 }}>
+            {(['journal', 'family', 'health'] as PanelKind[]).map(k => (
+              <button key={k} className="icon-btn" aria-label={k} title={k} aria-pressed={panel === k} onClick={() => setPanel(p => (p === k ? null : k))}><Icon kind={k} /></button>
+            ))}
             <button className="icon-btn" aria-label="show the feeling in words" title="feelings in words" aria-pressed={showFeel} onClick={() => setShowFeel(v => !v)}><Icon kind="feel" /></button>
             {worldLink && <a className="icon-btn" aria-label="see this moment in the world" title="see this moment in the world" href={worldLink} target="_blank" rel="noreferrer"><Icon kind="globe" /></a>}
           </div>
@@ -269,6 +277,9 @@ function Icon({ kind }: { kind: string }) {
     case 'wide': return <svg {...p}><path d="M3 18l5-6 4 4 3-3 6 5" /><path d="M3 20h18" /></svg>
     case 'director': return <svg {...p}><rect x="3" y="8" width="18" height="12" rx="2" /><path d="M3 8l3-4h4l-3 4M10 8l3-4h4l-3 4" /></svg>
     case 'feel': return <svg {...p}><path d="M12 20s-7-4.5-7-10a4 4 0 017-2.6A4 4 0 0119 10c0 5.5-7 10-7 10z" /></svg>
+    case 'journal': return <svg {...p}><path d="M6 4h10a2 2 0 012 2v14H8a2 2 0 01-2-2z" /><path d="M6 18a2 2 0 012-2h10M10 8h5M10 11h5" /></svg>
+    case 'family': return <svg {...p}><circle cx="12" cy="5.5" r="2.2" /><circle cx="6" cy="17.5" r="2.2" /><circle cx="18" cy="17.5" r="2.2" /><path d="M12 7.7V12M6 15.3V12h12v3.3" /></svg>
+    case 'health': return <svg {...p}><path d="M3 12h4l2-5 4 10 2-5h6" /></svg>
     case 'globe': return <svg {...p}><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.5 2.6 2.5 14.4 0 17M12 3.5c-2.5 2.6-2.5 14.4 0 17" /></svg>
     default: return null
   }

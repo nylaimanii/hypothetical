@@ -12,7 +12,7 @@ import { buildLayout, STREETS, type Layout, type Lot } from '@/components/world/
 import { C, MONK, HAIR_HEX, toonGradient } from '@/components/world/lib'
 import type { LifeRecord, Workplace } from '@/lib/life/types'
 import ChosenPerson, { PERSON_SCALE, type LiveState } from './ChosenPerson'
-import { heightShare, householdAt, type Present } from './day'
+import { heightShare, type Present } from './day'
 
 export type CamPreset = 'face' | 'shoulder' | 'side' | 'top' | 'wide'
 export type SceneProps = {
@@ -33,7 +33,6 @@ export type WorldNow = {
 
 const toon = (color: THREE.ColorRepresentation) => new THREE.MeshToonMaterial({ color, gradientMap: toonGradient() })
 const damp = (c: number, t: number, r: number, dt: number) => c + (t - c) * (1 - Math.exp(-r * dt))
-const GROUND_Y = 0
 
 // colors per lot kind, quiet and close to the main site's diorama
 const LOT_COLOR: Record<string, string> = { home: '#EFE6D6', school: '#E7D5A8', clinic: '#F1EEE8', office: '#C9CFD6', lab: '#DCE3E8', factory: '#B9AFA2', farm: '#B7C79A', market: '#E2C79B', park: '#A9C49A', square: '#E4DBCB', shrine: '#E9DCC2', construction: '#D8B98A', power_plant: '#A9A9AE', launch_site: '#D9D7D2' }

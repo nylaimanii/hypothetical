@@ -34,3 +34,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 @media (prefers-reduced-motion: reduce) {
   .caption-in, .feeling, .card-in { animation: none; }
 }
+
+@keyframes panel-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+.panel-in { animation: panel-in 0.25s ease-out both; }
+.scroll-thin { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--ink) 25%, transparent) transparent; }
+@media (prefers-reduced-motion: reduce) { .panel-in { animation: none; } }
