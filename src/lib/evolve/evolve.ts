@@ -30,7 +30,7 @@ import { generationStory } from '../notify/story'
 import { lifeGap, livesRunning, openGap } from './lifegap'
 import { livesSection } from './lives'
 import { diskReport, gb, sweep, writeSlim } from './retention'
-import { backupDue, backupToGit, markQuality, qualityDue, sendMorning, stableDue } from './maintenance'
+import { backupDue, backupToGit, consistencyDue, markQuality, qualityDue, sendMorning, stableDue } from './maintenance'
 import { codeRoot } from './version'
 import { spawn } from 'node:child_process'
 import { enterVersion, inRunner, runnerCodeChanged, runningSimVersion, simVersionOnDisk, upstreamSimVersion, verifyLessons } from './version'
@@ -537,6 +537,7 @@ function startWatchdogs(log: (l: string) => void, logFile?: string) {
   let restartSent = false
   let lowDiskWarned = false
   let stableRunning = false
+  let consistencyRunning = false
   const tick = async () => {
     try {
       heartbeatNow()
@@ -580,6 +581,15 @@ function startWatchdogs(log: (l: string) => void, logFile?: string) {
         let out = ''
         child.stdout.on('data', d => { out += d })
         child.on('exit', () => { stableRunning = false; const last = out.trim().split('\n').pop(); if (last) log(last) })
+      }
+      // the nightly consistency suite on the last day's worlds and lives (telegrams only on a failure, itself)
+      if (consistencyDue() && !consistencyRunning) {
+        consistencyRunning = true
+        const child = spawn(process.execPath, [path.join(codeRoot(), 'node_modules', 'tsx', 'dist', 'cli.mjs'), '--tsconfig', path.join(codeRoot(), 'tsconfig.json'), path.join(codeRoot(), 'scripts', 'consistency.ts'), '--nightly', '--if-due'], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'], env: process.env })
+        let out = ''
+        child.stdout.on('data', d => { out += d })
+        child.stderr.on('data', d => { out += d })
+        child.on('exit', () => { consistencyRunning = false; const first = out.trim().split('\n')[0]; if (first) log(first) })
       }
       // a stall: nothing finished for 90 min (one warning per stall; a finished world resets it)
       if (!control.paused && !control.maintenance && now - control.lastWorldAt >= 90 * MIN && stallWarned !== control.lastWorldAt) {

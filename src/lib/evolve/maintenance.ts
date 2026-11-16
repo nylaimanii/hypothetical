@@ -1,9 +1,10 @@
 // daily and weekly upkeep, scheduled by the evolve watchdog (state in data/maintenance.json):
 //   backup   daily: the small files that hold what the ai learned go to the origin "data-backup" branch, built with
 //            a throwaway git index so the shared working tree and its index are never touched
-//   stable   daily: if origin/main typechecks, builds and passes tests in a clean copy, fast-forward origin "stable"
-//            to it (vercel deploys from stable, so a mid-change main never reaches the public site)
+//   stable   daily: origin/main plus the real showcase data (deploy.ts); if that typechecks, builds, passes the tests
+//            and the consistency suite in a clean copy, origin "stable" moves to it (vercel deploys from stable)
 //   morning  8am: one telegram digest of the night
+//   consistency  nightly: tests/consistency on the last day's worlds and lives, telegram only on a failure
 //   quality  weekly: replay the champion's best world with a bigger model and say whether the result holds up
 import { execFileSync, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -19,8 +20,11 @@ import { diskLine } from './retention'
 import { ollamaUp } from './ollama'
 import { paceStats } from './usage'
 import { livesSection } from './lives'
+import { checkDeploy, copyDeploy, deployFiles } from './deploy'
+import { failureText, runSuite } from './consistency'
+import { freshSteps } from './steps'
 
-type State = { lastBackup?: string; backupSha?: string; lastStable?: string; stableSha?: string; stableNote?: string; lastMorning?: string; morningLessons?: number; lastQuality?: string; lastQualityRun?: string }
+type State = { lastBackup?: string; backupSha?: string; lastStable?: string; stableSha?: string; stableNote?: string; lastMorning?: string; morningLessons?: number; lastQuality?: string; lastQualityRun?: string; lastConsistency?: string; consistencyNote?: string }
 const stateFile = () => path.join(process.cwd(), 'data', 'maintenance.json')
 export const readState = (): State => readJson<State>(stateFile()) ?? {}
 const saveState = (patch: Partial<State>) => writeJson(stateFile(), { ...readState(), ...patch })
@@ -74,38 +78,63 @@ export function backupToGit(): { committed: boolean; files: number; sha?: string
 }
 
 // ---------- stable ----------
-// clean copy of origin/main: typecheck, build, tests. pass -> origin stable fast-forwards to that commit
-export function promoteStable(log: (l: string) => void = console.log): { promoted: boolean; sha: string; note: string } {
-  git(['fetch', '-q', 'origin', 'main'])
+// vercel deploys origin "stable": origin/main plus one commit with the real data the read-only site serves (see
+// deploy.ts). in a clean copy of exactly that tree: typecheck, build (read-only, like vercel), the unit tests, the
+// deploy check (worlds that open, agents that exist) and the consistency suite on the deployed data. all pass ->
+// stable moves to the new commit, whose parents are the old stable and origin/main, so the push is a fast-forward
+export function promoteStable(log: (l: string) => void = console.log, opts: { dry?: boolean; keep?: (dir: string) => void } = {}): { promoted: boolean; sha: string; note: string } {
+  git(['fetch', '-q', 'origin', 'main', 'stable'])
   const sha = git(['rev-parse', 'origin/main'])
-  const st = readState()
-  if (st.stableSha === sha) return { promoted: false, sha, note: 'stable is already at origin/main' }
+  let prev: string | null = null
+  try { prev = git(['rev-parse', 'origin/stable']) } catch { /* first deploy */ }
+  // the recipe is recomputed first so the deploy carries the current one
+  try { freshSteps(true) } catch { /* steps are optional */ }
+  const files = deployFiles()
+  // the tree stable would get: main's code and committed data, plus the snapshot
+  const index = path.join(os.tmpdir(), `hyp-stable-index-${process.pid}`)
+  const env = { GIT_INDEX_FILE: index }
+  let tree: string
+  try {
+    fs.rmSync(index, { force: true })
+    git(['read-tree', sha], env)
+    for (const f of files) git(['update-index', '--add', '--cacheinfo', `100644,${git(['hash-object', '-w', '--', f])},${f}`], env)
+    tree = git(['write-tree'], env)
+  } finally { fs.rmSync(index, { force: true }) }
+  if (prev && git(['rev-parse', `${prev}^{tree}`]) === tree) return { promoted: false, sha, note: 'stable already has this code and data' }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyp-stable-'))
-  const run = (cmd: string, args: string[], cwd = dir) => spawnSync(cmd, args, { cwd, encoding: 'utf8', timeout: 20 * 60_000, env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1', LLM_PROVIDER: 'offline' } })
+  const run = (cmd: string, args: string[], cwd = dir, extra: Record<string, string> = {}) => spawnSync(cmd, args, { cwd, encoding: 'utf8', timeout: 20 * 60_000, env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1', LLM_PROVIDER: 'offline', ...extra } })
+  const fail = (note: string) => { if (!opts.dry) saveState({ lastStable: new Date().toISOString(), stableNote: note }); return { promoted: false, sha, note } }
   try {
     const arch = run('sh', ['-c', `git -C "${process.cwd()}" archive ${sha} | tar -x -C "${dir}"`], process.cwd())
-    if (arch.status !== 0) return { promoted: false, sha, note: `could not export origin/main: ${arch.stderr.slice(0, 200)}` }
+    if (arch.status !== 0) return fail(`could not export origin/main: ${arch.stderr.slice(0, 200)}`)
+    copyDeploy(files, dir)
+    const problems = checkDeploy(dir)
+    if (problems.length) return fail(`deploy check failed on ${sha.slice(0, 7)}: ${problems.slice(0, 3).join('; ')}`)
     // apfs clones make this copy nearly free
-    const cp = run('cp', ['-cR', path.join(codeRoot(), 'node_modules'), path.join(dir, 'node_modules')], process.cwd())
-    if (cp.status !== 0) return { promoted: false, sha, note: 'could not copy node_modules' }
-    const steps: [string, string, string[]][] = [
-      ['typecheck', 'npx', ['tsc', '--noEmit', '-p', '.']],
-      ['build', 'npm', ['run', 'build']],
-      ['tests', 'npx', ['tsx', '--test', 'src/lib/evolve/queue.test.ts']],
+    const cp = run('cp', ['-cR', fs.realpathSync(path.join(codeRoot(), 'node_modules')), path.join(dir, 'node_modules')], process.cwd())
+    if (cp.status !== 0) return fail('could not copy node_modules')
+    const steps: [string, string, string[], Record<string, string>][] = [
+      ['typecheck', 'npx', ['tsc', '--noEmit', '-p', '.'], {}],
+      ['build', 'npm', ['run', 'build'], { READ_ONLY: '1' }],
+      ['tests', 'npx', ['tsx', '--test', 'src/lib/evolve/queue.test.ts'], {}],
     ]
-    for (const [name, cmd, args] of steps) {
+    for (const [name, cmd, args, extra] of steps) {
       log(`stable: ${name} on ${sha.slice(0, 7)}`)
-      const r = run(cmd, args)
-      if (r.status !== 0) {
-        const note = `${name} failed on ${sha.slice(0, 7)}: ${(r.stdout + r.stderr).split('\n').filter(l => /error|fail/i.test(l)).slice(0, 3).join(' | ').slice(0, 300)}`
-        saveState({ lastStable: new Date().toISOString(), stableNote: note })
-        return { promoted: false, sha, note }
-      }
+      const r = run(cmd, args, dir, extra)
+      if (r.status !== 0) return fail(`${name} failed on ${sha.slice(0, 7)}: ${(r.stdout + r.stderr).split('\n').filter(l => /error|fail/i.test(l)).slice(0, 3).join(' | ').slice(0, 300)}`)
     }
+    log(`stable: consistency on ${sha.slice(0, 7)} with the deployed data`)
+    const c = runSuite({ codeRoot: dir, dataRoot: dir, env: { READ_ONLY: '1' } })
+    if (c.failed.length) return fail(failureText(c, `the deploy of ${sha.slice(0, 7)}`, 3))
+    const worlds = files.filter(f => /^data\/showcase\/.*\.json(\.gz)?$/.test(f) && !f.endsWith('index.json')).length
+    const lives = files.filter(f => /^data\/lives\/.*-life-\d+\.json$/.test(f)).length
+    const commit = git(['commit-tree', tree, ...(prev ? ['-p', prev] : []), '-p', sha, '-m', `deploy ${sha.slice(0, 7)} with ${worlds} showcase worlds and ${lives} lives (${today()})`])
+    opts.keep?.(dir)
+    if (opts.dry) return { promoted: false, sha, note: `dry run: would move stable to ${commit.slice(0, 7)} (${worlds} worlds, ${lives} lives)` }
     // a normal push only fast-forwards; if stable ever diverged this fails loudly instead of overwriting it
-    git(['push', '-q', 'origin', `${sha}:refs/heads/stable`])
+    git(['push', '-q', 'origin', `${commit}:refs/heads/stable`])
     saveState({ lastStable: new Date().toISOString(), stableSha: sha, stableNote: 'promoted' })
-    return { promoted: true, sha, note: `stable moved to ${sha.slice(0, 7)}` }
+    return { promoted: true, sha, note: `stable moved to ${commit.slice(0, 7)} (origin/main ${sha.slice(0, 7)}, ${worlds} worlds, ${lives} lives)` }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
@@ -229,3 +258,6 @@ export const morningDue = () => new Date().getHours() >= 8 && (readState().lastM
 // lastQualityRun: set only when a replay actually ran (older code also wrote lastQuality on a skip, so it is ignored)
 export const qualityDue = () => hoursSince(readState().lastQualityRun) >= 7 * 24
 export const markQuality = () => saveState({ lastQualityRun: new Date().toISOString() })
+// the nightly consistency suite: from 2am, once a day (the 8:05 launchd job catches up after a night asleep)
+export const consistencyDue = () => new Date().getHours() >= 2 && hoursSince(readState().lastConsistency) >= 20
+export const markConsistency = (note: string) => saveState({ lastConsistency: new Date().toISOString(), consistencyNote: note })

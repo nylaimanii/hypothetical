@@ -26,7 +26,9 @@ npm run evolve -- --gens 10 --concurrency 1   # one gpu: keep it at 1
 nohup caffeinate -i scripts/run-evolve.sh --gens 50 --concurrency 1 > data/evolve.log 2>&1 &
 npm run run-one -- --seed 1 --constitution technocrat
 npm run backup                 # push agents, lessons, steps, hall, leaderboards, learning to origin data-backup now
-npm run promote-stable         # if origin/main typechecks, builds and passes tests, fast-forward origin stable
+npm run promote-stable         # origin/main + the real showcase data; if it builds and passes every check, move origin stable (--dry: check only)
+npm run consistency            # tests/consistency on the latest real worlds and lives (--nightly: last day, telegram on failure)
+npm run hooks:install          # the pre-commit hook: every commit, from any worktree, must pass tests/consistency
 npm run morning                # send the morning digest now
 npm run retention              # one disk retention pass now (evolve runs it hourly)
 npm run reality-check          # the no-ai twin vs real published data, writes data/reality-check.json
@@ -113,8 +115,15 @@ Full records are about 34MB, and evolution makes about 130 a day, so retention r
   - The commit is built with a throwaway git index, so the shared working tree is never touched.
   - It is not on `main`, so these files never collide with anyone's untracked copies.
   - Restore with `git checkout origin/data-backup -- data/`.
-- **Stable deploys, daily between 3 and 6am:** a clean copy of `origin/main` is typechecked, built and tested. If all three pass, `stable` fast-forwards to it.
+- **Stable deploys, daily between 3 and 6am:** `stable` is `origin/main` plus one data commit, the snapshot the read-only site serves: the showcase worlds, agents, hall, steps, learning, lessons, older versions and D's lives (src/lib/evolve/deploy.ts). It is built with a throwaway git index, so it never lands on main.
+  - In a clean copy of exactly that tree it is typechecked, built read-only (like Vercel), tested, deploy-checked (every listed world opens and its agent exists) and run through `tests/consistency`. If everything passes, `stable` moves to it as a fast-forward.
   - Vercel should deploy production from `stable` (set the production branch in the Vercel project settings).
+  - The deployed site has no runner and no llm: `GET /api/capabilities` says what is off (play live, petitions, what-if, branch, override, ask), so the ui hides those controls instead of showing a dead button.
+- **Consistency suite (one source of truth):** every name, age, date and number a page, report or telegram shows must agree with the sim records. A, B and D write the checks in `tests/consistency`; C runs them:
+  - before every commit, from any worktree (`.git/hooks/pre-commit`, installed by `npm run hooks:install`), on the newest 3 worlds and 3 lives, so the commit stops with the failing check in plain words
+  - nightly from 2am (evolve; the 8:05 launchd job catches up after a night asleep), on the last day's worlds and lives, with a telegram only when a check fails
+  - before every stable promotion, on the deployed data
+  - checks get the ids to look at in `HYP_CONSISTENCY_RUNS` and `HYP_CONSISTENCY_LIVES` (comma lists), and name each check as a plain sentence, so a failure reads like "the chronicle starts in the year the timeline starts: chronicle starts in 2027, the timeline in 2026".
   - `vercel.json` turns off deploys of `main` and `data-backup`.
 - **Morning digest, 8am:** one telegram with everything since the last digest: the most interesting world, the tally by sim version, new lessons, deaths, a sim switch if there was one, a short lives section (the most interesting chosen life that ended, 2 lines at most), and disk and health.
   - Evolve's watchdog sends it, and so does the `com.hypothetical.morning` launchd job at 8:05 (retries at 9:05, 10:05 and 12:05). A mac asleep at 8 sends it on wake.

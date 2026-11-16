@@ -397,3 +397,51 @@ test('digest verdict uses only the current sim version, and says so when it has 
   const after = verdictLine([...runs, { runId: 'c', simVersion: '5.7.0' }] as never[], '5.7.0', read)!
   assert.equal(after, 'is the ai beating "do nothing" yet? yes: in the 1 world on 5.7.0 it kept more people alive than the no-ai twin, by 1000 million.')
 })
+
+test('consistency runner: plain-word failures from tap, suites left out', async () => {
+  const { parseTap, failureText } = await import('./consistency')
+  const tap = [
+    'TAP version 13',
+    '# Subtest: report numbers',
+    '    # Subtest: the report says the population the record has in 2051',
+    '    not ok 1 - the report says the population the record has in 2051',
+    '      ---',
+    "      error: 'report for g3-atlas says 4.1B, the record has 3.9B'",
+    '      ...',
+    '    ok 2 - every chronicle year is a year of the timeline',
+    '    1..2',
+    'not ok 1 - report numbers',
+    '  ---',
+    "  type: 'suite'",
+    "  failureType: 'subtestsFailed'",
+    "  error: '1 subtest failed'",
+    '  ...',
+    'ok 2 - names are unique # SKIP',
+  ].join('\n')
+  const t = parseTap(tap)
+  assert.equal(t.total, 3)
+  assert.deepEqual(t.failed, [{ name: 'the report says the population the record has in 2051', why: 'report for g3-atlas says 4.1B, the record has 3.9B' }])
+  const text = failureText({ ran: true, ...t, note: '' }, 'last night')
+  assert.match(text, /^consistency check failed on last night: 1 of 3 checks disagree with the records\.\n- the report says the population/)
+})
+
+test('deploy snapshot ships real worlds and never runtime files, and checks they open', async () => {
+  const { deployFiles, checkDeploy } = await import('./deploy')
+  const zlib = await import('node:zlib')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyp-deploy-'))
+  const w = (rel: string, body: string | Buffer) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body) }
+  w('data/agents.json', JSON.stringify([{ id: 'vesper' }]))
+  w('data/showcase/index.json', JSON.stringify([{ runId: 'w1', agentId: 'vesper' }, { runId: 'w2', agentId: 'ghost' }]))
+  w('data/showcase/w1.json.gz', zlib.gzipSync(JSON.stringify({ runId: 'w1', frames: [{ tick: 0 }] })))
+  w('data/lives/w1/w1-life-1.json', '{}')
+  w('data/telegram-log.json', '[]'); w('data/maintenance.json', '{}'); w('data/lives/.ollama.gap', '{}'); w('data/runs/w1.json', '{}')
+  const files = deployFiles(dir)
+  assert.deepEqual(files, ['data/agents.json', 'data/lives/w1/w1-life-1.json', 'data/showcase/index.json', 'data/showcase/w1.json.gz'])
+  const problems = checkDeploy(dir)
+  assert.equal(problems.length, 2)
+  assert.match(problems.join('\n'), /w2 is listed but its record does not open/)
+  assert.match(problems.join('\n'), /agent ghost, which is not in agents.json/)
+  w('data/showcase/index.json', '[]')
+  assert.match(checkDeploy(dir).join('\n'), /no showcase worlds/)
+  fs.rmSync(dir, { recursive: true, force: true })
+})
