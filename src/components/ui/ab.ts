@@ -10,12 +10,19 @@ export type ABKind = 'whatif' | 'rerun'
 // assumptions). exact false: after the change the governor decides again, so later choices can differ for that
 // reason too
 // sims: set when the two worlds were run by different sim versions, so not only the change differs
-export type AB = { a: string; b: string; kind: ABKind; splitTick: number; change: string; exact?: boolean; firstDiff?: { tick: number; text: string }; sims?: { a?: string; b?: string }; simText?: string }
+// control: for a rerun whose source ran on another sim, the source rerun unchanged on the rerun's sim (c keeps one
+// per source and sim version, data/controls.json). once it is done it stands in as A, so the pair differs only by the
+// change; until then A is the old original and simText says why. what-ifs need none: c refuses a what-if across sims.
+// supersededBy: this rerun ran on an older sim and the same request was run again on today's, as that world
+export type Control = { runId: string; status: 'queued' | 'running' | 'done' | 'failed'; sim?: string; error?: string }
+export type AB = { a: string; b: string; kind: ABKind; splitTick: number; change: string; exact?: boolean; firstDiff?: { tick: number; text: string }; sims?: { a?: string; b?: string }; simText?: string; control?: Control; original?: string; supersededBy?: string }
 
 export const simVersionOf = (r: object) => (r as { simVersion?: string }).simVersion
 
 // in an a/b pair the two worlds have the same governor, so they are named by role
-export const abName = (ab: AB, runId: string) => (runId === ab.a ? 'A, the original' : 'B, with the change')
+export const abName = (ab: AB, runId: string) => (runId === ab.a ? (ab.original ? 'A, the original rerun unchanged' : 'A, the original') : 'B, with the change')
+// the control is used as A only once it has finished
+export const controlReady = (c?: Control) => c?.status === 'done'
 // worlds made by /api/whatif or /api/rerun (ids from newRunId); only these can have an original to pair with
 export const mayPair = (runId: string) => /^(whatif|rerun)-/.test(runId)
 

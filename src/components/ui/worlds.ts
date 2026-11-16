@@ -3,7 +3,7 @@ import type { Agent, CompareResponse, Divergence, HallEntry, RunRecord, SlimRun 
 import { useStore } from '../state/store'
 import { Offline } from './api'
 import { normalizeRecord } from '../state/normalize'
-import { decisionSplit, describeChange, firstDifference, simVersionOf, type AB } from './ab'
+import { controlReady, decisionSplit, describeChange, firstDifference, simVersionOf, type AB, type Control } from './ab'
 import { loadInitial, metaFromSlim, shellFromSlim, slimFromRecord } from '../state/frames'
 
 async function get<T>(url: string): Promise<T> {
@@ -105,7 +105,11 @@ async function compareInner(agentIds: string[], tick: number) {
 }
 
 type WhatIfPair = { whatif: { original: string; tick: number; appliedAt: number; change: Parameters<typeof describeChange>[0]; exact: boolean }; divergences: Divergence[] }
-type RerunInfo = { changes: string[]; from?: string; sim?: { text: string | null } }
+type RerunInfo = { changes: string[]; from?: string; sim?: { text: string | null }; control?: Control | null; supersededBy?: string }
+
+// with a finished control, A is the source rerun unchanged on today's sim and the sim caveat no longer applies
+const withControl = <T extends { a: string; simText?: string }>(l: T, control?: Control | null): T & { control?: Control; original?: string } =>
+  !control ? l : controlReady(control) ? { ...l, a: control.runId, original: l.a, simText: undefined, control } : { ...l, control }
 
 // what world `b` was made from and the one change: a what-if (data/whatif) or a rerun with other assumptions
 async function abLink(b: RunRecord): Promise<(Omit<AB, 'firstDiff'> & { divergences: Divergence[] }) | null> {
@@ -117,7 +121,7 @@ async function abLink(b: RunRecord): Promise<(Omit<AB, 'firstDiff'> & { divergen
   }
   const r = await get<RerunInfo>(`/api/assumptions?runId=${encodeURIComponent(b.runId)}`).catch(() => null)
   if (!r?.from) return null
-  return { a: r.from, b: b.runId, kind: 'rerun', splitTick: 0, change: r.changes.join('; ') || 'other assumptions', simText: r.sim?.text ?? undefined, divergences: [] }
+  return withControl({ a: r.from, b: b.runId, kind: 'rerun' as const, splitTick: 0, change: r.changes.join('; ') || 'other assumptions', simText: r.sim?.text ?? undefined, divergences: [], supersededBy: r.supersededBy }, r.control)
 }
 
 // a rerun or what-if still running (or kept local) lives in data/live: read it whole when the runs api has no such world
@@ -149,7 +153,7 @@ export async function startAB(bId: string, tick?: number) {
     const split = decisionSplit({ ...ma, runId: a.runId }, { ...mb, runId: b.runId }, link.splitTick)
     const divergences = link.divergences.length ? link.divergences : split ? [split] : []
     const sa = simVersionOf(a), sb = simVersionOf(b)
-    const ab: AB = { a: link.a, b: link.b, kind: link.kind, splitTick: link.splitTick, change: link.change, exact: link.exact, simText: link.simText, sims: sa !== sb ? { a: sa, b: sb } : undefined }
+    const ab: AB = { a: link.a, b: link.b, kind: link.kind, splitTick: link.splitTick, change: link.change, exact: link.exact, simText: link.simText, control: link.control, original: link.original, supersededBy: link.supersededBy, sims: sa !== sb ? { a: sa, b: sb } : undefined }
     s.setCompare({ agentIds: [a.agentId, b.agentId], records: [a, b], divergences, ab: { ...ab, firstDiff: firstDifference(ma, mb, link.splitTick) } })
     s.setPlayhead(at)
     return true
