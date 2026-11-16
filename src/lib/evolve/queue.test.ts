@@ -488,7 +488,9 @@ test('autopsy walks the cause chain back from the recorded cause, and explainGap
   assert.match(lines.join('\n'), /cost: 2 million deaths \(1 million famine, 500,000 unrest\), 3 million displaced\./)
   const feat = (food: number, laws: Record<string, number>) => ({ runId: 'r', agentId: 'a', generation: 1, horizon: 'screen' as const, budget: { food, energy: 0.1, education: 0.1, space: 0.1, security: 0.1, welfare: 0.2, research: 0.1 }, lawFirstTick: laws, religion: 'free', schoolYearsMax: 12, citiesFirstTick: null, research: {}, decisions: 4, outcome: { score: 0.5, le: 70, popTrend: 1, deathRatio: 0, approval: 0.5, destroyed: false } })
   const g = explainGap({ name: 'meridian iii', record: { runId: 'win', frames: [frame(0)] } as never, features: feat(0.25, { food_reserve: 6 }) }, { name: 'halcyon', record: rec, features: feat(0.1, {}) })
-  assert.deepEqual(g.decisive, ['meridian iii put 25% of the budget into food, halcyon 10%', 'meridian iii passed a food reserve law in 2027, halcyon never did'])
+  // which comes first depends on the real recipe's weights (data/steps.json), so only the set is fixed here
+  assert.deepEqual([...g.decisive].sort(), ['meridian iii passed a food reserve law in 2027, halcyon never did', 'meridian iii put 25% of the budget into food, halcyon 10%'])
+  assert.deepEqual(g.reasons?.find(r => /food reserve/.test(r.text)), { text: 'meridian iii passed a food reserve law in 2027, halcyon never did', tick: 6, run: 'win' }, 'the law has its moment; a budget average has none')
   assert.equal(g.consequence, 'halcyon lost 1 region to revolt by 2028')
 })
 
