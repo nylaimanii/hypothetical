@@ -87,6 +87,7 @@ export function stepFood(w: World, fx: Record<string, LawEffects>, sectors: Reco
     // 1958-1961; https://en.wikipedia.org/wiki/Great_Leap_Forward). target harvest x(1 - 0.3 x compliance), over ~2 years
     const coll = Math.max(0, ...w.laws.filter(l => !l.vetoed && l.policyKind === 'collectivization').map(l => rs.lawCompliance[l.id] ?? 0))
     rs.collectiveMult += ((1 - 0.3 * coll) - rs.collectiveMult) / 24
+    rs.collC = coll
     const gy = YIELD_BASE_GROWTH + 0.01 * (1 - Math.exp(-spendPC / 80)) + 0.003 * rs.r.techLevel
       + 0.012 * Math.max(0, (2900 - kcalNow) / 1000) * rs.r.compliance
       + 0.003 * (fx[rs.r.id]?.food ?? 0) - 0.01 * Math.max(0, rs.r.unrest - 0.5)
@@ -122,7 +123,10 @@ export function stepFood(w: World, fx: Record<string, LawEffects>, sectors: Reco
   if (pool > 0 && contribSum > 0) w.regions.forEach((_, i) => { avail[i] += pool * contrib[i] / contribSum })
   w.regions.forEach((rs, i) => {
     // hoarding and panic buying pull food off the shelves for everyone else
-    const kcal = avail[i] / Math.max(pops[i], 1) * hoardingFactor(rs)
+    // collectivized farms deliver quotas to the state (cities, reserves, export) before the farmers eat: the
+    // countryside loses ~15% more at full enforcement (ESTIMATE; china kept exporting grain through 1959-61 and
+    // ukraine's 1932 quotas took seed grain: https://en.wikipedia.org/wiki/Holodomor)
+    const kcal = avail[i] / Math.max(pops[i], 1) * hoardingFactor(rs) * (1 - 0.15 * (rs.collC ?? 0))
     rs.priceIdx = Math.pow(rs.foodBase / Math.max(rs.pop0, 1) / Math.max(kcal, 300), 1.5) * (1 + rs.behavior.hoarding + 2 * rs.behavior.panic_buying)
     why(rs, 'foodKcalPerCapita', 'harvest and yields', prod[i] / Math.max(pops[i], 1) - rs.r.foodKcalPerCapita)
     if (avail[i] !== prod[i]) why(rs, 'foodKcalPerCapita', avail[i] > prod[i] ? 'world food pool (received)' : 'world food pool (given)', (avail[i] - prod[i]) / Math.max(pops[i], 1))
@@ -146,12 +150,13 @@ export function stepEconomy(w: World, popBefore: number[]) {
     // ESTIMATE: catch-up growth (poorer regions grow faster when institutions work) + tech, minus stress
     // investment lever: education + energy + research spending above the 2026 share (23.3%), averaged over ~5 years
     // (it takes years to show), pays most in poor, well-governed economies. calibrated so a sustained, near-total
-    // push in a poor region with strong institutions reaches ~4%/yr per capita, the order of the asian tigers:
+    // push in a poor region with working institutions reaches ~4-5%/yr per capita region-wide (developing asia
+    // 1990-2020 ~5%/yr, World Bank WDI NY.GDP.PCAP.KD), below the single-country record of the asian tigers:
     // south korea grew ~6%/yr per capita 1960-1990 (Maddison Project, https://www.rug.nl/ggdc/historicaldevelopment/maddison/)
     const b = effectiveBudget(w)
     const invest = clamp((b.education + b.energy + b.research - 0.233) / 0.25, -1, 1)
     rs.investAvg += (invest - rs.investAvg) / 60
-    const boost = 0.05 * rs.investAvg * (1 - inc) * Math.sqrt(rs.r.compliance)
+    const boost = 0.1 * rs.investAvg * (1 - inc) * Math.sqrt(rs.r.compliance)
     // ESTIMATE baseline: ~0.6% + catch-up for poorer regions with working institutions + tech (rich regions ~1.2%/yr)
     let g = 0.006 + 0.03 * (1 - inc) * rs.r.compliance + 0.008 * rs.r.techLevel + boost
     why(rs, 'gdpUsd', 'investment in schools, power and research', boost * rs.r.gdpUsd / 12)

@@ -119,6 +119,7 @@ export type RegionState = {
   leak: number; leak0: number; tech0: number; powerMult: number; autoGrowth: number; flightDrag: number // power.ts: corruption, administration, automation, capital flight
   collectiveMult: number // harvest multiplier from collectivization
   healthLaw: number // mortality cut from health laws (phased)
+  collC: number // collectivization enforcement this month
   // cause chains
   yearAcc: Record<string, Record<string, number>> // why-drivers summed over the current year
   yearStart: Record<string, number> // stat values at the start of the year
@@ -201,6 +202,8 @@ export type World = {
   skilledMigrants: number
   core: CoreBody
   hiddenLoss: number // tax base hidden offshore beyond 2026
+  vital: { births: number; deaths: number; famine: number; pandemic: number; riots: number; disasters: number; migration: number; welfare: number }
+  welfareDeathsYear: number; welfareDeathsAcc: number // deaths from health and social spending above or below 2026 (negative = lives saved)
   housingDeaths: number // excess deaths from slum and camp growth since 2026 (negative when housing improves)
   railBuilt: string[] // cross-border rail lines built since 2026 ('a|b')
   citiesHitIdx: Record<string, number>
@@ -257,7 +260,7 @@ export function initWorld(seed: number, twin: boolean): World {
       crowds: [], privateApproval: 0.5, falsificationGap: 0.1, flipped: false, lastWellbeing: 0,
       periodLE: 0, cohortLE: 0, leTrend: 0.2, diseaseBurden: 0, travelHours: TRAVEL_HOURS[r.id] ?? 6,
       causeMult: { cardio: 1, cancer: 1, neuro: 1, metabolic: 1, infectious: 1, injury: 1, other: 1 },
-      agingSlope: GOMPERTZ_B, oldAgeFloor: 1 / 20, pronatal: 0, strikeBoost: 0, newCityPop: 0, whyAcc: {}, famineDeaths: 0, excessDeathsTick: 0, pop0: r.population, valence0: 0.5, investAvg: 0, collectiveMult: 1, leak: 0, leak0: 0, tech0: 0, powerMult: 1, autoGrowth: 0, flightDrag: 0, healthLaw: 0, yearAcc: {}, yearStart: {}, trends: [], priceIdx: 1,
+      agingSlope: GOMPERTZ_B, oldAgeFloor: 1 / 20, pronatal: 0, strikeBoost: 0, newCityPop: 0, whyAcc: {}, famineDeaths: 0, excessDeathsTick: 0, pop0: r.population, valence0: 0.5, investAvg: 0, collectiveMult: 1, collC: 0, leak: 0, leak0: 0, tech0: 0, powerMult: 1, autoGrowth: 0, flightDrag: 0, healthLaw: 0, yearAcc: {}, yearStart: {}, trends: [], priceIdx: 1,
       mixCap: initMix(r.id, r.energyTWh * START_RESERVE), farmland: LAND[r.id].farmland, forest: LAND[r.id].forest, railLinks: [], landmarks: [],
     }
   })
@@ -274,14 +277,17 @@ export function initWorld(seed: number, twin: boolean): World {
     budget: { ...BASELINE_BUDGET }, religionPolicy: BASELINE_RELIGION, schoolPolicy: { ...BASELINE_SCHOOL, curriculum: [...BASELINE_SCHOOL.curriculum] },
     space: initSpace(), events: [], transit: [], migrationCostMonthly: [],
     rng: {
-      events: stream(seed, 'events'), space: stream(seed, twin ? 'space-twin' : 'space'), society: stream(seed, twin ? 'society-twin' : 'society'), citizens: stream(seed, 'citizens'),
-      research: stream(seed, twin ? 'research-twin' : 'research'), factions: stream(seed, twin ? 'factions-twin' : 'factions'), companies: stream(seed, twin ? 'companies-twin' : 'companies'), behavior: stream(seed, twin ? 'behavior-twin' : 'behavior'),
+      // the twin draws the same random numbers as its world (common random numbers): with identical policy the two are
+      // identical, so any gap between them is the governor's doing, not luck (separate streams moved the 50-year
+      // population gap by -60M to +96M across seeds with the same policy)
+      events: stream(seed, 'events'), space: stream(seed, 'space'), society: stream(seed, 'society'), citizens: stream(seed, 'citizens'),
+      research: stream(seed, 'research'), factions: stream(seed, 'factions'), companies: stream(seed, 'companies'), behavior: stream(seed, 'behavior'),
     },
     peakPop: pop, globalFoodMonthsUnder: 0, revoltStreak: 0, warTension: 0, maxWarSeverity: 0,
     status: 'alive', wellbeingSum: 0, wellbeingN: 0, revenueShare: REVENUE_SHARE, citizens: [], crewDeaths: 0, citizenSeq: 0, citizenMeta: {},
     requirements: initRequirements(), cities: [], cityScores: {}, companies: [], factions: initFactions(), frontier: 'none', frontierState: initFrontier(),
     humanCost: { deaths: 0, famineDeaths: 0, unrestDeaths: 0, displaced: 0, approval: 0.5 }, lessonsKnown: 0, researchFocus: [], lawMeta: {}, lawsuits: {},
-    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), lawsProposed: 0, lawsRepeated: 0, lawsAmended: 0, lawsConverted: 0, lastConverted: [], lastRepeated: [], frameCursor: 0, eventSeq: 0, eventKinds: {}, topEvents: [], spaceAssets: [], flowAcc: [], causes: [], causeSeq: 0, countries: initCountries(regions), climate: undefined as unknown as ClimateState, countryMix: {}, countryMix0: {}, retiredPlants: [], builtPlants: {}, realCities: [], railBuilt: [], housingDeaths: 0, core: undefined as unknown as CoreBody, hiddenLoss: 0, causeDeaths: { air: 0, water: 0 }, skilledMigrants: 0, recentRepeals: [], citiesHitIdx: {}, infraAcc: [], lifeArchive: {}, lastFrameTick: 0,
+    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), lawsProposed: 0, lawsRepeated: 0, lawsAmended: 0, lawsConverted: 0, lastConverted: [], lastRepeated: [], frameCursor: 0, eventSeq: 0, eventKinds: {}, topEvents: [], spaceAssets: [], flowAcc: [], causes: [], causeSeq: 0, countries: initCountries(regions), climate: undefined as unknown as ClimateState, countryMix: {}, countryMix0: {}, retiredPlants: [], builtPlants: {}, realCities: [], railBuilt: [], housingDeaths: 0, core: undefined as unknown as CoreBody, hiddenLoss: 0, vital: { births: 0, deaths: 0, famine: 0, pandemic: 0, riots: 0, disasters: 0, migration: 0, welfare: 0 }, welfareDeathsYear: 0, welfareDeathsAcc: 0, causeDeaths: { air: 0, water: 0 }, skilledMigrants: 0, recentRepeals: [], citiesHitIdx: {}, infraAcc: [], lifeArchive: {}, lastFrameTick: 0,
   }
   initRail(world)
   world.climate = initClimate(world)

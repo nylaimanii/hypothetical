@@ -114,6 +114,8 @@ function briefLines(w: World, b: Brief, cut: number): string[] {
   if (hl) L.push(hl)
   L.push(...dailyLines(w))
   L.push(...powerLines(w))
+  // what health and social spending is doing to deaths, so a governor can see the cost of cutting it
+  if (Math.abs(w.welfareDeathsYear) > 1e5) L.push(`health and social spending vs 2026: ${w.welfareDeathsYear > 0 ? `cuts cost ~${(w.welfareDeathsYear / 1e6).toFixed(1)}M extra deaths` : `~${(-w.welfareDeathsYear / 1e6).toFixed(1)}M lives saved`} last year`)
   // crowding: growth since 2026 in regions without a new city (one line)
   const crowded = w.regions.filter(rs => !w.cities.some(c => c.regionId === rs.r.id && !c.offWorld) && rs.r.population > rs.pop0 * 1.05).map(rs => `${rs.r.id} +${Math.round((rs.r.population / rs.pop0 - 1) * 100)}%`)
   if (crowded.length) L.push(`growing with no new city since 2026: ${crowded.join(', ')}`)

@@ -106,11 +106,11 @@ export function stepDemography(w: World, fx: Record<string, LawEffects>): { birt
     // ESTIMATE: health and social spending cut mortality up to 15% at saturation, relative to 2026 levels
     const welfareMult = (1 - 0.15 * fWelfare(welfarePC)) / (1 - 0.15 * fWelfare(rs.pc0.welfare))
     // health laws: primary care and vaccination drives cut mortality as they are followed, most where health is poorest.
-    // ESTIMATE up to -60% at full compliance in a region at 55 years of life expectancy, phased in over ~5 years;
+    // ESTIMATE up to -80% at full compliance in a region at 55 years of life expectancy, phased in over ~3 years;
     // china's rural health campaigns are the reference (life expectancy ~44 in 1960 to ~68 by 1985)
     // https://en.wikipedia.org/wiki/Barefoot_doctor
-    const healthTarget = 0.6 * Math.sqrt(fx[rs.r.id]?.health ?? 0) * clamp((85 - (rs.periodLE || 70)) / 30)
-    rs.healthLaw += (healthTarget - rs.healthLaw) / 60
+    const healthTarget = 0.8 * Math.sqrt(fx[rs.r.id]?.health ?? 0) * clamp((85 - (rs.periodLE || 70)) / 30)
+    rs.healthLaw += (healthTarget - rs.healthLaw) / 36
     const lawMult = (1 - 0.02 * (fx[rs.r.id]?.redistributive ?? 0)) * (1 - rs.healthLaw)
     const pandemic = w.tick < rs.pandemicUntil ? rs.pandemicMort * (1 - 0.5 * reqProgress(w, 'pandemic_preparedness')) : 0
     // ---------- region-wide fertility drivers ----------
@@ -197,6 +197,12 @@ export function stepDemography(w: World, fx: Record<string, LawEffects>): { birt
     if (Math.abs(optimism) > 0.01) why(rs, 'fertility', 'optimism', optimism)
     births += rBorn
     deaths += rTotalDead
+    // deaths that health and social spending above or below 2026 caused (welfareMult is relative to 2026)
+    const wd = rTotalDead * (1 - 1 / welfareMult)
+    w.vital.welfare += wd; w.welfareDeathsAcc += wd
+    if (w.tick % 12 === 11 && rs === w.regions[w.regions.length - 1]) { w.welfareDeathsYear = w.welfareDeathsAcc; w.welfareDeathsAcc = 0 }
+    // cumulative vital counts (for audits and reports): all deaths, of which famine, pandemic, riots
+    w.vital.births += rBorn; w.vital.deaths += rTotalDead + riotDeaths; w.vital.famine += rFamine; w.vital.pandemic += rPandemicDead; w.vital.riots += riotDeaths
 
     // ---------- life expectancy: population-weighted over the region's countries ----------
     const ple = wPle / Math.max(wPop, 1)

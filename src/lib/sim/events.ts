@@ -66,6 +66,7 @@ export function applyEvent(w: World, rs: RegionState, kind: WorldEvent['kind'], 
   switch (kind) {
     case 'disaster': {
       const dead = killInRegion(w, rs, 0.0005 * sev, countryId)
+      w.vital.disasters += dead
       if (countryId) damageCity(w, countryId, 0.5 * sev, text)
       rs.r.gdpUsd *= 1 - 0.03 * sev
       rs.capacityTWh *= 1 - 0.05 * sev
@@ -92,7 +93,7 @@ export function applyEvent(w: World, rs: RegionState, kind: WorldEvent['kind'], 
       return event(w, { regionId: rs.r.id, kind: injected ? 'injected' : 'revolt', text: label, severity: sev })
     case 'war': {
       w.warTension += 0.4 * sev
-      killInRegion(w, rs, 0.002 * sev, countryId)
+      w.vital.disasters += killInRegion(w, rs, 0.002 * sev, countryId)
       rs.r.gdpUsd *= 1 - 0.05 * sev
       rs.shock += 0.2 * sev
       return event(w, { regionId: rs.r.id, kind: injected ? 'injected' : 'war', text: label, severity: sev })
