@@ -32,3 +32,13 @@ for (const [label, file] of boards) {
     })
   })
 }
+
+// an entry's best world is one with a real score: a world a sim bug left without one (5.10.7's housing NaN) would show
+// "destroyed" beside first place while its other numbers came from a different world
+for (const [label, file] of boards) {
+  const lb = readJson<LeaderboardEntry[]>(file)
+  if (!lb?.length) continue
+  test(`leaderboard (${label}): every entry's best world has a real score`, () => {
+    for (const e of lb) assert.ok(Number.isFinite((e.best as { score?: number }).score), `${e.name}'s best world ${(e.best as { runId?: string }).runId} has no score`)
+  })
+}

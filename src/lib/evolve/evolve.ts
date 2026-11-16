@@ -311,7 +311,8 @@ function publishNow(g: GenerationFile, current: { runId: string; agentId: string
 }
 
 const hhmm = (t: number) => new Date(t).toTimeString().slice(0, 5)
-const bestRunOf = (c: Candidate) => c.full ?? [...(c.runs ?? [])].sort(byScore)[0]
+// the 100-year run when it has a real score, else the best screening run (a sim bug can leave the full run with none)
+const bestRunOf = (c: Candidate) => (c.full && Number.isFinite(c.full.score) ? c.full : [...(c.runs ?? [])].sort(byScore)[0] ?? c.full)
 
 // one explain-gaps job at a time; its last line goes to the log
 let gapsRunning = false
