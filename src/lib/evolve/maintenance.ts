@@ -9,6 +9,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import type { RunRecord } from '../types'
 import { readAgents } from './agents'
 import { readLessons } from './lessons'
 import { readJson, readRunIndex, readRunRecord, writeJson, type IndexedRun } from './store'
@@ -111,6 +112,35 @@ export function promoteStable(log: (l: string) => void = console.log): { promote
 }
 
 // ---------- morning digest ----------
+// is the ai beating "do nothing" yet? each world against its no-ai twin (same seed, 2026 policies frozen) at the
+// same tick: it beats the twin when it is still standing and has at least as many people alive
+const yearOfTick = (tick: number) => 2026 + Math.floor((tick + 10) / 12)
+export function twinVerdict(recs: RunRecord[], version?: string): string | null {
+  const rows = recs.map(rec => {
+    const last = [...rec.frames].sort((a, b) => b.tick - a.tick)[0]
+    const b = [...(rec.baseline ?? [])].filter(x => !last || x.tick <= last.tick).sort((x, y) => y.tick - x.tick)[0]
+    if (!last || !b) return null
+    const ai = last.regions.reduce((a, r) => a + r.population, 0)
+    const tw = b.regions.reduce((a, r) => a + r.population, 0)
+    const aiMoonF = [...rec.frames].sort((x, y) => x.tick - y.tick).find(f => f.frontier && f.frontier !== 'none')
+    const twMoon = [...rec.baseline].sort((x, y) => x.tick - y.tick).find(x => x.moonProgress >= 1)
+    const aiAlive = last.status !== 'destroyed', twAlive = b.status !== 'destroyed'
+    return { beat: aiAlive && (ai >= tw || !twAlive), gap: ai - tw, moonLead: aiMoonF && twMoon ? yearOfTick(twMoon.tick) - yearOfTick(aiMoonF.tick) : null }
+  }).filter((x): x is NonNullable<typeof x> => !!x)
+  if (!rows.length) return null
+  const won = rows.filter(r => r.beat).length
+  const m = (n: number) => `${Math.round(Math.abs(n) / 1e6)} million`
+  const gaps = rows.map(r => r.gap).sort((a, b) => a - b)
+  const range = (xs: number[]) => xs.length === 1 || m(xs[0]) === m(xs[xs.length - 1]) ? m(xs[0]) : `${m(xs[0]).replace(' million', '')} to ${m(xs[xs.length - 1])}`
+  const behind = gaps.filter(g => g < 0), ahead = gaps.filter(g => g >= 0)
+  const leads = rows.map(r => r.moonLead).filter((x): x is number => x !== null && x > 0).sort((a, b) => a - b)
+  const moon = leads.length ? `, though it reached the moon ${leads[0] === leads[leads.length - 1] ? leads[0] : `${leads[0]} to ${leads[leads.length - 1]}`} years sooner` : ''
+  const on = version ? ` on ${version}` : ''
+  if (won === rows.length) return `is the ai beating "do nothing" yet? yes: in all ${rows.length} worlds${on} it kept more people alive than the no-ai twin${ahead.length ? `, by ${range(ahead)}` : ''}.`
+  if (won === 0) return `is the ai beating "do nothing" yet? no: in 0 of ${rows.length} worlds${on} did it keep more people alive than the no-ai twin (it trailed by ${range(behind.map(Math.abs).sort((a, b) => a - b))})${moon}.`
+  return `is the ai beating "do nothing" yet? sometimes: in ${won} of ${rows.length} worlds${on} it kept more people alive than the no-ai twin${moon}.`
+}
+
 // dry: build the text without marking the digest sent (npm run morning -- --dry)
 export async function morningDigest(opts: { dry?: boolean } = {}): Promise<string> {
   // everything since the last digest (at most a day back), so evening worlds count in the next morning
@@ -144,7 +174,8 @@ export async function morningDigest(opts: { dry?: boolean } = {}): Promise<strin
   // a sim switch overnight resets the leaderboard, worth one line
   const switched = (readVersion()?.history ?? []).filter(h => Date.parse(h.until) >= since).pop()
   const switchLine = switched ? `the sim changed overnight (${switched.version} to ${readVersion()!.current}), so the leaderboard started over.` : ''
-  const lines = [...lead, tally, ...(switchLine ? [switchLine] : []), ...lives, health].filter(Boolean)
+  const verdict = twinVerdict(runs.filter(r => r.simVersion === readVersion()?.current).map(r => readRunRecord(r.runId)).filter((x): x is RunRecord => !!x), readVersion()?.current)
+  const lines = [...(verdict ? [verdict] : []), ...lead, tally, ...(switchLine ? [switchLine] : []), ...lives, health].filter(Boolean)
   if (!opts.dry) saveState({ lastMorning: new Date().toISOString(), morningLessons: lessons.length })
   return lines.filter(Boolean).join('\n')
 }
