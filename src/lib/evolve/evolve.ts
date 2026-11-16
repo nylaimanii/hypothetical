@@ -364,10 +364,11 @@ async function runStage(g: GenerationFile, stage: Stage, tasks: { c: Candidate; 
 const QUALITY_MODEL = process.env.QUALITY_MODEL || 'qwen2.5:14b'
 async function qualityCheck(deps: Deps) {
   if (!qualityDue()) return
-  markQuality()
   const champ = readAgents().find(a => a.champion)
   const best = champ && readRunIndex().filter(r => r.agentId === champ.id && isFullRun(r.runId) && (!r.simVersion || r.simVersion === control.simVersion)).sort((a, b) => b.score - a.score)[0]
-  if (!champ || !best) { deps.log('quality check: no champion with a full run yet, skipped'); return }
+  // nothing to replay yet: try again between the next worlds instead of waiting a week
+  if (!champ || !best) return
+  markQuality()
   const runId = `qc${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${best.runId}`.slice(0, 80)
   const prevModel = process.env.LLM_MODEL
   control.maintenance = 'quality check'
