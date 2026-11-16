@@ -83,7 +83,7 @@ function applyOverride(w: World, o: Override, mem: GovernorMemory) {
 // agentId stamps the record; startFrom branches from a saved run at a tick; untilTick stops early (status stays alive).
 // flipDecision (what-if): branch from startFrom.runId at tick, change that one decision, then either replay the
 // source's later decisions ('replay', the clean what-if) or let this run's governor take over ('govern')
-export type FlipChange = { dropLaws?: string[]; addLaws?: { title: string; text: string }[]; repeal?: string[]; budget?: Partial<Decision['budget']>; religionPolicy?: Decision['religionPolicy'] }
+export type FlipChange = { replaceWith?: Decision; dropLaws?: string[]; addLaws?: { title: string; text: string }[]; repeal?: string[]; budget?: Partial<Decision['budget']>; religionPolicy?: Decision['religionPolicy'] }
 export type FlipDecision = { tick: number; change: FlipChange; after?: 'replay' | 'govern' }
 // assumptions: overrides of data/assumptions.json for this run (and its twin); clamped to each range and recorded
 export type RunOpts = RunOptions & { agentId?: string; startFrom?: { runId: string; tick: number }; untilTick?: number; flipDecision?: FlipDecision; assumptions?: Record<string, number> }
@@ -92,10 +92,12 @@ export type RunOpts = RunOptions & { agentId?: string; startFrom?: { runId: stri
 export let lawStats = { proposed: 0, repeated: 0, amended: 0, converted: 0 }
 
 export async function runWorld(opts: RunOpts): Promise<RunSummary> {
+  // a pure replay (what-if, A/B, counterfactual) asks no model: no lock, no model needed
+  const pureReplay = opts.flipDecision?.after === 'replay' || opts.flipDecision?.after === undefined && !!opts.flipDecision
   // fail fast: a real run never quietly drops to the offline governor
-  await assertLlmReady()
+  if (!pureReplay) await assertLlmReady()
   // one ollama-heavy job at a time across processes (run-one, evolve, live): data/.ollama.lock
-  const release = await acquireOllamaLock(opts.runId, { priority: 0 }) // worlds first: lives and other background calls queue behind
+  const release = pureReplay ? () => {} : await acquireOllamaLock(opts.runId, { priority: 0 }) // worlds first: lives and other background calls queue behind
   const usage: Usage = { llmCalls: 0, tokens: 0 }
   const t0 = Date.now()
   let summary: RunSummary
@@ -403,7 +405,10 @@ function writeJsonAtomic(file: string, data: unknown) {
 
 
 // the flipped decision: drop or add laws, repeal, change the budget or religion policy
-function flipped(d: Decision, ch: FlipChange, w: World): Decision {
+function flipped(d0: Decision, ch: FlipChange, w: World): Decision {
+  // replaceWith: another run's whole decision (its exact input) in place of this one
+  const rw = ch.replaceWith as (Decision & { input?: object }) | undefined
+  const d = rw ? (rw.input ? { ...rw, ...rw.input } as Decision : rw) : d0
   const dx = { ...d } as Decision & { amend?: unknown[] }
   const drop = (ch.dropLaws ?? []).map(x => x.toLowerCase())
   dx.laws = (d.laws ?? []).filter(l => !drop.some(x => l.id.toLowerCase() === x || l.title.toLowerCase().includes(x)))

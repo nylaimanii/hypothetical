@@ -174,3 +174,23 @@ test('when a world dies, its autopsy walks back in date order from the death to 
   assert.equal(a.chain[0].byWhom, 'core', `the chain starts at "${a.chain[0].what}", not a decision`)
   for (let i = 1; i < a.chain.length; i++) assert.ok(a.chain[i].tick >= a.chain[i - 1].tick, `step ${i} comes before the step it follows`)
 })
+
+test('an A/B test changes one thing on several seeds and counts the wins; explainGap finds the decision that made the difference', async () => {
+  const os = await import('node:os'), fs = await import('node:fs'), path = await import('node:path')
+  const here = process.cwd(), tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hyp-ab-'))
+  fs.mkdirSync(path.join(tmp, 'data', 'runs'), { recursive: true })
+  process.chdir(tmp)
+  try {
+    const { abTest, explainGap } = await import('../../../src/lib/sim/ab')
+    const { runWorld } = await import('../../../src/lib/sim/run')
+    const r = await abTest('t', { constitution: 'x', agentId: 'test', untilTick: 60 } as never, { decision: { tick: 0, change: { addLaws: [{ title: 'Universal Primary Care', text: 'Free clinics and vaccination everywhere.' }] } } }, [42, 7])
+    assert.equal(r.perSeed.length, 2)
+    assert.equal(r.wins.lifeExpectancy.of, 2)
+    assert.match(r.verdict, /in \d of 2 seeds/)
+    await runWorld({ runId: 'ga', generation: 0, seed: 42, constitution: 'x', agentId: 'test', untilTick: 96 } as never)
+    await runWorld({ runId: 'gb', generation: 0, seed: 42, constitution: 'x', agentId: 'test', untilTick: 96, startFrom: { runId: 'ga', tick: 48 }, flipDecision: { tick: 48, change: { budget: { welfare: 0.2, space: 0.4 } }, after: 'replay' } } as never)
+    const g = await explainGap('ga', 'gb')
+    assert.equal(g.reasons[0]?.tick, 48, 'the only changed decision explains the gap')
+    assert.ok(Math.abs(g.reasons[0].share - 1) < 0.05, `share ${g.reasons[0].share}`)
+  } finally { process.chdir(here); fs.rmSync(tmp, { recursive: true, force: true }) }
+})
