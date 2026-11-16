@@ -2,6 +2,7 @@
 // beyond the published rules of the world.
 import { housingLine } from '../sim/housing'
 import { dailyLines } from '../sim/daily'
+import { powerLines } from '../sim/power'
 import type { Override, WorldEvent } from '../types'
 import { dateOf } from '../sim/constants'
 import { monthlyRevenue } from '../sim/physics'
@@ -112,6 +113,7 @@ function briefLines(w: World, b: Brief, cut: number): string[] {
   const hl = housingLine(w)
   if (hl) L.push(hl)
   L.push(...dailyLines(w))
+  L.push(...powerLines(w))
   // crowding: growth since 2026 in regions without a new city (one line)
   const crowded = w.regions.filter(rs => !w.cities.some(c => c.regionId === rs.r.id && !c.offWorld) && rs.r.population > rs.pop0 * 1.05).map(rs => `${rs.r.id} +${Math.round((rs.r.population / rs.pop0 - 1) * 100)}%`)
   if (crowded.length) L.push(`growing with no new city since 2026: ${crowded.join(', ')}`)

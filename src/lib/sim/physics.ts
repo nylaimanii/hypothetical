@@ -16,7 +16,8 @@ import type { LawEffects } from './society'
 const KEYS: (keyof Budget)[] = ['food', 'energy', 'education', 'space', 'security', 'welfare', 'research']
 
 export function monthlyRevenue(w: World): number {
-  return w.revenueShare * sum(w.regions.filter(r => !r.seceded).map(r => r.r.gdpUsd)) / 12
+  // wealth hidden offshore beyond 2026 levels is not taxed (power.ts)
+  return w.revenueShare * sum(w.regions.filter(r => !r.seceded).map(r => r.r.gdpUsd)) / 12 * (1 - (w.hiddenLoss ?? 0))
 }
 
 // splits this month's revenue into per-region spending. space and research are central programs and
@@ -29,7 +30,9 @@ export function allocate(w: World): { revenue: number; space: number; research: 
   w.migrationCostMonthly = w.migrationCostMonthly.filter(m => m.until > w.tick)
   const migBill = sum(w.migrationCostMonthly.map(m => m.usd))
   w.regions.forEach((rs, i) => {
-    for (const k of KEYS) rs.spend[k] = b[k] * revenue * shares[i]
+    // corruption: a share of what reaches the region leaks before it is spent; 2026 leakage is already in the
+    // 2026 calibration, so only the change counts (power.ts)
+    for (const k of KEYS) rs.spend[k] = b[k] * revenue * shares[i] * (1 - (rs.leak ?? 0)) / (1 - (rs.leak0 ?? 0))
     rs.spend.welfare = Math.max(0, rs.spend.welfare - migBill * shares[i])
   })
   return { revenue, space: b.space * revenue, research: b.research * revenue }
@@ -160,6 +163,8 @@ export function stepEconomy(w: World, popBefore: number[]) {
     // strikes, protests and riots cost output; new cities add a little agglomeration growth (ESTIMATE)
     const drag = behaviorDrag(rs)
     g -= drag
+    // automation productivity and capital flight (power.ts)
+    g += (rs.autoGrowth ?? 0) - (rs.flightDrag ?? 0)
     const agglom = 0.2 * clamp(rs.newCityPop / Math.max(pop, 1) * 10)
     g += 0.01 * agglom
     why(rs, 'gdpUsd', 'strikes and protests', -drag * rs.r.gdpUsd / 12)

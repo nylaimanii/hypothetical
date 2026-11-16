@@ -83,7 +83,8 @@ export function stepLaws(w: World): Record<string, LawEffects> {
       const enforceable = f.coercive || ['collectivization', 'birth_limit', 'religion_suppression', 'conscription', 'assembly_limit', 'relocation', 'lockdown', 'slum_clearance'].includes(meta?.policyKind ?? '')
       const secRatio = Math.max(rs.spend.security * 12 / Math.max(rs.r.population, 1), 1) / Math.max(rs.pc0.security, 1)
       const forced = enforceable ? rs.r.compliance * clamp((secRatio - 1) / 2) : 0
-      const c = rs.seceded ? 0 : Math.max(rs.r.compliance * (0.25 + 0.75 * s), forced) * sued
+      // the core administers every law: its compute, legitimacy and resistance scale compliance (power.ts)
+      const c = rs.seceded ? 0 : clamp(Math.max(rs.r.compliance * (0.25 + 0.75 * s), forced) * sued * (rs.powerMult ?? 1))
       rs.lawSupport[l.id] = s
       rs.lawCompliance[l.id] = c
       e.science = Math.max(e.science, f.science * c)

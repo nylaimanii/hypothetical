@@ -35,7 +35,7 @@ export type Housing = {
 }
 
 // ESTIMATE social housing share of households: ~5% worldwide; much higher where public housing is the norm
-// (Singapore HDB ~78%: https://www.hdb.gov.sg ; Hong Kong ~45% public rental + subsidized sale; Netherlands, Austria ~20-30%)
+// (Singapore HDB ~78%: https://en.wikipedia.org/wiki/Housing_and_Development_Board ; Hong Kong ~45% public rental + subsidized sale; Netherlands, Austria ~20-30%)
 const SOCIAL0: Record<string, number> = { SGP: 0.78, HKG: 0.45, NLD: 0.3, AUT: 0.24, DNK: 0.21, GBR: 0.17, FRA: 0.14, SWE: 0.17, FIN: 0.11, CHN: 0.1 }
 
 export function initHousing(c: CountryState): Housing {
@@ -111,7 +111,7 @@ export function stepHousing(w: World) {
       h.pipeline = h.pipeline.filter(p => { if (p.done <= w.tick) { if (p.kind === 'social') doneSocial += p.units; else done += p.units; return false } return true })
       // ---- private starts: ~1% of stock a year (US completions ~1.4M on ~145M homes), more when prices are high and
       // upzoning lets builders respond (Auckland 2016: consents roughly doubled in upzoned areas,
-      // https://doi.org/10.1016/j.jue.2023.103550), fewer under rent caps (San Francisco: -15% rental supply,
+      // https://doi.org/10.1016/j.jue.2023.103555), fewer under rent caps (San Francisco: -15% rental supply,
       // Diamond, McQuade & Qian 2019, https://doi.org/10.1257/aer.20181289) and in unrest. ESTIMATE elasticity 2
       const priceSignal = Math.max(0, h.priceIdx / h.price0 - 1)
       const elastic = 2 * (1 + upzone.c) / (1 + 2 * c.seed.urban * (1 - upzone.c))
@@ -125,7 +125,7 @@ export function stepHousing(w: World) {
       h.pipeline.push({ done: w.tick + 18, units: starts, kind: 'private' }) // ~18 months start to completion (US Census Survey of Construction)
       // ---- public building: the social housing law spends up to ~10% of this country's share of welfare on homes,
       // capped at 2% of households a year (Singapore HDB built ~54,000 homes in its first 5 years, ~10%+ of stock:
-      // https://www.hdb.gov.sg/about-us/history). 24 months to complete
+      // https://en.wikipedia.org/wiki/Housing_and_Development_Board). 24 months to complete
       if (social.c > 0) {
         const welfareUsd = rs.spend.welfare * 12 * c.gdpUsd / rGdp
         const units = Math.min(0.02 * H, social.c * 0.1 * welfareUsd / unitCost)
@@ -150,7 +150,7 @@ export function stepHousing(w: World) {
       h.informal -= upgraded; h.owned += upgraded; h.upgradedYear = upgraded
       if (upgraded > 1000) link(w, { placeId: c.id, what: `${fmt(upgraded * h.hhSize)} slum residents in ${c.name} got water, sewers or a title deed`, value: clamp(upgraded / H * 30), because: upgrade.c >= title.c ? 'slum upgrading law' : 'land titling law', byWhom: 'core', lawId: upgrade.c >= title.c ? upgrade.lawId : title.lawId })
       // clearance: Zimbabwe's Operation Murambatsvina (2005) destroyed homes or livelihoods of ~700,000 people in weeks
-      // (UN Tibaijuka report, https://www.un.org/News/dh/infocus/zimbabwe/zimbabwe_rpt.pdf). most rebuild informally elsewhere
+      // (UN Tibaijuka report, https://en.wikipedia.org/wiki/Operation_Murambatsvina). most rebuild informally elsewhere
       const cleared = h.informal * 0.1 * clear.c
       h.clearedYear = cleared
       if (cleared > 0) {
@@ -185,7 +185,7 @@ export function stepHousing(w: World) {
       const before = h.priceIdx
       h.priceIdx += (target - h.priceIdx) * 0.3
       // rents follow prices less than one for one; caps hold them down (Berlin's Mietendeckel 2020 cut capped rents
-      // but listings halved: https://www.diw.de/de/diw_01.c.812524.de/publikationen/wochenberichte/2021_09_1/)
+      // but rental listings fell sharply: https://de.wikipedia.org/wiki/Mietendeckel)
       h.rentBurden = clamp(h.burden0 * Math.pow(h.priceIdx / h.price0, 0.7) * (1 - 0.3 * rent.c), 0.08, 0.8)
       const why = recentLink(w, c.id, k => /lost their homes|public homes|bulldozed|title deed/.test(k.what), 36)
       if (Math.abs(h.priceIdx / before - 1) > 0.08) h.priceLink = { tick: w.tick, id: link(w, { placeId: c.id, what: `home prices in ${c.name} ${h.priceIdx > before ? 'rose' : 'fell'} to ${h.priceIdx.toFixed(1)}x a year's household income`, value: Math.abs(h.priceIdx / before - 1), because: why && /lost their homes/.test(why.what) && eff > p0 ? 'homes destroyed, more households than homes' : eff > p0 ? 'more households than homes' : 'more homes than households', byWhom: 'market', stat: 'housingCost', causeIds: why ? [why.id] : [] }).id }

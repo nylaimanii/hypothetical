@@ -25,12 +25,13 @@ export type LocalLife = {
   provenance: Record<string, Provenance>
 }
 // infrastructure that exists in 2026 and can change. diffs are recorded against the baked 2026 baseline
-export type InfraKind = 'city' | 'plant' | 'rail' | 'road' | 'airport' | 'port'
+export type InfraKind = 'city' | 'plant' | 'rail' | 'road' | 'airport' | 'port' | 'datacenter'
 export type InfraDiff =
   | { tick: number; kind: 'plant'; op: 'built'; id: string; fuel: string; mw: number; lat: number; lon: number; countryId: string; because: string }
   // retired plants: look up fuel, size and location in data/geo/plants.json by id
   | { tick: number; kind: 'plant'; op: 'retired'; id: string; countryId: string; because: string }
   | { tick: number; kind: 'rail'; op: 'built'; id: string; from: string; to: string; because: string; lawId?: string }
+  | { tick: number; kind: 'datacenter'; op: 'attacked' | 'built'; id: string; because: string }
   | { tick: number; kind: 'city'; op: 'grew' | 'shrank' | 'damaged' | 'founded'; id: string; population: number; damage?: number; because: string }
 // relative traffic 0..1 for the baked segments and hubs, by hour of a typical day this year
 export type TrafficFrame = { roads: number[]; rail: number[]; ports: number[]; airports: number[] }

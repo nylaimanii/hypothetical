@@ -125,7 +125,7 @@ export function stepDaily(w: World, fx: Record<string, LawEffects>) {
       d.enroll += (enrollTarget - d.enroll) * 0.2
       d.doctors = (DAILY.get(c.id)?.doctorsPer1000 ?? 1.5) * Math.pow(grow, 0.5) * (1 + 0.5 * (e?.health ?? 0)) * (1 - 0.3 * clamp(d.diaspora - 1))
       // brain drain: skilled emigration rates are highest in small poor countries (Docquier, Lowell & Marfouk 2009,
-      // https://doi.org/10.1111/j.1728-4457.2009.00282.x : guyana, haiti 80%+, nigeria ~11%, india ~4%, rich <1%).
+      // https://doi.org/10.1111/j.1728-4457.2009.00277.x : guyana, haiti 80%+, nigeria ~11%, india ~4%, rich <1%).
       // ESTIMATE yearly outflow = stock rate / 30-year career, pulled by the income gap and internet access
       const top = rich[0]
       const gap = top && top !== rs ? clamp(Math.log((top.r.gdpUsd / regionPop(top)) / Math.max(gdppc, 1)) / 3) : 0
@@ -152,7 +152,10 @@ export function stepDaily(w: World, fx: Record<string, LawEffects>) {
       // slowly with growth in rich economies (skill-biased technology, ESTIMATE +0.001/yr)
       const giniTarget = clamp((c.seed.gini || 0.38) - 0.12 * (e?.redistributive ?? 0) + 0.001 * (w.tick / 12) * inc, 0.2, 0.7)
       d.gini += (giniTarget - d.gini) * 0.1
-      const pov = povOf(gdppc * d.povScale / 365, d.gini)
+      // a basic income lifts the floor: at full compliance and funding ~60% of the extremely poor cross the line
+      // (GiveDirectly's kenya UBI study: large gains in consumption and assets, https://www.givedirectly.org/ubi-study/)
+      const ubiC = strongest(w, rs, 'basic_income').c
+      const pov = povOf(gdppc * d.povScale / 365, d.gini) * (1 - 0.6 * ubiC)
       const povWhy = pov > d.poverty ? recentLink(w, rs.r.id, k => /recession|gdp|disaster|unemploy|strike|revolt/.test(k.what), 24) : undefined
       if (Math.abs(pov - d.poverty) > 0.02) link(w, { causeIds: povWhy ? [povWhy.id] : [], placeId: c.id, what: `extreme poverty in ${c.name} ${pov > d.poverty ? 'rose' : 'fell'} to ${pct(pov)}`, value: Math.abs(pov - d.poverty) * 10, because: `income per head ${grow >= 1 ? '+' : ''}${Math.round((grow - 1) * 100)}% since 2026, gini ${d.gini.toFixed(2)}`, byWhom: 'market', stat: 'economy' })
       d.poverty = pov

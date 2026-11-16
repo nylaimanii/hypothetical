@@ -1,5 +1,6 @@
 import { initHousing, type Housing } from './housing'
 import type { Daily } from './daily'
+import type { Power } from './power'
 // v4 / phase 1: the sim at country level. ~200 real countries carry their own age bands, mortality,
 // fertility, food, economy, unrest and compliance; regions are the sum of their countries and stay as the
 // summary layer for the governor brief. states (admin-1) and real cities roll down from their country by
@@ -36,6 +37,7 @@ export type CountryState = {
   housing: Housing; housingGdpPrev: number
   daily: Daily
   droughtSev: number; droughtUntil: number
+  power: Power
 }
 
 export const countryPop = (c: CountryState) => sum(c.bands)
@@ -65,7 +67,7 @@ export function initCountries(regions: RegionState[]): CountryState[] {
         gdpUsd: s.gdpUsd * rs.r.gdpUsd / Math.max(sum(seeds.map(x => x.gdpUsd)), 1), kcalRatio: clamp(s.kcal / Math.max(regionKcal, 1), 0.6, 1.6), kcal: s.kcal, foodMonthsUnder: 0,
         unrestOffset: unrestC - rs.r.unrest, complianceOffset: complianceC - rs.r.compliance, unrest: unrestC, compliance: complianceC,
         unemployment: s.unemployment, happiness: clamp(s.happiness / 10), damage: 0, shock: 0,
-        stats: emptyStats(pop), hist: [], ple: 0, housing: undefined as unknown as Housing, housingGdpPrev: 0, daily: undefined as unknown as Daily, droughtSev: 0, droughtUntil: 0,
+        stats: emptyStats(pop), hist: [], ple: 0, housing: undefined as unknown as Housing, housingGdpPrev: 0, daily: undefined as unknown as Daily, droughtSev: 0, droughtUntil: 0, power: undefined as unknown as Power,
       })
       out[out.length - 1].housing = initHousing(out[out.length - 1])
     }
@@ -168,7 +170,7 @@ export function stepCountries(w: World) {
       c.unrest = clamp(rs.r.unrest + c.unrestOffset + c.shock + (c.housing?.unrest ?? 0) + (c.daily ? 0.3 * Math.max(0, c.daily.poverty - c.daily.pov0) : 0))
       c.compliance = clamp(rs.r.compliance + c.complianceOffset)
       // ESTIMATE unemployment: drifts with the region's growth (Okun's law, ~0.4 points per growth point) and strikes
-      c.unemployment = clamp(c.unemployment + (0.4 * (0.025 - rs.growth) / 12) * 0.1 + 0.02 * rs.behavior.striking - (c.unemployment - c.seed.unemployment / 100) * 0.01, 0.01, 0.5)
+      c.unemployment = clamp(c.unemployment + (0.4 * (0.025 - rs.growth) / 12) * 0.1 + 0.02 * rs.behavior.striking - (c.unemployment - c.seed.unemployment - (c.power?.autoApplied ?? 0)) * 0.01, 0.01, 0.6)
     }
   }
 }

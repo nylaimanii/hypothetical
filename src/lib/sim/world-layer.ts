@@ -283,7 +283,7 @@ export function localLife(w: World, c: Citizen) {
   const employed = working ? unit(c.personalitySeed, `emp${Math.floor(w.tick / 12)}`) >= unemp * (1 + 0.5 * (rs.behavior.idle - 0.04) * 10) : false
   // income (USD/month): GDP per capita x labor share (~0.55, ILO), spread by income band and the country's Gini
   const gdppc = country ? country.gdpUsd / Math.max(countryPop(country), 1) : rs.r.gdpUsd / Math.max(regionPop(rs), 1)
-  const gini = country?.seed.gini ?? 0.38
+  const gini = country?.daily?.gini ?? country?.seed.gini ?? 0.38
   const band = c.group?.incomeBand ?? 'mid'
   const bandMult = band === 'low' ? 0.5 - 0.4 * gini : band === 'high' ? 1.8 + 4 * gini : 1
   const income = Math.round((employed ? gdppc * 0.55 * bandMult : working ? gdppc * 0.08 : c.age >= 67 ? gdppc * 0.25 : 0) / 12)

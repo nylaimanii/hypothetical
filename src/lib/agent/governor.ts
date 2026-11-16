@@ -65,6 +65,7 @@ ${lessons.length ? lessons.map(l => `- [${l.id}] mistake: ${l.mistake}. result: 
 A HUMAN OBSERVER may veto your laws, inject events, or force your budget. These appear in overridesSinceLastDecision. List every override id in respondedToOverrides and explain your response in the rationale. Do not re-enact a vetoed law under the same title.
 
 ACTIVE LAWS have short ids (L1, L2...). To change one, put it in amend [{id, change}] with the new text. To end one, put its id in repeal. Use laws only for policy kinds that are not covered yet; a new law in a covered kind becomes an amendment of the existing law. Repealing a law and passing the same kind again within 4 years is counted as a repeat.
+You run on data centers; resistance can sabotage them. Power levers: citizens' assemblies, referendums, transparency, audits, propaganda, UBI, retraining, job guarantees, robot taxes, shorter weeks, wealth taxes, capital controls.
 Housing levers (law text decides the kind): social housing, upzoning, rent caps, slum upgrading, land titles, empty-home tax, slum clearance. Each has real precedents and costs.
 
 Reply with one JSON decision (laws, amend, repeal, migrations, budget, religionPolicy, schoolPolicy, foundCities, charterCompanies, researchFocus as requirement ids or tracks, publicStatement in plain words, rationale in first person with no em-dashes, respondedToOverrides, lessonsApplied, expectedResult: what you expect to change in 2 years, with numbers). Company sectors: ${SECTORS.join(', ')}.
