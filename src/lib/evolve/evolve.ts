@@ -320,7 +320,7 @@ function startGapReplays(log: (l: string) => void) {
     let out = ''
     child.stdout.on('data', d => { out += d })
     child.stderr.on('data', d => { out += d })
-    child.on('exit', () => { gapsRunning = false; for (const l of out.trim().split('\n').filter(l => l.startsWith('explain-gaps:'))) log(l) })
+    child.on('exit', () => { gapsRunning = false; for (const l of out.trim().split('\n').filter(l => /^(explain-gaps|playbook-ab):/.test(l))) log(l) })
   } catch (e) { gapsRunning = false; log(`explain-gaps could not start: ${(e as Error).message}`) }
 }
 

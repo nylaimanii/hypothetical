@@ -466,7 +466,7 @@ test('playbook: rules map to budget tests in plain words, confidence moves with 
   const pb2 = computePlaybook([lesson], [...feats, f('g2-a-s4', 'a', 0.3, 0.1), f('g2-b-s4', 'b', 0.1, 0.9)], () => '5.1.0', pb, 2)
   const l2 = pb2.lessons[0]
   assert.equal(l2.confidence, 0.5); assert.equal(l2.trend, 'down')
-  assert.equal(lessonLine(l2), 'ensure basic human needs are met before pursuing long-term space goals: 50% sure (2 of 4 a/b tests agree, down from 60%)')
+  assert.equal(lessonLine(l2), 'ensure basic human needs are met before pursuing long-term space goals: 50% sure (2 of 4 a/b tests agree: 2 of 4 same-seed world pairs, down from 60%)')
 })
 
 test('autopsy walks the cause chain back from the recorded cause, and explainGap names real differences', async () => {
@@ -521,4 +521,19 @@ test('leaderboard gaps: decisions said from the two records, replayed ones first
   const g = { [gapKey('a', 'b')]: { lowerRun: 'w2', seed: 7, gap: 5e6, reasons: [{ text: 'in 2030-11, a put 30% into food' }], text: 'on seed 7, a had 5 million more people alive' } } as never
   assert.deepEqual(gapFor(lb, 0, g), { method: 'replay', vs: 'w2', seed: 7, gap: 5e6, decisive: ['in 2030-11, a put 30% into food'], text: 'on seed 7, a had 5 million more people alive' })
   assert.equal(gapFor(lb, 2, {}), null)
+})
+
+test('controlled playbook tests: the budget moves 5 points the lesson\'s way and the result joins the evidence', async () => {
+  const { shiftedBudget, testOf, computePlaybook, controlledKey } = await import('./playbook')
+  const t = testOf('Ensure basic human needs are met before pursuing long-term space goals.')!
+  const b = { food: 0.1, energy: 0.1, education: 0.1, space: 0.2, security: 0.1, welfare: 0.2, research: 0.2 }
+  const s = shiftedBudget(t, b)
+  assert.ok(Math.abs(s.space - 0.15) < 1e-9 && Math.abs(s.food - 0.125) < 1e-9 && Math.abs(s.welfare - 0.225) < 1e-9, JSON.stringify(s))
+  assert.ok(Math.abs(Object.values(s).reduce((a, x) => a + x, 0) - 1) < 1e-9)
+  const lesson = { id: 'l1', fromRunId: 'x', generation: 0, mistake: 'm', consequence: 'c', rule: 'Ensure basic human needs are met before pursuing long-term space goals.', timesRelevant: 1 }
+  const ctl = { [controlledKey('l1', t, '5.10.3')]: { simVersion: '5.10.3', seeds: [1, 2, 3, 4, 5], wins: 4, losses: 1, of: 5, years: 20, shift: "5 points of one year's budget moved from space to food and welfare", perSeed: [1, 2, 3, 4, 5].map(seed => ({ seed, a: 100, b: seed === 3 ? 90 : 131000 })) } }
+  const pb = computePlaybook([lesson], [], () => '5.10.3', null, 1, ctl, '5.10.3')
+  const l = pb.lessons[0]
+  assert.equal(l.supported, 4); assert.equal(l.contradicted, 1); assert.equal(l.confidence, 0.71)
+  assert.match(l.controlled!.text, /in 4 of 5 seeds, typically 131,000 more/)
 })

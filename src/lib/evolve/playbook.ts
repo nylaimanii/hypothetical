@@ -12,10 +12,12 @@
 // ("tested as"), so anyone can see what was measured.
 import fs from 'node:fs'
 import path from 'node:path'
-import type { Lesson } from '../types'
+import type { Lesson, RunRecord } from '../types'
 import { readLessons } from './lessons'
 import { readJson, readRunIndex, writeJson } from './store'
 import { goodnessOf, readFeatures, type RunFeatures } from './steps'
+import { currentVersion } from './version'
+import { people } from './facts'
 
 type BudgetKey = keyof RunFeatures['budget']
 // rule words -> the budget lines they are about
@@ -61,6 +63,9 @@ export type PlaybookLesson = {
   id: string; rule: string; learnedFrom: string; generation: number; mistake: string
   testedAs: string | null
   supported: number; contradicted: number; tests: number
+  // of those: the natural same-seed pairs, and the controlled sim tests (one per seed)
+  natural: { supported: number; contradicted: number }
+  controlled: (Controlled & { text: string }) | null
   confidence: number | null; previous: number | null; trend: 'up' | 'down' | 'same' | 'new' | 'untested'
   examples: AbTest[]
 }
@@ -86,14 +91,14 @@ export function pairsOf(features: RunFeatures[], versionOf: (runId: string) => s
 
 const conf = (s: number, c: number) => Math.round(((s + 1) / (s + c + 2)) * 100) / 100
 
-export function computePlaybook(lessons: Lesson[], features: RunFeatures[], versionOf: (runId: string) => string, prev: Playbook | null, generation: number | null): Playbook {
+export function computePlaybook(lessons: Lesson[], features: RunFeatures[], versionOf: (runId: string) => string, prev: Playbook | null, generation: number | null, controlled: Record<string, Controlled> = {}, version?: string): Playbook {
   const good = goodnessOf(features)
   const pairs = pairsOf(features, versionOf)
   const before = new Map((prev?.lessons ?? []).map(l => [l.id, l.confidence]))
   const out: PlaybookLesson[] = lessons.map(l => {
     const t = testOf(l.rule)
     const base = { id: l.id, rule: l.rule, learnedFrom: l.fromRunId, generation: l.generation, mistake: l.mistake, testedAs: t?.text ?? null }
-    if (!t) return { ...base, supported: 0, contradicted: 0, tests: 0, confidence: null, previous: null, trend: 'untested' as const, examples: [] }
+    if (!t) return { ...base, supported: 0, contradicted: 0, tests: 0, natural: { supported: 0, contradicted: 0 }, controlled: null, confidence: null, previous: null, trend: 'untested' as const, examples: [] }
     const tests: AbTest[] = []
     for (const [a, b] of pairs) {
       const d = follows(t, a) - follows(t, b)
@@ -104,11 +109,18 @@ export function computePlaybook(lessons: Lesson[], features: RunFeatures[], vers
       if (gf === undefined || go === undefined || Math.abs(gf - go) < 1e-6) continue
       tests.push({ seed: seedOf(fol.runId)!, version: versionOf(fol.runId), horizon: fol.horizon, follower: fol.runId, other: oth.runId, supported: gf > go })
     }
-    const s = tests.filter(x => x.supported).length, c = tests.length - s
+    const ns = tests.filter(x => x.supported).length, nc = tests.length - ns
+    // the controlled test for this version (or the newest one there is)
+    const ck = Object.keys(controlled).filter(k => k.startsWith(`${l.id}|${t.up.join('+')}>${t.down.join('+')}|`))
+    const ckey = version && controlled[controlledKey(l.id, t, version)] ? controlledKey(l.id, t, version) : ck.sort().pop()
+    const ct = ckey ? controlled[ckey] : undefined
+    const med = ct?.perSeed.length ? [...ct.perSeed.map(p => p.b - p.a)].sort((x, y) => x - y)[Math.floor(ct.perSeed.length / 2)] : 0
+    const ctrl = ct ? { ...ct, text: `in the sim, ${ct.shift} left more people alive after ${ct.years} years in ${ct.wins} of ${ct.of} seeds, typically ${people(med)} ${med >= 0 ? 'more' : 'fewer'} (offline governor, sim ${ct.simVersion})` } : null
+    const s = ns + (ct?.wins ?? 0), c = nc + (ct?.losses ?? 0)
     const confidence = conf(s, c)
     const p = before.get(l.id) ?? null
     const trend = p === null ? 'new' : confidence > p ? 'up' : confidence < p ? 'down' : 'same'
-    return { ...base, supported: s, contradicted: c, tests: tests.length, confidence, previous: p, trend, examples: tests.slice(-6) }
+    return { ...base, supported: s, contradicted: c, tests: s + c, natural: { supported: ns, contradicted: nc }, controlled: ctrl, confidence, previous: p, trend, examples: tests.slice(-6) }
   })
   // best supported first, untested last
   out.sort((a, b) => (b.confidence ?? -1) - (a.confidence ?? -1) || b.tests - a.tests)
@@ -118,7 +130,7 @@ export function computePlaybook(lessons: Lesson[], features: RunFeatures[], vers
 // after each generation: recompute over every real world's features and save
 export function writePlaybook(generation: number | null): Playbook {
   const versions = new Map(readRunIndex().map(r => [r.runId, r.simVersion ?? '?']))
-  const pb = computePlaybook(readLessons(), Object.values(readFeatures()), id => versions.get(id) ?? '?', readPlaybook(), generation)
+  const pb = computePlaybook(readLessons(), Object.values(readFeatures()), id => versions.get(id) ?? '?', readPlaybook(), generation, readControlled(), currentVersion())
   fs.mkdirSync(path.dirname(playbookFile()), { recursive: true })
   writeJson(playbookFile(), pb)
   return pb
@@ -128,7 +140,77 @@ export function writePlaybook(generation: number | null): Playbook {
 export function lessonLine(l: PlaybookLesson): string {
   const rule = l.rule.replace(/[.\s]+$/, '').replace(/^./, c => c.toLowerCase())
   if (l.confidence === null) return `${rule}: not tested yet (no budget decision matches it)`
-  if (!l.tests) return `${rule}: no a/b test yet (no two worlds on the same seed differed on it)`
+  if (!l.tests) return `${rule}: no a/b test yet (no two worlds on the same seed differed on it, no controlled test run)`
   const was = l.previous !== null && l.previous !== l.confidence ? `, ${l.trend} from ${Math.round(l.previous * 100)}%` : ''
-  return `${rule}: ${Math.round(l.confidence * 100)}% sure (${l.supported} of ${l.tests} a/b tests agree${was})`
+  const parts = [l.natural.supported + l.natural.contradicted ? `${l.natural.supported} of ${l.natural.supported + l.natural.contradicted} same-seed world pairs` : '', l.controlled ? `${l.controlled.wins} of ${l.controlled.of} controlled sim tests` : ''].filter(Boolean)
+  return `${rule}: ${Math.round(l.confidence * 100)}% sure (${l.supported} of ${l.tests} a/b tests agree: ${parts.join(', ')}${was})`
+}
+
+// ---------- controlled a/b tests (the lesson's mechanism, in the sim) ----------
+// for each lesson with a budget test: per seed, world A runs under the offline governor (deterministic, no model);
+// world B is A from its first decision with 5 points of the budget moved the way the lesson says (from the "down"
+// lines to the "up" lines, or from/to the rest evenly), then A's own later decisions replayed, so that one year's
+// change is the only difference (b's flipDecision 'replay'). measured: people alive after 20 years (truth.ts). this
+// tests what the lesson does in the sim, not whether an agent would choose it. results: data/playbook-ab.json, per
+// sim version, folded into the lesson's evidence next to the natural same-seed pairs
+export type Controlled = { simVersion: string; seeds: number[]; wins: number; losses: number; of: number; years: number; shift: string; perSeed: { seed: number; a: number; b: number }[] }
+export const controlledFile = () => path.join(process.cwd(), 'data', 'playbook-ab.json')
+export const readControlled = () => readJson<Record<string, Controlled>>(controlledFile()) ?? {}
+export const controlledKey = (lessonId: string, t: LessonTest, version: string) => `${lessonId}|${t.up.join('+')}>${t.down.join('+')}|${version}`
+const SHIFT = 0.05
+
+// the lesson's budget, 5 points moved, from a decision's own budget (shares stay >= 0 and sum to the same total)
+export function shiftedBudget(t: LessonTest, b: RunFeatures['budget']): RunFeatures['budget'] {
+  const out = { ...b }
+  const all = Object.keys(b) as BudgetKey[]
+  const up = t.up.length ? t.up : all.filter(k => !t.down.includes(k))
+  const down = t.down.length ? t.down : all.filter(k => !t.up.includes(k))
+  const take = Math.min(SHIFT, down.reduce((a, k) => a + out[k], 0))
+  const fromEach = (k: BudgetKey) => take * (out[k] / Math.max(1e-9, down.reduce((a, x) => a + out[x], 0)))
+  for (const k of down) out[k] = Math.max(0, out[k] - fromEach(k))
+  for (const k of up) out[k] += take / up.length
+  return out
+}
+
+type Run = (opts: Record<string, unknown>) => Promise<unknown>
+type Load = (id: string) => RunRecord | null
+export async function controlledTest(lessonId: string, t: LessonTest, version: string, deps: { run: Run; load: Load; populationAt: (r: RunRecord, tick: number) => number; cleanup: (id: string) => void }, seeds = [42, 7, 99, 2026, 1234], years = 20): Promise<Controlled> {
+  const untilTick = years * 12
+  const constitution = 'Govern for the long-term survival and wellbeing of everyone.'
+  const perSeed: Controlled['perSeed'] = []
+  for (const seed of seeds) {
+    const aId = `pb-${lessonId}-a-s${seed}`.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80), bId = aId.replace('-a-s', '-b-s')
+    try {
+      await deps.run({ runId: aId, generation: 0, seed, constitution, untilTick })
+      const a = deps.load(aId)
+      const first = a?.frames.filter(f => f.decision).sort((x, y) => x.tick - y.tick)[0]?.decision
+      if (!a || !first) continue
+      await deps.run({ runId: bId, generation: 0, seed, constitution, untilTick, startFrom: { runId: aId, tick: first.tick }, flipDecision: { tick: first.tick, change: { budget: shiftedBudget(t, first.budget) }, after: 'replay' } })
+      const b = deps.load(bId)
+      if (!b) continue
+      perSeed.push({ seed, a: deps.populationAt(a, untilTick), b: deps.populationAt(b, untilTick) })
+    } finally { deps.cleanup(aId); deps.cleanup(bId) }
+  }
+  const lbl = (ks: BudgetKey[]) => ks.join(' and ')
+  const shift = t.up.length && t.down.length ? `5 points of one year's budget moved from ${lbl(t.down)} to ${lbl(t.up)}` : t.up.length ? `5 more points of one year's budget on ${lbl(t.up)} (taken evenly from every other line)` : `5 fewer points of one year's budget on ${lbl(t.down)} (spread evenly over every other line)`
+  return { simVersion: version, seeds, wins: perSeed.filter(p => p.b > p.a).length, losses: perSeed.filter(p => p.b < p.a).length, of: perSeed.length, years, shift, perSeed }
+}
+
+// runs the missing controlled tests for the current version and saves them. offline only: never uses model time
+export async function runControlledTests(version: string, deps: Parameters<typeof controlledTest>[3], log: (l: string) => void = console.log): Promise<number> {
+  if ((process.env.LLM_PROVIDER ?? '') !== 'offline') { log('playbook-ab: skipped (runs only with LLM_PROVIDER=offline, so it never uses model time)'); return 0 }
+  const saved = readControlled()
+  let n = 0
+  for (const l of readLessons()) {
+    const t = testOf(l.rule)
+    if (!t) continue
+    const key = controlledKey(l.id, t, version)
+    if (saved[key]) continue
+    const t0 = Date.now()
+    saved[key] = await controlledTest(l.id, t, version, deps)
+    writeJson(controlledFile(), saved)
+    log(`playbook-ab: "${l.rule.slice(0, 60)}" more people alive in ${saved[key].wins} of ${saved[key].of} seeds (${Math.round((Date.now() - t0) / 1000)}s)`)
+    n++
+  }
+  return n
 }
