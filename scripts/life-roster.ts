@@ -1,5 +1,5 @@
 // npx tsx scripts/life-roster.ts [--dry-run] [--gap-min 5] [--per 2] [--telegram] [--provider-ok]
-// keeps at least --per chosen lives per continent (africa, asia, europe, north america, south america, oceania:
+// keeps at least --per chosen lives per continent (one more in asia and africa: 14 at --per 2) (africa, asia, europe, north america, south america, oceania:
 // 12+ lives), each in a DIFFERENT world, preferring a different agent for the two lives on one continent, so the
 // same kind of city can be compared under different agents. every life is born in 2026-11, so all of them are alive
 // at the same time inside their worlds. birthplaces are drawn by where babies are actually born on that continent.
@@ -24,6 +24,10 @@ async function main() {
   const { stream } = await import('../src/lib/sim/rng')
   type Continent = (typeof CONTINENTS)[number]
   const per = Number(arg('per', '2'))
+  // 14 at once: one more in each of the two continents where most babies are born (asia ~55%, africa ~30% of births,
+  // un wpp 2024, ESTIMATE rounded), so the biggest share of humanity gets more than one comparison
+  const EXTRA: Partial<Record<Continent, number>> = { asia: 1, africa: 1 }
+  const want = (c: Continent) => per + (EXTRA[c] ?? 0)
   const dry = flag('dry-run')
 
   const worlds = allWorlds().filter(w => w.status !== 'destroyed')
@@ -45,7 +49,7 @@ async function main() {
   const plan: Slot[] = []
   for (const c of CONTINENTS) {
     const mine = () => [...roster, ...plan].filter(s => s.continent === c)
-    while (new Set(mine().map(s => s.worldId)).size < per) {
+    while (new Set(mine().map(s => s.worldId)).size < want(c)) {
       const used = new Set(mine().map(s => s.worldId)), agents = new Set(mine().map(s => s.agent))
       const taken = new Set([...roster, ...plan].map(s => s.worldId))
       const cands = worlds.filter(w => !used.has(w.runId))
