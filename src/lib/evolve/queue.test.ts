@@ -328,3 +328,39 @@ test('retention: hall worlds stay plain, mediocre worlds are gzipped then delete
   assert.ok(exists('b-test-run.json'), "other agents' records are never touched")
   assert.equal(res.deleted, 1)
 }))
+
+test('lives gap: none without lives, ends early once lives stop asking, never longer than the cap', inTempDir(async dir => {
+  process.env.LLM_PROVIDER = 'ollama'
+  const { lifeGap, gapFile } = await import('./lifegap')
+  let t = 0
+  const mk = (running: number, asking: (t: number) => boolean) => ({ sleep: async (ms: number) => { t += ms }, now: () => t, running: () => running, asking: () => asking(t) })
+  t = 0; assert.equal(await lifeGap(mk(0, () => true), 60), 0, 'no lives running: evolution does not wait')
+  t = 0; assert.equal(await lifeGap(mk(3, () => true), 0), 0, 'gap turned off')
+  t = 0; assert.equal(await lifeGap(mk(3, () => true), 60), 60, 'lives asking the whole time: capped at the gap')
+  t = 0; const quiet = await lifeGap(mk(3, x => x < 10_000), 60)
+  assert.ok(quiet >= 20 && quiet < 30, `lives went quiet after 10s: the gap ends soon after 20s (got ${quiet})`)
+  assert.ok(!fs.existsSync(gapFile()), 'the gap file is removed afterwards')
+  assert.ok(dir)
+}))
+
+test('morning digest: one send per day across processes, a failed send gives the claim back', inTempDir(async () => {
+  const { sendMorning } = await import('./maintenance')
+  const realHour = Date.prototype.getHours
+  Date.prototype.getHours = function () { return 9 }
+  try {
+    let sent = 0
+    assert.equal(await sendMorning(async () => false, () => {}), false, 'telegram failed')
+    assert.equal(await sendMorning(async () => { sent++; return true }, () => {}), true, 'the retry sends it')
+    assert.equal(await sendMorning(async () => { sent++; return true }, () => {}), false, 'already sent today')
+    assert.equal(sent, 1)
+  } finally { Date.prototype.getHours = realHour }
+}))
+
+test('evolve lock: a stale lock (dead pid, or a pid that is not evolve) is taken over', inTempDir(async () => {
+  const { acquireEvolveLock } = await import('./instance')
+  fs.mkdirSync('data', { recursive: true })
+  fs.writeFileSync('data/.evolve.lock', JSON.stringify({ pid: 999999 }))
+  const a = acquireEvolveLock(); assert.ok(a.ok, 'dead pid')
+  fs.writeFileSync('data/.evolve.lock', JSON.stringify({ pid: process.ppid }))
+  const b = acquireEvolveLock(); assert.ok(b.ok, 'a live pid that is not an evolve (a reused pid after a restart)')
+}))

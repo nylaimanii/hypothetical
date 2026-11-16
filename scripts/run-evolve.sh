@@ -7,6 +7,8 @@
 # boundary), the worktree moves to the new origin/main and evolve starts again.
 #
 #   nohup caffeinate -i scripts/run-evolve.sh --gens 50 --concurrency 1 > data/evolve.log 2>&1 &
+#   npm run evolve -- --gens 50        (same, in the foreground)
+#   scripts/launchd/install.sh         (starts it at login and after a crash, plus the 8am digest on wake)
 #
 # --adopt <pid>: take over an evolve process that is already running (e.g. from an older supervisor). keeps the mac
 # awake on it, waits for it to stop at its generation boundary, then carries on as above. if that process stopped
@@ -19,6 +21,24 @@ note() { echo "$(date '+%F %T') $1" | tee -a data/evolve-restart.log }
 
 ADOPT=""
 if [ "${1:-}" = "--adopt" ]; then ADOPT="$2"; shift 2; fi
+
+# one supervisor and one evolve at a time (launchd starts this at login; a manual start next to it must not run a
+# second evolve, and must never move the worktree under a running one). checked before any git command
+is_pid() { [ -n "$1" ] && kill -0 "$1" 2>/dev/null && ps -p "$1" -o command= | grep -q "$2" }
+SUP=data/.evolve-supervisor.pid
+if [ -z "$ADOPT" ]; then
+  other=$(cat "$SUP" 2>/dev/null)
+  if [ "$other" != "$$" ] && is_pid "$other" "run-evolve.sh"; then note "a supervisor is already running (pid $other); not starting another"; exit 0; fi
+  # older supervisors never wrote the pid file: any other run-evolve.sh (not this one, not our caffeinate parent)
+  others=$(pgrep -f "scripts/run-evolve.sh" | grep -v -x -e "$$" -e "$PPID" | head -1)
+  if [ -n "$others" ]; then note "a supervisor is already running (pid $others); not starting another"; exit 0; fi
+  for f in data/.evolve.lock data/evolve-now.json; do
+    pid=$(grep -o '"pid": *[0-9]*' "$f" 2>/dev/null | grep -o '[0-9]*$')
+    if is_pid "$pid" "scripts/evolve.ts"; then note "evolve is already running (pid $pid) without a supervisor; adopting it"; ADOPT="$pid"; break; fi
+  done
+fi
+echo $$ > "$SUP"
+trap '[ "$(cat $SUP 2>/dev/null)" = "$$" ] && rm -f $SUP' EXIT
 if [ -n "$ADOPT" ]; then
   note "adopting running evolve pid $ADOPT; the next runs come from $RUNNER"
   caffeinate -i -w "$ADOPT" &

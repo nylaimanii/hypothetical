@@ -27,8 +27,10 @@ import { trackWorld } from './usage'
 import { lineageRoots, recordAgentRun, registerPopulation, settleGeneration } from './agents'
 import { indexFeatures, recomputeSteps } from './steps'
 import { generationStory } from '../notify/story'
+import { lifeGap, livesRunning, openGap } from './lifegap'
+import { livesSection } from './lives'
 import { diskReport, gb, sweep, writeSlim } from './retention'
-import { backupDue, backupToGit, markQuality, morningDigest, morningDue, qualityDue, stableDue } from './maintenance'
+import { backupDue, backupToGit, markQuality, qualityDue, sendMorning, stableDue } from './maintenance'
 import { codeRoot } from './version'
 import { spawn } from 'node:child_process'
 import { enterVersion, inRunner, runnerCodeChanged, runningSimVersion, simVersionOnDisk, upstreamSimVersion, verifyLessons } from './version'
@@ -516,7 +518,9 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
     names: new Map(readAgents().map(a => [a.id, a.name])), firsts: (g.stats?.newHall ?? []).filter(e => e.kind === 'first' || e.kind === 'milestone').map(e => e.title),
   }).split('\n')
   if (deadliest && story.length < 4) story.splice(story.length - 1, 0, `deadliest habit so far: "${deadliest.text}".`)
-  await notifyGeneration(story.join('\n'))
+  // D's chosen lives: the most interesting one that ended during this generation (2 lines at most)
+  const lives = livesSection(Date.parse(g.startedAt))
+  await notifyGeneration([...story, ...(lives.length ? ['', ...lives] : [])].join('\n'))
   const worstRun = [...allRuns].sort((a, b) => (b.humanCost?.deaths ?? 0) - (a.humanCost?.deaths ?? 0))[0]
   await sendDigest({ generation: g, leaderboard, bestRecord, allRuns, learning: learning.rows.filter(r => !r.lineage), lessonsKnown, steps,
     story, worstRecord: worstRun ? storyRecords.get(worstRun.runId) ?? readRunRecord(worstRun.runId) : null, champion: champion?.name })
@@ -536,6 +540,8 @@ function startWatchdogs(log: (l: string) => void, logFile?: string) {
   const tick = async () => {
     try {
       heartbeatNow()
+      // paused evolution leaves ollama to the lives (the gap is refreshed every minute and lapses on resume)
+      if (control.paused) openGap(90)
       const now = Date.now()
       if (!restartSent && control.lastWorldAt > startedAt) {
         restartSent = true
@@ -567,7 +573,7 @@ function startWatchdogs(log: (l: string) => void, logFile?: string) {
       if (backupDue()) {
         try { const b = backupToGit(); log(`backup: ${b.note}${b.sha ? ` (${b.sha.slice(0, 7)})` : ''}`) } catch (e) { log(`backup failed: ${(e as Error).message.split('\n')[0]}`) }
       }
-      if (morningDue()) await send(await morningDigest())
+      await sendMorning(send, log)
       if (stableDue() && !stableRunning) {
         stableRunning = true
         const child = spawn(process.execPath, [path.join(codeRoot(), 'node_modules', 'tsx', 'dist', 'cli.mjs'), path.join(codeRoot(), 'scripts', 'promote-stable.ts')], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'], env: process.env })
@@ -602,6 +608,8 @@ export async function evolve(opts: EvolveOptions) {
       await llmWait()
       // between worlds: the weekly quality replay (real runs only, never in tests with a fake runWorld)
       if (!opts.runWorld) await qualityCheck(deps)
+      // then a short gap for D's chosen lives, only when some are running (evolution keeps priority otherwise)
+      if (!opts.runWorld) { const waited = await lifeGap(); if (waited) log(`lives gap: ${waited}s for ${livesRunning()} running lives`) }
     },
   }
   const stopWatchdogs = startWatchdogs(log, opts.logFile)

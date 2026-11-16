@@ -17,6 +17,7 @@ import { codeRoot, readVersion } from './version'
 import { diskLine } from './retention'
 import { ollamaUp } from './ollama'
 import { paceStats } from './usage'
+import { livesSection } from './lives'
 
 type State = { lastBackup?: string; backupSha?: string; lastStable?: string; stableSha?: string; stableNote?: string; lastMorning?: string; morningLessons?: number; lastQuality?: string; lastQualityRun?: string }
 const stateFile = () => path.join(process.cwd(), 'data', 'maintenance.json')
@@ -137,26 +138,45 @@ export async function morningDigest(opts: { dry?: boolean } = {}): Promise<strin
   const byVersion = [...runs.reduce((m, r) => m.set(r.simVersion ?? '?', (m.get(r.simVersion ?? '?') ?? 0) + 1), new Map<string, number>())]
   const versions = byVersion.length > 1 ? ` (${byVersion.map(([v, n]) => `${n} on ${v}`).join(', ')})` : ''
   const tally = night.length ? `${night.length} worlds overnight${versions}${deaths.length ? `, ${deaths.length} died` : ', nobody died'}${newLessons.length ? `, ${newLessons.length} new lesson${newLessons.length > 1 ? 's' : ''}` : ''}${best && stories[0] ? `. best was ${names.get(best.agentId) ?? best.agentId}` : ''}.` : ''
-  const lifeLine = lifeStories(since)[0]
+  // D's chosen lives: the most interesting one that ended, at most 2 lines
+  const lives = livesSection(since)
   const health = `${up ? 'ollama up' : 'ollama is DOWN'}${pace ? `, ${Math.round(pace.avgMinutesPerWorld)} min a world` : ''}, ${diskLine().replace(/^disk: /, '')}.`
   // a sim switch overnight resets the leaderboard, worth one line
   const switched = (readVersion()?.history ?? []).filter(h => Date.parse(h.until) >= since).pop()
   const switchLine = switched ? `the sim changed overnight (${switched.version} to ${readVersion()!.current}), so the leaderboard started over.` : ''
-  const lines = [...lead, tally, ...(switchLine ? [switchLine] : []), ...(lifeLine ? [lifeLine] : []), health].filter(Boolean).slice(0, 5)
+  const lines = [...lead, tally, ...(switchLine ? [switchLine] : []), ...lives, health].filter(Boolean)
   if (!opts.dry) saveState({ lastMorning: new Date().toISOString(), morningLessons: lessons.length })
   return lines.filter(Boolean).join('\n')
 }
 
-// D's life stories, when D writes them (data/life/stories.json or data/life-stories.json: entries with text and a time)
-function lifeStories(since: number): string[] {
-  for (const f of [path.join('data', 'life', 'stories.json'), path.join('data', 'life-stories.json')]) {
-    const raw = readJson<unknown>(path.join(process.cwd(), f))
-    const list = Array.isArray(raw) ? raw : (raw as { stories?: unknown[] } | null)?.stories
-    if (!Array.isArray(list)) continue
-    return list.map(x => x as { text?: string; line?: string; at?: string })
-      .filter(x => (x.text || x.line) && (!x.at || Date.parse(x.at) >= since)).map(x => (x.text ?? x.line)!)
+// sends the digest once per day, from whichever process gets there first (evolve's watchdog at 8am, or the launchd
+// job that macOS runs on wake when the mac slept through 8). a claim file per local date stops a double send; a
+// failed send (no network yet after wake) gives the claim back so the next try sends it
+const readFileOr = (f: string) => { try { return fs.readFileSync(f, 'utf8') } catch { return '' } }
+const claimFile = () => path.join(process.cwd(), 'data', `.morning-${today()}`)
+export async function sendMorning(send: (text: string) => Promise<boolean>, log: (l: string) => void = console.log): Promise<boolean> {
+  if (!morningDue()) return false
+  fs.mkdirSync(path.dirname(claimFile()), { recursive: true })
+  const claim = () => { try { fs.writeFileSync(claimFile(), String(process.pid), { flag: 'wx' }); return true } catch { return false } }
+  if (!claim()) {
+    // a claim left by a process that died before sending is taken over
+    const pid = Number(readFileOr(claimFile()))
+    let dead = !pid
+    try { if (pid) process.kill(pid, 0) } catch { dead = true }
+    if (!dead) return false
+    fs.rmSync(claimFile(), { force: true })
+    if (!claim()) return false
   }
-  return []
+  let ok = false
+  try {
+    const text = await morningDigest({ dry: true })
+    ok = await send(text)
+    if (ok) saveState({ lastMorning: new Date().toISOString(), morningLessons: readLessons().length })
+    else log('morning digest: telegram send failed, will retry')
+  } catch (e) { log(`morning digest failed: ${(e as Error).message}`) }
+  if (!ok) fs.rmSync(claimFile(), { force: true })
+  else for (const f of fs.readdirSync(path.join(process.cwd(), 'data')).filter(f => f.startsWith('.morning-') && f !== path.basename(claimFile()))) fs.rmSync(path.join(process.cwd(), 'data', f), { force: true })
+  return ok
 }
 
 // ---------- schedule ----------
