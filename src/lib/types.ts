@@ -1,3 +1,4 @@
+import type { Clothing, CommuteMode, InfraDiff } from './types-v5'
 // shared contract. only agent A edits this file.
 // units: all 0..1 fields are fractions (education, faith, unrest, techLevel, compliance, share65plus, approval,
 // law support/compliance, moonProgress, requirement progress, crowd intensity, event severity, emotion values).
@@ -59,6 +60,8 @@ export type Citizen = {
   thought: string
   // v4: where they live and work and what their day looks like. optional until the sim fills them
   countryId?: string; cityId?: string; workplace?: Workplace; employed?: boolean; income?: number; spending?: number; dayPlan?: { hour: number; activity: Activity }[]
+  // v5 (B): how they get around and what they wear today
+  commuteMode?: CommuteMode; clothing?: Clothing
 }
 export type Law = { id: string; title: string; text: string; layer: Layer; enactedTick: number; support: number; compliance: number; vetoed?: boolean; policyKind: string; precedentIds: string[]; lovedBy: string[]; hatedBy: string[] }
 export type Migration = { from: string; to: string; people: number; reason: string }
@@ -87,6 +90,11 @@ export type WorldState = {
   countries?: Country[]; adminAreas?: AdminArea[]
   // cause chains (B): every link created since the previous frame
   causes?: CauseLink[]
+  // v5 real world layer (B, src/lib/sim/world-layer.ts): infrastructure changed since the previous frame,
+  // relative 0..1 activity for the baked road/rail segments, ports and airports at this hour, and the climate
+  infra?: InfraDiff[]
+  traffic?: { countries?: string[]; road: number[]; rail: number[]; port: number[]; air: number[] }
+  climate?: { anomalyC: number; gtCo2PerYear: number }
 }
 export type Frame = {
   tick: number; date: string; regions: Region[]; citizens: Citizen[]; laws: Law[]; budget: Budget; religionPolicy: ReligionPolicy; schoolPolicy: SchoolPolicy

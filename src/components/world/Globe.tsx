@@ -17,12 +17,12 @@ import { soundState } from '../sound/engine'
 import { MigrationLines } from './Overlays'
 import { pipRegistry, usePhys } from './pipShared'
 import { sunDirection, worldDate } from './time'
-import CityLights from './CityLights'
 import { Atmosphere, Clouds, DisasterFx } from './Weather'
 import { useCurrentFrame, useStore } from '../state/store'
 // load budget: the planet itself paints first; every other layer is its own chunk, mounted just after
 // (physics only on the first close zoom, the city diorama only on the first visit)
 import { loadGeo } from './geo/lazy'
+import { loadFarTiles, loadHubs } from './real/far/useFar'
 import { isPhoneNow } from '../ui/usePhone'
 const Pips = lazy(() => import('./Pips'))
 const Structures = lazy(() => import('./Structures'))
@@ -34,6 +34,11 @@ const BorderRidges = lazy(() => import('./geo/BorderRidges'))
 const StateRidges = lazy(() => import('./geo/StateRidges'))
 const TrendArrows = lazy(() => import('./geo/TrendArrows'))
 const Orrery = lazy(() => import('./Orrery'))
+const RealCities = lazy(() => import('./real/cities/RealCities'))
+const InfraLayer = lazy(() => import('./real/infra/InfraLayer'))
+const NightLights = lazy(() => import('./real/far/NightLights'))
+const FlightArcs = lazy(() => import('./real/far/FlightArcs'))
+const ShippingLanes = lazy(() => import('./real/far/FlightArcs').then((m) => ({ default: m.ShippingLanes })))
 const PhysicsRoot = lazy(() => import('./PhysicsRoot'))
 const MovementStreams = lazy(() => import('./V3Layers').then((m) => ({ default: m.MovementStreams })))
 const RegionModeLabels = lazy(() => import('./V3Layers').then((m) => ({ default: m.RegionModeLabels })))
@@ -42,7 +47,7 @@ const ExplainLayer = lazy(() => import('./V3Layers').then((m) => ({ default: m.E
 
 // mounts its children a moment after the first frame, so the planet paints before the detail arrives
 function Prefetch() {
-  useEffect(() => { const id = setTimeout(() => { loadGeo() }, 300); return () => clearTimeout(id) }, [])
+  useEffect(() => { const id = setTimeout(() => { loadGeo(); loadFarTiles(); loadHubs() }, 300); return () => clearTimeout(id) }, [])
   return null
 }
 
@@ -355,7 +360,7 @@ export default function Globe() {
           {/* v4: visiting a city swaps the planet for its diorama (sky, light, environment and effects stay) */}
           {cityView ? <Suspense fallback={null}><CityView cityId={cityView} frame={frame} agent={agent} /></Suspense> : <>
           <Planet frame={frame} />
-          <CityLights frame={frame} />
+          <Later ms={200}><NightLights frame={frame} /></Later>
           <Atmosphere tint={frame.atmosphere?.tint} haze={frame.atmosphere?.haze ?? 0} />
           <Clouds frame={frame} />
           <DisasterFx frame={frame} />
@@ -370,10 +375,16 @@ export default function Globe() {
             <EmotionPulse frame={frame} />
           </Later>
           <Later ms={1500}><Orrery frame={frame} /></Later>
+          <Later ms={800}>
+            <FlightArcs frame={frame} countryOrder={record.frames[0]?.traffic?.countries} />
+            <ShippingLanes frame={frame} countryOrder={record.frames[0]?.traffic?.countries} />
+          </Later>
           {/* names: 5 countries at far, 5 cities at mid (the old region labels are retired) */}
           <Later ms={250}>
             <CountryNames frame={frame} />
             <CityMarkers frame={frame} />
+            <RealCities frame={frame} agent={agent} />
+            <InfraLayer frame={frame} agent={agent} />
             <BorderRidges frame={frame} />
             <StateRidges frame={frame} />
             <TrendArrows frame={frame} />

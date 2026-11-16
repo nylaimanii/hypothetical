@@ -1,11 +1,12 @@
 'use client'
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import type { Agent, BaselineFrame, DecisionRow, Divergence, Frame, Override, RunRecord, RunSummary, WorldEvent, Layer, YearRow } from '@/lib/types'
+import type { Agent, BaselineFrame, DecisionRow, Divergence, Frame, Override, RunRecord, RunSummary, WorldEvent, Layer, YearRow, Country } from '@/lib/types'
 import { mockRuns, stageFor } from '@/lib/mock/run'
 import { moodFrom } from '@/lib/mock/mood'
 import { normalizeRecord } from './normalize'
 import { citizensAt, requirementsAt } from '@/lib/sim/citizens-replay'
+import { useCountriesYear } from './usePlaces'
 
 export type Selection =
   | { kind: 'pip'; id: string }
@@ -333,6 +334,9 @@ export function useCurrentFrame() {
   const record = useStore((s) => (s.compare && s.compareFocus !== null ? s.compare.records[s.compareFocus] ?? s.record : s.compare ? s.compare.records[0] ?? s.record : s.record))
   const mode = useStore((s) => (s.compare ? 'ai' : s.mode))
   const idx = useStore((s) => frameIndexAt(record.frames, s.playhead))
-  const frame = useMemo(() => (mode === 'baseline' ? baselineAsFrame(record, idx) : withRoster(record, record.frames[idx])), [record, idx, mode])
+  const base = useMemo(() => (mode === 'baseline' ? baselineAsFrame(record, idx) : withRoster(record, record.frames[idx])), [record, idx, mode])
+  // B's frames carry countries only on the first and last frame; any other year comes from the places file
+  const year = useCountriesYear(record.runId, base.tick, !!base.countries?.length)
+  const frame = useMemo(() => (!base.countries?.length && year ? { ...base, countries: year.countries.map((c): Country => ({ ...c, provenance: {} })) } : base), [base, year])
   return { frame, idx, record, mode }
 }

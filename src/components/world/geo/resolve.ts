@@ -62,7 +62,7 @@ export function resolveAdmin(frame: Frame, id: string): Resolved | null {
   if (sim) return { name, stats: sim.stats, crumbs, region: country?.region }
   if (!country) return null
   // no sim numbers for this state yet: its estimated population, everything else from its country
-  return { name, stats: { ...country.stats, population: row!.population }, note: country.note ?? 'country average', crumbs, region: country.region, popEstimate: true }
+  return { name, stats: { ...country.stats, population: row!.population }, note: country.note ?? 'country average', crumbs, region: country.region, popEstimate: row!.provenance.population?.kind !== 'SOURCED' }
 }
 
 export function seaInfo(frame: Frame, sel: { ocean: number; chokepoint?: string }) {

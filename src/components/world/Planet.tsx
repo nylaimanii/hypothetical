@@ -11,6 +11,8 @@ import { useStore } from '../state/store'
 import { ChunkSet } from './chunks'
 import { isStatMode, regionModeColor, statColor } from './modes'
 import { useGeo } from './geo/lazy'
+import { tileClass, useFarTiles } from './real/far/useFar'
+import { realLandColor } from './real/far/landColor'
 
 const TILE_H = 0.5
 
@@ -67,6 +69,7 @@ export default function Planet({ frame }: { frame: Frame }) {
   const overlay = useStore((s) => s.overlay)
   // place data (states, seas, country shapes) arrives just after the first paint
   const places = useGeo()
+  const farTiles = useFarTiles()
   // population mode: land rises with the people on it
   const popKey = overlay === 'population' ? frame.regions.map((r) => Math.round(r.population / 1e7)).join() : ''
   const lift = useMemo(() => {
@@ -175,9 +178,19 @@ export default function Planet({ frame }: { frame: Frame }) {
       const cc = tc && countryCols && tc[ti] >= 0 ? countryCols[tc[ti]] : null
       const mc = cc ?? (t.region >= 0 ? modeCols[t.region] : null)
       if (mc) return col.copy(mc).multiplyScalar(0.94 + hash01(ti) * 0.08 + level * 0.03)
+      const vis = t.region >= 0 ? frame.regions[t.region].visual : undefined
+      // v5: real land (B's land classes: forest, cropland, desert, built...) once the far tiles have loaded
+      if (farTiles && !t.ice && realLandColor(ti, col, { snowLat, lat: t.lat, forest: vis?.forest, pollution: vis?.pollution })) {
+        if (vis && vis.damage.level > 0.05 && SCAR[vis.damage.kind]) col.lerp(SCAR[vis.damage.kind], vis.damage.level * 0.65)
+        // a food-short region dries its fields and grassland, never its forests
+        const cls = tileClass(farTiles, ti) // 4 grass/scrub, 7 cropland (see public/geo/far/tiles.json classes)
+        if (t.region >= 0 && dry[t.region] && (cls === 7 || cls === 4)) col.lerp(DRY, 0.3)
+        if (level >= 2) col.lerp(ROCK, 0.25 * level)
+        col.multiplyScalar(0.96 + ((ti * 2654435761) % 1000) / 1000 * 0.08)
+        return col
+      }
       col.set(BIOME_HEX[t.biome])
       if (t.region >= 0) col.lerp(regionCols[t.region], 0.22)
-      const vis = t.region >= 0 ? frame.regions[t.region].visual : undefined
       if (vis && overlay === 'real' && !t.ice) {
         if (t.biome !== 'desert' && t.biome !== 'tundra') col.lerp(FOREST, Math.max(0, vis.forest - 0.3) * 0.5)
         if ((t.biome === 'temperate' || t.biome === 'savanna') && hash01(ti * 31) < vis.farmland * 0.55) col.lerp(FIELD, 0.45)
@@ -208,7 +221,7 @@ export default function Planet({ frame }: { frame: Frame }) {
       O.setColorAt(k, col)
     })
     for (const m of [L, S, O, G]) m.commitColors()
-  }, [frame, tiles, layout, month, overlay, sets, places])
+  }, [frame, tiles, layout, month, overlay, sets, places, farTiles])
 
   useFrame(({ clock, camera }) => {
     ocean.uniforms.uTime.value = clock.elapsedTime

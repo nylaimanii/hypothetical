@@ -1,12 +1,21 @@
 'use client'
 // v4: one small card for a country, state or city. one plain line by default; depth in the full report.
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import type { Frame, PlaceStats, RunRecord } from '@/lib/types'
+import type { City, Frame, PlaceStats, RunRecord } from '@/lib/types'
 import { useCurrentFrame, useStore } from '../state/store'
 import { Num, Sparkline, fmt } from './bits'
 import { regionPlaceStats } from '../world/modes'
 import { StoryLine, useLinks } from './chains'
+import { usePlaceYear } from '../state/usePlaces'
+import { indexLoaded, loadIndex } from '../world/real/cities/data'
+
+// the real-city index, fetched when a city card first needs it
+function useCityIndex(want: boolean) {
+  const [rows, setRows] = useState(indexLoaded())
+  useEffect(() => { if (want && !rows) loadIndex().then(setRows).catch(() => {}) }, [want, rows])
+  return rows
+}
 import type { Crumb } from '../world/geo/resolve'
 import { geoNow, useGeo } from '../world/geo/lazy'
 
@@ -28,7 +37,7 @@ export function findPlace(f: Frame, kind: Place['kind'], id: string): Place | nu
     const r = kind === 'country' ? resolveCountry(f, id) : resolveAdmin(f, id)
     return r ? { kind, id, name: r.name, stats: r.stats, crumbs: r.crumbs, meta: [], note: r.note, popEstimate: r.popEstimate, regionId: r.region?.id } : null
   }
-  const c = f.cities.find((x) => x.id === id)
+  const c = f.cities.find((x) => x.id === id) ?? realCity(f, id)
   if (!c) return null
   const r = f.regions.find((x) => x.id === c.regionId)
   const co = c.countryId ? resolveCountry(f, c.countryId) : null
@@ -40,6 +49,14 @@ export function findPlace(f: Frame, kind: Place['kind'], id: string): Place | nu
     ...(co && c.countryId ? [{ text: co.name, sel: { kind: 'country' as const, id: c.countryId } }, ...co.crumbs] : r ? [{ text: r.name, sel: { kind: 'region' as const, id: r.id } }] : []),
   ]
   return { kind, id, name: c.name, stats, crumbs, meta: !c.real ? [`founded ${2026 + Math.floor((c.foundedTick + 10) / 12)}`] : [], note: c.stats ? undefined : co ? 'country average' : 'region average', regionId: c.regionId }
+}
+
+// v5: real cities (natural earth ids from B's data) live in the baked city index, not in frame.cities
+function realCity(f: Frame, id: string): City | undefined {
+  const row = indexLoaded()?.find((x) => x.id === id)
+  if (!row) return undefined
+  const region = geoNow()?.regionAt(f, row.lat, row.lon)
+  return { id: row.id, name: row.name.toLowerCase(), regionId: region?.id ?? f.regions[0]?.id ?? '', lat: row.lat, lon: row.lon, foundedTick: 0, population: row.pop, reason: 'a real city', countryId: row.country, real: true }
 }
 
 // the same place a year earlier, for the trend's why
@@ -78,10 +95,16 @@ function Bar({ label, v }: { label: string; v: number }) {
 
 export function PlaceCard({ kind, id }: { kind: Place['kind']; id: string }) {
   const geo = useGeo()
+  const cityIndex = useCityIndex(kind === 'city')
   const { frame, record, idx } = useCurrentFrame()
   const links = useLinks(record, idx)
-  const place = useMemo(() => (geo ? findPlace(frame, kind, id) : null), [frame, kind, id, geo])
+  // the sim's own numbers and story for this place and year (B's places file), when the run has one
+  const sim = usePlaceYear(record.runId, frame.tick, kind, id)
+  // cityIndex: re-resolve real cities once their index has arrived
+  const rolled = useMemo(() => (geo ? findPlace(frame, kind, id) : null), [frame, kind, id, geo, cityIndex]) // eslint-disable-line react-hooks/exhaustive-deps
+  const place = rolled && sim ? { ...rolled, stats: sim.stats, note: undefined, popEstimate: false } : rolled
   const before = useMemo(() => (geo ? placeAt(record, frame.tick - 12, kind, id) : null), [record, frame.tick, kind, id, geo])
+  const prevSim = sim?.history.filter((h) => h.tick < sim.tick).at(-1)?.stats
   if (!place) return null
   const s = place.stats
   const st = useStore.getState()
@@ -104,7 +127,7 @@ export function PlaceCard({ kind, id }: { kind: Place['kind']; id: string }) {
       </div>
       <div className="mt-3 space-y-1.5">{SIX.map((k) => <Bar key={k.key} label={k.label} v={s[k.key] as number} />)}</div>
       {place.note && <div className="mt-1 text-right text-[10.5px] text-ink/45">numbers: {place.note}</div>}
-      <div className="mt-3"><StoryLine story={frame.regions.find((r) => r.id === place.regionId)?.story} links={links} frame={frame} fallback={whyLine(s, before?.stats ?? null)} /></div>
+      <div className="mt-3"><StoryLine story={sim?.story ? { year: 0, sentences: [sim.story], chainIds: [] } : frame.regions.find((r) => r.id === place.regionId)?.story} links={links} frame={frame} fallback={whyLine(s, prevSim ?? before?.stats ?? null)} /></div>
       <div className="mt-2 flex gap-4 text-[12px]">
         <button onClick={() => st.setReport(true)} className="text-ink/60 underline decoration-ink/25 underline-offset-2 hover:text-ink">full report</button>
         {kind === 'city' && <button onClick={() => st.setCityView(id)} className="text-ink underline decoration-ink/40 underline-offset-2">visit</button>}
@@ -117,12 +140,15 @@ export function PlaceCard({ kind, id }: { kind: Place['kind']; id: string }) {
 export function PlaceReport({ kind, id }: { kind: Place['kind']; id: string }) {
   const geo = useGeo()
   const { frame, record } = useCurrentFrame()
-  const place = findPlace(frame, kind, id)
+  const sim = usePlaceYear(record.runId, frame.tick, kind, id)
+  const rolled = findPlace(frame, kind, id)
+  const place = rolled && sim ? { ...rolled, stats: sim.stats, note: undefined, popEstimate: false } : rolled
   const series = useMemo(() => {
     const keys: (keyof PlaceStats)[] = ['happiness', 'economy', 'livability', 'foodSecurity', 'safety', 'health', 'jobs', 'airQuality']
-    const rows = record.frames.filter((f) => f.tick <= frame.tick && f.tick % 12 === 0).map((f) => findPlace(f, kind, id)?.stats).filter(Boolean) as PlaceStats[]
+    // the places file has every year; without it, walk the frames we have
+    const rows = sim ? sim.history.filter((h) => h.tick <= frame.tick).map((h) => h.stats) : (record.frames.filter((f) => f.tick <= frame.tick && f.tick % 12 === 0).map((f) => findPlace(f, kind, id)?.stats).filter(Boolean) as PlaceStats[])
     return keys.map((k) => ({ k, values: rows.map((r) => r[k] as number) }))
-  }, [record, frame.tick, kind, id, geo]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [record, frame.tick, kind, id, geo, sim]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!place) return null
   const country = kind === 'country' ? frame.countries?.find((c) => c.id === id) : undefined
   return (

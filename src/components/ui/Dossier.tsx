@@ -1,4 +1,5 @@
 'use client'
+import { WHY_SOURCES } from '@/lib/types-v5'
 import { rosterAt } from '../state/store'
 import { ReasoningLines, layerSentence, useLinks, whyDoing } from './chains'
 import { todayOf } from '../world/city/day'
@@ -80,7 +81,8 @@ function StatRow({ label, value, prov, why, raw }: { label: string; value: strin
         <ul className="mt-1 space-y-0.5 rounded-lg bg-ink/5 px-2 py-1.5">
           {why.drivers.map((d, i) => (
             <li key={i} className="flex items-baseline justify-between gap-3 text-[11.5px]">
-              <span className="min-w-0">{d.source ? <a href={d.source} target="_blank" rel="noreferrer" className="underline decoration-ink/25 underline-offset-2">{d.label}</a> : d.label}</span>
+              {/* frames leave driver sources out to stay small; B's WHY_SOURCES holds them by label */}
+              {(() => { const src = d.source ?? WHY_SOURCES[d.label]; return <span className="min-w-0">{src ? <a href={src} target="_blank" rel="noreferrer" className="underline decoration-ink/25 underline-offset-2">{d.label}</a> : d.label}</span> })()}
               <Num className="shrink-0 text-ink/70">{d.delta > 0 ? '+' : ''}{Math.abs(d.delta) >= 100 ? fmt.people(d.delta) : d.delta.toFixed(Math.abs(d.delta) < 1 ? 3 : 1)}</Num>
             </li>
           ))}
