@@ -16,7 +16,7 @@ import type { Emotion } from '@/lib/types'
 
 // what the scene tells the rig every frame (a mutable object, so react never re-renders per frame)
 export type LiveState = {
-  pos: THREE.Vector3; heading: number; walking: boolean; act: string; pose: string
+  pos: THREE.Vector3; heading: number; walking: boolean; act: string; pose: string; dead: boolean
   mood: Record<string, number>; fatigue: number; age: number; heat: number
   flinch: { emotion: Emotion; at: number } | null
   gaze: THREE.Vector3 | null // world point to look at (someone talking, a kid), or null
@@ -80,6 +80,8 @@ export default function ChosenPerson({ look, live, cloth }: { look: Look; live: 
     const share = heightShare(L.age)
     const scale = PERSON_SCALE * (look.adultHeightCm / 170) * share
     const root = R.root.current
+    // after the end she is gone from the scene; the card carries her
+    root.visible = !L.dead
     const lying = L.pose === 'lie'
     const seated = L.pose === 'sit' || L.pose === 'ride'
     const busy = L.pose === 'busy'

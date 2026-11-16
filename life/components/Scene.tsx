@@ -98,7 +98,7 @@ export default function Scene({ record, layout, homeType, live, world, preset, f
       <Market lot={layout.byKind.get('market')} world={world} />
       <People record={record} layout={layout} world={world} live={live} />
       <Bus world={world} />
-      <Traffic world={world} />
+      <Traffic world={world} live={live} />
       <StreetLights world={world} live={live} />
       <Protest homeLot={homeLot} world={world} />
       <Rain live={live} world={world} />
@@ -532,7 +532,8 @@ function Bus({ world }: { world: React.RefObject<WorldNow> }) {
 }
 
 // ---------- traffic: cars and motorbikes on the streets, more at rush hour ----------
-function Traffic({ world }: { world: React.RefObject<WorldNow> }) {
+function Traffic({ world, live }: { world: React.RefObject<WorldNow>; live: React.RefObject<LiveState> }) {
+  const { camera } = useThree()
   const N = 40
   const cars = useRef<THREE.InstancedMesh>(null)
   const motos = useRef<THREE.InstancedMesh>(null)
@@ -555,6 +556,13 @@ function Traffic({ world }: { world: React.RefObject<WorldNow> }) {
       const p = ((clock.elapsedTime * l.speed * l.dir + l.off) % 40 + 40) % 40 - 20
       const side = l.dir * 0.28
       v.set(l.axis ? l.street + side : p, 0.32, l.axis ? p : l.street + side)
+      // a car between the camera and her pulls out of the shot (she is always visible)
+      const L = live.current
+      if (L) {
+        const ax = camera.position.x, az = camera.position.z, bx = L.head.x - ax, bz = L.head.z - az, len2 = bx * bx + bz * bz
+        const k = len2 > 1e-6 ? ((v.x - ax) * bx + (v.z - az) * bz) / len2 : -1
+        if (k > 0 && k < 0.95 && Math.hypot(v.x - (ax + bx * k), v.z - (az + bz * k)) < 0.9) { m.setMatrixAt(i, zero); continue }
+      }
       q.setFromAxisAngle(up, l.axis ? (l.dir > 0 ? 0 : Math.PI) : (l.dir > 0 ? Math.PI / 2 : -Math.PI / 2))
       s.setScalar(l.moto ? 0.42 : 0.62)
       v.y = 0

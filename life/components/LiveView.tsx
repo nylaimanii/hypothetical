@@ -17,6 +17,7 @@ import { feelingWords, moodToAUs } from './facs'
 import { narrate, yearLine } from './narrate'
 import Panel, { type PanelKind } from './Panels'
 import Minimap from './Minimap'
+import { lifeStory, scoreWords, pron } from '@/lib/life/story'
 
 export type Speed = 'day' | 'year' | 'decade'
 const DAY_REAL_S = 150 // a day at 1d, in real seconds, while she is at a place
@@ -35,8 +36,8 @@ export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, ot
   const end = useMemo(() => lastDay(record), [record])
   const she = record.sex === 'female' ? 'she' : 'he', her = record.sex === 'female' ? 'her' : 'his'
   const religious = useMemo(() => record.snaps.some(s => s.behavior.includes('prays')), [record])
-  const clock = useRef({ days: 7 / 24, speed: 'day' as Speed, playing: true, holdUntil: 0, momentIdx: 0, captionOn: false, traveling: false, onBus: false, lastPos: new THREE.Vector3(), montageT: 0 })
-  const live = useRef<LiveState>({ pos: new THREE.Vector3(), heading: 0, walking: false, act: 'sleep', pose: 'stand', mood: {}, fatigue: 0, age: 0, heat: 0, flinch: null, gaze: null, hug: 0, head: new THREE.Vector3(0, 1.5, 0), forward: new THREE.Vector3(0, 0, 1) })
+  const clock = useRef({ endShot: false, days: 7 / 24, speed: 'day' as Speed, playing: true, holdUntil: 0, momentIdx: 0, captionOn: false, traveling: false, onBus: false, lastPos: new THREE.Vector3(), montageT: 0 })
+  const live = useRef<LiveState>({ dead: false, pos: new THREE.Vector3(), heading: 0, walking: false, act: 'sleep', pose: 'stand', mood: {}, fatigue: 0, age: 0, heat: 0, flinch: null, gaze: null, hug: 0, head: new THREE.Vector3(0, 1.5, 0), forward: new THREE.Vector3(0, 0, 1) })
   const world = useRef<WorldNow>({ kin: [], tick: 0, day: 0, hour: 9, speed: 'day', cityId: record.birthplace.cityId, home: record.snaps[0]?.home ?? 'family_home', indoors: true, lotId: -1, hunger: false, food: 1, protest: false, disaster: 0, law: null, rain: 0, tempC: 20, heat: 0, dead: false, family: [], arrivedAgoH: -1, busX: null, density: 0.5, kinPos: new Map(), workLotId: -1, homeLotId: -1 })
   const focus = useRef<{ id: string; until: number } | null>(null)
 
@@ -112,6 +113,8 @@ export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, ot
         if (directorRef.current) setPreset({ kind: m.move ? 'wide' : m.kind === 'family' && (m.emotion === 'grief' || m.emotion === 'joy') ? 'face' : 'side', at: now })
       }
       if (c.captionOn && now > c.holdUntil + 300) { c.captionOn = false; setCaption(null) }
+      if (c.days >= end && !c.endShot) { c.endShot = true; setPreset({ kind: 'wide', at: now }) }
+      if (c.days < end) c.endShot = false
       const where = tickWorld(c.days, c.speed, c.montageT)
       if (now - lastLine > 600) { lastLine = now; setLine(lineFor(c.days, c.speed, where)) }
       if (now - lastUi > 120) {
@@ -183,6 +186,7 @@ export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, ot
     W.disaster = evs.some(e => e.worldKind === 'disaster' || e.worldKind === 'war') ? 1 : env?.damage === 'disaster' || env?.damage === 'war' ? env.damageLevel : 0
     W.law = evs.find(e => e.worldKind === 'law')?.text.replace(/^on the news screen: /, '') ?? null
     W.dead = days >= end
+    L.dead = W.dead
     W.family = householdAt(record, tick)
     W.kin = kinAliveAt(record, tick)
     W.arrivedAgoH = where.stop.at === 'home' && !where.moving ? where.arrivedAgoH : -1
@@ -259,7 +263,7 @@ export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, ot
 
       {panel && !ui.done && <Panel kind={panel} record={record} tick={ui.tick} onSeek={seekDays} onClose={() => setPanel(null)} onFocusKin={focusKin} />}
 
-      {ui.done && <EndCard record={record} worldLink={worldLink} nextLifeHref={nextLifeHref} onReplay={toggle} />}
+      {ui.done && <EndCard key="end" record={record} worldLink={worldLink} nextLifeHref={nextLifeHref} onReplay={toggle} />}
 
       {/* bottom: milestone caption above the narration line, then controls and the timeline */}
       <div style={{ position: 'absolute', left: 16, right: 16, bottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -298,7 +302,8 @@ export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, ot
 
 // every number in jetbrains mono
 function Numbers({ text }: { text: string }) {
-  const parts = text.split(/(\d[\d.,:%$°]*(?:am|pm|c)?)/)
+  // a number ends on a digit (or am/pm, °c), so trailing commas and periods stay in the text face
+  const parts = text.split(/(\d(?:[\d.,:%]*\d)?(?:am|pm|°c|%)?)/)
   return <>{parts.map((p, i) => (/^\d/.test(p) ? <span key={i} className="mono">{p}</span> : <span key={i}>{p}</span>))}</>
 }
 
@@ -337,16 +342,25 @@ function Timeline({ record, moments, day, end, onSeek }: { record: LifeRecord; m
   )
 }
 
+// the quiet ending: who they were, plainly, the score against their usual-choices self, what they left the next person
 function EndCard({ record, worldLink, nextLifeHref, onReplay }: { record: LifeRecord; worldLink: string | null; nextLifeHref: string | null; onReplay: () => void }) {
   const s = record.score
+  const story = lifeStory(record)
+  const words = scoreWords(record)
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'color-mix(in srgb, var(--bone) 55%, transparent)', padding: 16 }}>
       <div className="chip card-in" style={{ borderRadius: 22, padding: '28px 30px', maxWidth: 560, width: '100%', textAlign: 'center' }}>
         <div style={{ fontSize: 22, fontWeight: 600, lineHeight: 1.3 }}><Numbers text={record.epitaph ?? record.name} /></div>
-        <div style={{ marginTop: 8, fontSize: 14, opacity: 0.7 }}>{record.deathCause}</div>
+        <p style={{ margin: '12px 0 0', fontSize: 15, lineHeight: 1.45, textAlign: 'left' }}><Numbers text={story.join(' ')} /></p>
         {s && <div className="mono" style={{ marginTop: 18, fontSize: 30 }}>{s.total.toFixed(2)}</div>}
-        {s && record.twin && <div style={{ fontSize: 13, opacity: 0.6 }}>life score. the same person making the usual choices gets <span className="mono">{record.twin.score.total.toFixed(2)}</span></div>}
-        {record.lessonsLeft.length > 0 && <div style={{ marginTop: 20, textAlign: 'left', display: 'grid', gap: 8 }}>{record.lessonsLeft.map(l => <div key={l.id} style={{ fontSize: 15, lineHeight: 1.4 }}>{l.rule}</div>)}</div>}
+        {words && <div style={{ fontSize: 13, opacity: 0.65 }}>life score: <Numbers text={words} /></div>}
+        {record.lessonsLeft.length > 0 && (
+          <div style={{ marginTop: 18, textAlign: 'left' }}>
+            <div style={{ fontSize: 12, opacity: 0.55, marginBottom: 6 }}>what {pron(record).she} left the next person</div>
+            <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 6 }}>{record.lessonsLeft.map(l => <li key={l.id} style={{ fontSize: 14, lineHeight: 1.4 }}>{l.rule}</li>)}</ul>
+          </div>
+        )}
+        {!record.lessonsLeft.length && (record.deathAge ?? 0) < 16 && <div style={{ marginTop: 16, fontSize: 14, opacity: 0.7 }}>too young to leave anything but the people who loved {pron(record).her2}.</div>}
         <div style={{ marginTop: 22, display: 'flex', gap: 14, justifyContent: 'center', fontSize: 13, flexWrap: 'wrap' }}>
           <button onClick={onReplay} style={{ textDecoration: 'underline' }}>live it again</button>
           {nextLifeHref && <a href={nextLifeHref} style={{ color: 'inherit' }}>the next life →</a>}
