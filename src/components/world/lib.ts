@@ -228,6 +228,8 @@ export const sceneRefs = {
   // how much of what the camera looks at is in night, 0..1 (written by the key light): windows, street
   // lights, city glow and the sky all follow it
   night: 0,
+  // set by the city view: the night there, from the city's own local hour (the globe's sun doesn't apply)
+  nightOverride: null as number | null,
 }
 
 export const LAYERS = ['government', 'economy', 'tech', 'religion', 'media', 'family', 'biology', 'physics'] as const

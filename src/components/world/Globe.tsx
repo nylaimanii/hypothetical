@@ -124,9 +124,9 @@ export function KeyLight({ high }: { high: boolean }) {
       sc.updateProjectionMatrix()
     }
     // night: how far past the terminator the place we look at is (only when the real sun is used, i.e. paused)
-    const focusN = sceneRefs.focus.clone().normalize()
+    const focusN = sceneRefs.focus.lengthSq() > 1e-6 ? sceneRefs.focus.clone().normalize() : new THREE.Vector3(0, 1, 0)
     const sunAt = focusN.dot(sceneRefs.sunDir)
-    const nightTarget = s.playing ? 0 : THREE.MathUtils.smoothstep(-sunAt, -0.08, 0.22)
+    const nightTarget = sceneRefs.nightOverride ?? (s.playing ? 0 : THREE.MathUtils.smoothstep(-sunAt, -0.08, 0.22))
     sceneRefs.night += (nightTarget - sceneRefs.night) * (1 - Math.exp(-dt * 3))
     const n = sceneRefs.night
     // soft moonlight from high in the night sky (not from the camera), cool and dim
