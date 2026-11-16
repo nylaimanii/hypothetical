@@ -54,7 +54,7 @@ export async function wbIndicator(ind: string, source?: number): Promise<Obs> {
   const out: Obs = new Map()
   console.log(`  ${ind}: ${(json[1] ?? []).length} rows`)
   for (const row of json[1] ?? []) {
-    if (row.countryiso3code && row.value !== null && row.value !== undefined && !(out.get(row.countryiso3code)?.date > row.date)) out.set(row.countryiso3code, { value: row.value, date: row.date })
+    if (row.countryiso3code && row.value !== null && row.value !== undefined && !((out.get(row.countryiso3code)?.date ?? '') > row.date)) out.set(row.countryiso3code, { value: row.value, date: row.date })
   }
   return out
 }
