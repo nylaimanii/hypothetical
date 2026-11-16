@@ -28,6 +28,9 @@ export type Selection =
 export type Zoom = 'far' | 'mid' | 'close'
 export type Quality = 'high' | 'fast'
 export type Source = 'mock' | 'api' | 'live'
+// what this server can do (GET /api/capabilities): on the deployed site these are all off, and the controls hide
+export type Caps = { readOnly: boolean; playLive: boolean; petitions: boolean; whatIf: boolean; branch: boolean; override: boolean; ask: boolean; evolveNow: boolean }
+export const NO_CAPS: Caps = { readOnly: true, playLive: false, petitions: false, whatIf: false, branch: false, override: false, ask: false, evolveNow: false }
 // a visual effect trigger, from frame events or local injections
 export type Juice = { id: number; kind: WorldEvent['kind']; regionId?: string; severity: number; text: string; at: number }
 // a camera shot: a region or the core, asked for by the director, the feed, or the user
@@ -51,6 +54,8 @@ export type SentOverride = Override & { tick: number; responded?: boolean; local
 
 type State = {
   record: RunRecord
+  caps: Caps
+  setCaps: (c: Caps) => void
   source: Source
   runs: RunSummary[]
   runsSource: 'mock' | 'api'
@@ -173,6 +178,8 @@ export const useStore = create<State>((set) => ({
   // a placeholder until a real world loads (source 'mock' means "nothing loaded yet": the app shows no world
   // until a real record arrives, see App). runsSource 'mock' means the run list hasn't answered yet
   record: mockRuns()[0],
+  caps: NO_CAPS,
+  setCaps: (caps) => set({ caps }),
   source: 'mock',
   runs: [],
   runsSource: 'mock',

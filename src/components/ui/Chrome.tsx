@@ -103,6 +103,7 @@ const Gear = () => (
 )
 
 export function TopRight({ onLive }: { onLive: () => void }) {
+  const canLive = useStore((s) => s.caps.playLive)
   const drawerOpen = useStore((s) => s.drawerOpen)
   const setDrawer = useStore((s) => s.setDrawer)
   const liveRunId = useStore((s) => s.liveRunId)
@@ -121,7 +122,7 @@ export function TopRight({ onLive }: { onLive: () => void }) {
       <Link href="/mission" className={`${btn(false)} flex items-center`}>mission</Link>
       <DirectorToggle />
       <SoundControls />
-      <button onClick={onLive} className={btn(!!liveRunId)}>{liveRunId ? 'live on' : 'play live'}</button>
+      {canLive && <button onClick={onLive} className={btn(!!liveRunId)}>{liveRunId ? 'live on' : 'play live'}</button>}
       <button onClick={() => setDrawer(!drawerOpen)} className={btn(drawerOpen)}>rules</button>
       <button onClick={() => useStore.getState().setShortcuts(true)} aria-label="keyboard shortcuts" title="keyboard shortcuts (?)" className={`${btn(false)} flex w-9 items-center justify-center px-0 font-mono`}>?</button>
       <button onClick={() => setAdvanced(!advanced)} aria-label="advanced settings" title="advanced settings" className={`${btn(advanced)} flex w-9 items-center justify-center px-0`}><Gear /></button>

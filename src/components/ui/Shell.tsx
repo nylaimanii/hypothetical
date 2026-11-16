@@ -77,6 +77,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 export function SideMenu({ onLive }: { onLive: () => void }) {
   const menu = useStore((s) => s.menu)
   const liveRunId = useStore((s) => s.liveRunId)
+  const caps = useStore((s) => s.caps)
   const phone = usePhone()
   if (!menu) return null
   const s = useStore.getState()
@@ -94,8 +95,8 @@ export function SideMenu({ onLive }: { onLive: () => void }) {
           <Item label="agents" onClick={() => s.setPanel('agents')} />
           <Item label="hall of history" onClick={() => s.setPanel('hall')} />
           <Item label="the story so far" hint="every world, every lesson" href="/story" />
-          <Item label="mission control" href="/mission" />
-          <Item label={liveRunId ? 'live: on' : 'play live'} onClick={() => { s.setMenu(false); onLive() }} />
+          {caps.evolveNow && <Item label="mission control" href="/mission" />}
+          {caps.playLive && <Item label={liveRunId ? 'live: on' : 'play live'} onClick={() => { s.setMenu(false); onLive() }} />}
         </Group>
         <Group title="this world">
           <Item label="the daily" onClick={view('daily')} />

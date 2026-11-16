@@ -96,6 +96,7 @@ export default function Timeline() {
   const agents = useStore((s) => s.agents)
   const [split, setSplit] = useState<Divergence | null>(null)
   const [branching, setBranching] = useState(false)
+  const canBranch = useStore((s) => s.caps.branch)
   const name = (runId: string) => { const r = compare?.records.find((x) => x.runId === runId); return agents.find((a) => a.id === r?.agentId)?.name ?? r?.agentId ?? runId }
   // marks on the track only up to the playhead (the timeline shouldn't give away what's coming)
   const dangers = record.frames.filter((f) => f.tick <= playhead + 1e-6 && f.newEvents.some((e) => e.severity >= 0.7 && ['famine', 'revolt', 'war', 'disaster', 'pandemic'].includes(e.kind)))
@@ -158,7 +159,7 @@ export default function Timeline() {
         <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden><rect x="1.5" y="3" width="11" height="8" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.3" /><path d="M6 5.3v3.4l3-1.7z" fill="currentColor" /></svg>
         {reel && <Num>{reel.i + 1}/{reel.stops.length}</Num>}
       </button>
-      {!compare && (
+      {!compare && canBranch && (
         <div className="relative shrink-0">
           <button onClick={() => setBranching(!branching)} title="branch: hand this world to another agent from here" aria-label="branch" className={`flex h-7 w-7 items-center justify-center rounded-full ${branching ? 'bg-ink text-bone' : 'text-ink/60 hover:bg-ink/5 hover:text-ink'}`}>
             <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden><circle cx="4" cy="3" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.3" /><circle cx="4" cy="11" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.3" /><circle cx="10.5" cy="5" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.3" /><path d="M4 4.6v4.8M10.5 6.6c0 2-2.5 2.2-5.5 3.4" fill="none" stroke="currentColor" strokeWidth="1.3" /></svg>

@@ -318,6 +318,7 @@ function LawDossier({ id, frame, record }: { id: string; frame: Frame; record: R
   const [tab, setTab] = useTab<'law' | 'precedents' | 'effect'>('law')
   const law = frame.laws.find((l) => l.id === id) ?? record.frames.flatMap((f) => f.laws).find((l) => l.id === id)
   const liveRunId = useStore((s) => s.liveRunId)
+  const canOverride = useStore((s) => s.caps.override)
   const overrides = useStore((s) => s.overrides)
   const [busy, setBusy] = useState(false)
   if (!law) return null
@@ -344,7 +345,7 @@ function LawDossier({ id, frame, record }: { id: string; frame: Frame; record: R
           {law.hatedBy.length > 0 && <Section title="hated by"><div className="flex flex-wrap gap-1.5">{law.hatedBy.map((g) => <Chip key={g} tone="soft">{g}</Chip>)}</div></Section>}
           {resisting.length > 0 && <Section title="resisting regions"><div className="flex flex-wrap gap-1.5">{resisting.map((r) => <Link key={r.id} to={{ kind: 'region', id: r.id }}><Chip tone="soft">{r.name}</Chip></Link>)}</div></Section>}
           {law.vetoed && <div className="mt-4 rounded-lg border border-ink/20 px-3 py-2 text-[12px]">vetoed by you</div>}
-          {liveRunId && !law.vetoed && !sent && (
+          {liveRunId && canOverride && !law.vetoed && !sent && (
             <button disabled={busy} onClick={async () => { setBusy(true); try { await sendOverride({ kind: 'veto_law', lawId: law.id }) } finally { setBusy(false) } }}
               className="mt-4 w-full rounded-full bg-ink py-2 font-mono text-[12px] uppercase tracking-[0.2em] text-bone hover:bg-ink/85 disabled:opacity-50">veto</button>
           )}
@@ -473,6 +474,7 @@ function CoreDossier({ record, idx, frame }: { record: RunRecord; idx: number; f
   const applied = new Set(decisions.flatMap(({ d }) => d.lessonsApplied))
   const lessons = record.lessons ?? []
   const dead = new Set(lessons.map((l) => l.fromRunId)).size
+  const canAsk = useStore((s) => s.caps.ask)
   const ask = async () => {
     if (!q.trim()) return
     setBusy(true); setAnswer(null)
@@ -492,13 +494,13 @@ function CoreDossier({ record, idx, frame }: { record: RunRecord; idx: number; f
               <ul className="space-y-1.5">{[...decisions].reverse().filter(({ d }) => d.publicStatement).map(({ f, d }) => <li key={f.tick} className="text-[12.5px]"><Num className="mr-2 text-[10.5px] text-ink/45">{f.date}</Num>&ldquo;{d.publicStatement}&rdquo;</li>)}</ul>
             </Section>
           )}
-          <Section title="ask the core">
+          {canAsk && <Section title="ask the core">
             <form onSubmit={(e) => { e.preventDefault(); ask() }} className="flex gap-2">
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="why move people to the corridor?" className="min-w-0 flex-1 rounded-full border border-ink/20 bg-bone px-3 py-1.5 text-[13px] outline-none focus:border-ink/60" />
               <button disabled={busy} className="rounded-full bg-ink px-3 font-mono text-[11px] uppercase text-bone disabled:opacity-50">{busy ? '...' : 'ask'}</button>
             </form>
             {answer && <p className={`mt-2 text-[13px] leading-relaxed ${answer === 'runner offline' ? 'text-ink/45' : ''}`}>{answer}</p>}
-          </Section>
+          </Section>}
         </>
       )}
       {tab === 'decisions' && (

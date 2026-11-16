@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react'
 import { isPhoneNow, usePhone } from './usePhone'
 import { loadGeo } from '../world/geo/lazy'
 import dynamic from 'next/dynamic'
-import { TICKS_PER_SECOND, useStore } from '../state/store'
+import { TICKS_PER_SECOND, useStore, NO_CAPS } from '../state/store'
 import { api, Offline } from './api'
 import { Caption, Intro, useIntroGate, useSound } from './Extras'
 import { stopReel } from './Timeline'
@@ -61,6 +61,8 @@ function Waiting() {
 function useRuns() {
   const setRuns = useStore((s) => s.setRuns)
   useEffect(() => {
+    // what this server can do; anything missing stays off (controls hide rather than fail)
+    fetch('/api/capabilities', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((c) => { if (c && typeof c === 'object') useStore.getState().setCaps({ ...NO_CAPS, ...c }) }).catch(() => {})
     // the real run list, even when empty (no mock worlds); offline is said, not papered over
     api.runs().then((runs) => setRuns(Array.isArray(runs) ? runs : [], 'api')).catch(() => useStore.getState().setRunnerOffline(true))
   }, [setRuns])
