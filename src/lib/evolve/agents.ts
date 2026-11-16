@@ -58,16 +58,20 @@ export function recordAgentRun(s: RunSummary, stage: 'screen' | 'full' = 'screen
   const all = readAgents()
   const a = all.find(x => x.id === s.agentId)
   if (!a) return null
+  // a runner crash (a sim bug, e.g. b's "sim bug: world population is NaN" from 5.10.10) is not a death and has no
+  // score: it is kept in runIds so the world is not run twice, but counts toward nothing
+  const crashed = !!s.causeOfDeath?.startsWith('runner error')
+  const scored = !crashed && Number.isFinite(s.score)
   if (!a.runIds.includes(s.runId)) {
-    if (stage === 'screen') {
+    if (stage === 'screen' && scored) {
       const n = a.runIds.filter(id => !/-full-s\d+$/.test(id)).length
       a.avgScore = Math.round(((a.avgScore * n + s.score) / (n + 1)) * 1e4) / 1e4
     }
     a.runIds.push(s.runId)
-    a.worlds++
-    if (s.status === 'destroyed') a.deaths++
+    if (!crashed) a.worlds++
+    if (s.status === 'destroyed' && !crashed) a.deaths++
   }
-  a.bestScore = Math.max(a.bestScore, s.score)
+  if (scored) a.bestScore = Math.max(a.bestScore, s.score)
   if (frontierRank(s.frontier) > frontierRank(a.bestFrontier)) a.bestFrontier = s.frontier
   a.bestPeriodLifeExpectancy = Math.max(a.bestPeriodLifeExpectancy, s.peakPeriodLifeExpectancy ?? 0)
   writeAgents(all)

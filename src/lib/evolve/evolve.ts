@@ -186,6 +186,7 @@ type RunWorld = typeof runWorld
 type RunWorldOpts = Parameters<RunWorld>[0]
 type Deps = { run: RunWorld; extract: typeof extractLessons; log: (l: string) => void; llmUp: () => Promise<boolean>; gate: () => Promise<void> }
 let warnedFallback = false
+let simBugWarned = -1
 
 // per-death learning: lessons from the run (B extracts them on death), merged into data/lessons.json
 async function learnFromDeath(g: GenerationFile, record: RunRecord, deps: Deps): Promise<{ added: Lesson[]; repeat: Lesson | null }> {
@@ -243,6 +244,8 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, stage: Stag
     // rate limits, timeouts and network errors are not deaths: hand back to the queue unscored
     if (isTransient(e)) throw e
     deps.log(`gen ${g.generation} ${runId} runWorld threw: ${(e as Error).message}`)
+    // a sim bug that stops a world is a break worth one telegram per generation (it is not counted as a death)
+    if (/^sim bug/i.test((e as Error).message) && simBugWarned !== g.generation) { simBugWarned = g.generation; await send(`a world crashed on a sim bug, so it is left out of scores and deaths: ${runId}: ${(e as Error).message.split('\n')[0].slice(0, 200)}`) }
     summary = crashedSummary(runId, g.generation, c.id, c.constitution, frames, e as Error)
     record = { runId, generation: g.generation, seed, constitution: c.constitution, frames, baseline: [], summary, agentId: c.id, snapshots: [] }
     writeJson(path.join(dirs.runs, `${runId}.json`), record)
