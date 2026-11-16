@@ -222,7 +222,7 @@ function JuiceDriver() {
     const first = last.current === -1
     last.current = idx
     if (first || mode !== 'ai') return
-    for (const e of frame.newEvents) if (e.kind !== 'law') pushJuice({ kind: e.kind, regionId: e.regionId, severity: e.severity, text: e.text })
+    for (const e of frame.newEvents) if (e.kind !== 'law') pushJuice({ kind: e.kind, regionId: e.regionId, severity: e.severity, text: e.text, tick: e.tick })
   }, [idx, frame, mode, pushJuice])
   useEffect(() => {
     for (const j of juice) {

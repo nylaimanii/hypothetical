@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useCurrentFrame, useStore } from '../state/store'
 import { ensureWindow } from '../state/frames'
+import { yearIndexOfTick, yearSpan } from './truth'
 import { Num } from './bits'
 import { buildIssue, fmtPeople, yearsOf, type Issue, type Story } from './dailyIssue'
 
@@ -12,7 +13,7 @@ const longDate = (d: string) => `${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(
 export function go(s: Story, close: () => void) {
   if (!s.ref) return
   const st = useStore.getState()
-  st.setPlayhead(s.ref.tick)
+  st.setPlayhead(s.ref.at ?? s.ref.tick)
   st.requestShot(s.ref.regionId ? { target: 'region', regionId: s.ref.regionId, force: true } : { target: 'core', force: true })
   if (s.ref.index !== undefined) st.select({ kind: 'event', tick: s.ref.tick, index: s.ref.index })
   close()
@@ -93,15 +94,16 @@ export function FrontPage({ issue, onGo }: { issue: Issue; onGo: (s: Story) => v
 export function DailyPaper() {
   const daily = useStore((s) => s.daily)
   const setDaily = useStore((s) => s.setDaily)
-  const { record, frame } = useCurrentFrame()
+  const { record } = useCurrentFrame()
   const meta = useStore((s) => s.slim[record.runId])
   // years up to the playhead only: never the future
-  const years = useMemo(() => yearsOf(record, Math.min(frame.tick, meta?.lazy ? meta.lastTick : Infinity)), [record, meta, frame.tick])
-  const current = Math.floor(frame.tick / 12)
+  const playhead = useStore((s) => s.playhead)
+  const years = useMemo(() => yearsOf(record, Math.min(playhead, meta?.lazy ? meta.lastTick : Infinity)), [record, meta, playhead])
+  const current = yearIndexOfTick(playhead)
   const year = daily.year ?? current
   // lazy runs: make sure that year's frames are loaded
-  useEffect(() => { if (daily.open) ensureWindow(record.runId, year * 12 + 6) }, [daily.open, year, record.runId])
-  const issue = useMemo(() => (daily.open ? buildIssue(record, Math.min(year, current), frame.tick) : null), [daily.open, record, year, current, frame.tick])
+  useEffect(() => { if (daily.open) ensureWindow(record.runId, yearSpan(year).start + 5) }, [daily.open, year, record.runId])
+  const issue = useMemo(() => (daily.open ? buildIssue(record, Math.min(year, current), playhead) : null), [daily.open, record, year, current, playhead])
   if (!daily.open) return null
   const close = () => setDaily({ open: false, year: null })
   return (
@@ -133,8 +135,9 @@ export function DailyPeek() {
   const setDaily = useStore((s) => s.setDaily)
   const director = useStore((s) => s.director)
   const playing = useStore((s) => s.playing)
-  const { record, frame, mode } = useCurrentFrame()
-  const year = Math.floor(frame.tick / 12)
+  const { record, mode } = useCurrentFrame()
+  const playhead = useStore((s) => s.playhead)
+  const year = yearIndexOfTick(playhead)
   const lastYear = useRef(year)
   useEffect(() => {
     if (year === lastYear.current) return
@@ -147,7 +150,7 @@ export function DailyPeek() {
     const t = setTimeout(() => setDaily({ peek: null }), 8000)
     return () => clearTimeout(t)
   }, [daily.peek, setDaily])
-  const issue = useMemo(() => (daily.peek !== null ? buildIssue(record, daily.peek, frame.tick) : null), [daily.peek, record, frame.tick])
+  const issue = useMemo(() => (daily.peek !== null ? buildIssue(record, daily.peek, playhead) : null), [daily.peek, record, playhead])
   if (!issue || daily.open) return null
   return (
     <div className="dossier-in pointer-events-auto w-[22rem] rotate-[-1.2deg] rounded-sm bg-[#F3EDE0] p-4 font-display text-ink shadow-[0_18px_40px_-14px_rgba(0,0,0,0.55)]">

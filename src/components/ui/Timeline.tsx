@@ -1,5 +1,6 @@
 'use client'
 import { useRef, useState } from 'react'
+import { dateOfTick, eventsBetween } from './truth'
 import type { Divergence } from '@/lib/types'
 import { useCurrentFrame, useStore, speedLabel } from '../state/store'
 import { Num } from './bits'
@@ -90,7 +91,7 @@ export default function Timeline() {
   // the governor's decisions so far (a future decision's reasoning would be a spoiler)
   const decisions = (meta?.lazy
     ? meta.decisions.map((d) => ({ tick: d.tick, date: d.date, text: record.frames.find((f) => f.tick === d.tick)?.decision?.rationale ?? (d.lawsEnacted.length ? `enacted ${d.lawsEnacted.join(', ')}` : 'the core decides') }))
-    : record.frames.filter((f) => f.decision).map((f) => ({ tick: f.tick, date: f.date, text: f.decision!.rationale }))).filter((d) => d.tick <= playhead + 1e-6)
+    : record.frames.filter((f) => f.decision).map((f) => ({ tick: f.tick, date: dateOfTick(f.tick), text: f.decision!.rationale }))).filter((d) => d.tick <= playhead + 1e-6)
   const compare = useStore((s) => s.compare)
   const reel = useStore((s) => s.reel)
   const agents = useStore((s) => s.agents)
@@ -99,7 +100,8 @@ export default function Timeline() {
   const canBranch = useStore((s) => s.caps.branch)
   const name = (runId: string) => { const r = compare?.records.find((x) => x.runId === runId); return agents.find((a) => a.id === r?.agentId)?.name ?? r?.agentId ?? runId }
   // marks on the track only up to the playhead (the timeline shouldn't give away what's coming)
-  const dangers = record.frames.filter((f) => f.tick <= playhead + 1e-6 && f.newEvents.some((e) => e.severity >= 0.7 && ['famine', 'revolt', 'war', 'disaster', 'pandemic'].includes(e.kind)))
+  // danger marks where the event happened (its own tick), never past the playhead
+  const dangers = eventsBetween(record, 0, playhead).map((x) => x.e).filter((e) => e.severity >= 0.7 && ['famine', 'revolt', 'war', 'disaster', 'pandemic'].includes(e.kind)).filter((e, i, all) => all.findIndex((o) => o.tick === e.tick) === i)
   return (
     // minimal shell: thin, translucent, icons instead of words
     <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-bone/85 px-2 py-1 shadow-sm">

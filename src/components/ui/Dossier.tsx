@@ -16,6 +16,7 @@ import { useCurrentFrame, useStore, type Selection } from '../state/store'
 import { Bar, Num, Prov, Section, Sparkline, fmt } from './bits'
 import { api, Offline } from './api'
 import { sendOverride } from './actions'
+import { dateOfTick, eventDate, eventsBetween } from './truth'
 
 // ---------- shared bits ----------
 
@@ -430,12 +431,13 @@ function RequirementDossier({ id, frame, record }: { id: string; frame: Frame; r
 
 // ---------- faction ----------
 
-function FactionDossier({ id, frame, record, idx }: { id: string; frame: Frame; record: RunRecord; idx: number }) {
+function FactionDossier({ id, frame, record }: { id: string; frame: Frame; record: RunRecord; idx: number }) {
+  const playheadNow = useStore((s) => s.playhead)
   const f = frame.factions.find((x) => x.id === id)
   if (!f) return null
   const opposes = frame.laws.filter((l) => l.hatedBy.some((g) => g.includes(f.name)))
   const backs = frame.laws.filter((l) => l.lovedBy.some((g) => g.includes(f.name)))
-  const did = record.frames.slice(0, idx + 1).flatMap((fr) => fr.newEvents.filter((e) => e.regionId && f.regionIds.includes(e.regionId) && ['revolt', 'war'].includes(e.kind)).map((e) => ({ ...e, date: fr.date })))
+  const did = eventsBetween(record, 0, playheadNow).map((x) => x.e).filter((e) => e.regionId && f.regionIds.includes(e.regionId) && ['revolt', 'war'].includes(e.kind)).map((e) => ({ ...e, date: eventDate(e) }))
   const crowds = frame.regions.filter((r) => f.regionIds.includes(r.id)).flatMap((r) => r.crowds.map((c) => ({ r, c })))
   return (
     <Drawer kicker={`faction · ${words(f.kind)}`} title={f.name}>
@@ -509,7 +511,7 @@ function CoreDossier({ record, idx, frame }: { record: RunRecord; idx: number; f
             {[...decisions].reverse().map(({ f, d }) => (
               <li key={f.tick}>
                 <button onClick={() => setPlayhead(f.tick)} className="w-full rounded-lg px-2 py-1 text-left hover:bg-ink/5">
-                  <Num className="text-[11px] text-ink/50">{f.date}</Num>
+                  <Num className="text-[11px] text-ink/50">{dateOfTick(f.tick)}</Num>
                   <div className="text-[12.5px]">{d.rationale}</div>
                   {(d.foundCities.length > 0 || d.charterCompanies.length > 0 || d.researchFocus.length > 0) && (
                     <div className="mt-0.5 text-[11px] text-ink/55">
@@ -548,9 +550,9 @@ function EventDossier({ tick, index, record }: { tick: number; index: number; re
   const e = f?.newEvents[index]
   if (!f || !e) return null
   const r = f.regions.find((x) => x.id === e.regionId)
-  const hit = rosterAt(record, f.tick).filter((c) => c.regionId === e.regionId && c.lifeEvents.some((l) => l.tick === tick))
+  const hit = rosterAt(record, f.tick).filter((c) => c.regionId === e.regionId && c.lifeEvents.some((l) => l.tick === e.tick))
   return (
-    <Drawer kicker={`event · ${e.kind} · ${f.date}`} title={e.text}>
+    <Drawer kicker={`event · ${e.kind} · ${eventDate(e)}`} title={e.text}>
       <Section title="what happened">
         <div className="flex flex-wrap gap-1.5">{r && <Link to={{ kind: 'region', id: r.id }}><Chip>{r.name}</Chip></Link>}<Chip tone="soft">severity <Num>{e.severity.toFixed(2)}</Num></Chip></div>
       </Section>
@@ -601,7 +603,8 @@ function LayerDossier({ layer, regionId, frame, record, idx }: { layer: Layer; r
 function MoonDossier({ record, idx, frame }: { record: RunRecord; idx: number; frame: Frame }) {
   const stageIdx = MOON_STAGES.indexOf(frame.moonStage)
   const space = record.frames.slice(0, idx + 1).map((f) => f.budget.space)
-  const launches = record.frames.slice(0, idx + 1).flatMap((f) => f.newEvents.filter((e) => e.kind === 'launch').map((e) => ({ ...e, date: f.date })))
+  const playheadNow = useStore((s) => s.playhead)
+  const launches = eventsBetween(record, 0, playheadNow).map((x) => x.e).filter((e) => e.kind === 'launch').map((e) => ({ ...e, date: eventDate(e) }))
   return (
     <Drawer kicker="launch program" title={frame.moonStage === 'crewed_landing' ? 'boots on the moon' : 'the moon'}>
       <Section title="moon track"><Bar value={frame.moonProgress} />

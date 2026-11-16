@@ -1,5 +1,6 @@
 'use client'
 import { useMemo } from 'react'
+import { populationOf } from './truth'
 import dynamic from 'next/dynamic'
 import type { DecisionRow, RunRecord, YearRow } from '@/lib/types'
 import { frontierRank } from '@/lib/mock/agents'
@@ -122,7 +123,7 @@ export default function CompareView() {
                 <span className={`text-[10px] ${f.status === 'destroyed' ? 'text-ember' : 'text-ink/50'}`}>{f.status}</span>
               </div>
               <div className="pointer-events-none absolute bottom-2 left-2 rounded-full bg-bone/80 px-2.5 py-0.5 text-[10.5px]">
-                <Num>{fmt.people(f.globalPopulation)}</Num> · <Num>{f.globalPeriodLifeExpectancy.toFixed(1)}y</Num> · {frontierLabel(f.frontier)}{f.humanCost.deaths > 0 && <> · <Num className="text-ember">{fmt.people(f.humanCost.deaths)}</Num> dead</>}
+                <Num>{fmt.people(populationOf(f))}</Num> · <Num>{f.globalPeriodLifeExpectancy.toFixed(1)}y</Num> · {frontierLabel(f.frontier)}{f.humanCost.deaths > 0 && <> · <Num className="text-ember">{fmt.people(f.humanCost.deaths)}</Num> dead</>}
               </div>
             </div>
           )

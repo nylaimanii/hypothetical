@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
+import { populationOf } from './truth'
 import Link from 'next/link'
 import type { Budget, Frontier } from '@/lib/types'
 import { learningByLineage } from '@/lib/mock/agents'
@@ -71,7 +72,7 @@ export function MissionBar() {
   )
   return (
     <div className="panel pointer-events-auto flex shrink-0 items-center divide-x divide-ink/10 whitespace-nowrap px-1.5 py-1.5">
-      {frame.globalPopulation > 0 && item('people', <Num>{fmt.people(frame.globalPopulation)}</Num>)}
+      {populationOf(frame) > 0 && item('people', <Num>{fmt.people(populationOf(frame))}</Num>)}
       {frame.globalPeriodLifeExpectancy > 0 && item('life exp.', <Num>{frame.globalPeriodLifeExpectancy.toFixed(1)}y</Num>, () => setPanel('longevity'))}
       {item('frontier', frontierLabel(frame.frontier), () => setPanel('offworld'))}
       {mode === 'ai' && cost.deaths > 0 && item('deaths', <Num>{fmt.people(cost.deaths)}</Num>, undefined, true)}

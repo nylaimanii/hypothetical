@@ -2,6 +2,7 @@
 // minimal shell: the globe gets the screen. default chrome is the world name + date, the tabs strip,
 // one stats line and the timeline. one panel at a time, esc closes it, depth lives in "full report".
 import { useEffect, useMemo, useState } from 'react'
+import { populationOf } from './truth'
 import Link from 'next/link'
 import type { Frame, Region, WorldEvent } from '@/lib/types'
 import { useCurrentFrame, useStore, type Overlay, type View } from '../state/store'
@@ -123,7 +124,7 @@ export function StatsLine() {
   const { frame, mode } = useCurrentFrame()
   const cost = frame.humanCost
   const parts: React.ReactNode[] = []
-  if (frame.globalPopulation > 0) parts.push(<span key="p"><Num>{fmt.people(frame.globalPopulation)}</Num> people</span>)
+  if (populationOf(frame) > 0) parts.push(<span key="p"><Num>{fmt.people(populationOf(frame))}</Num> people</span>)
   if (frame.globalPeriodLifeExpectancy > 0) parts.push(<span key="l">life <Num>{frame.globalPeriodLifeExpectancy.toFixed(1)}</Num>y</span>)
   parts.push(<span key="f">{frontierLabel(frame.frontier)}</span>)
   if (cost.approval > 0) parts.push(<span key="a">approval <Num>{fmt.pct(cost.approval)}</Num></span>)

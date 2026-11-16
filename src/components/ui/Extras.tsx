@@ -39,7 +39,8 @@ export function EventFeed() {
   const setPlayhead = useStore((s) => s.setPlayhead)
   const requestShot = useStore((s) => s.requestShot)
   const select = useStore((s) => s.select)
-  const items = useMemo(() => (mode === 'ai' ? feedFor(record, idx).slice(0, 80) : []), [record, idx, mode])
+  const playhead = useStore((s) => s.playhead)
+  const items = useMemo(() => (mode === 'ai' ? feedFor(record, idx, playhead).slice(0, 80) : []), [record, idx, mode, playhead])
   const regions = record.frames[idx]?.regions ?? []
   if (!items.length) return null
   return (
@@ -50,7 +51,7 @@ export function EventFeed() {
           <button key={it.key} onClick={() => {
             setPlayhead(it.tick)
             requestShot(it.kind === 'decision' || !it.regionId ? { target: 'core', force: true } : { target: 'region', regionId: it.regionId, force: true })
-            select(it.kind === 'decision' ? { kind: 'core' } : it.kind === 'crowd' && it.regionId ? { kind: 'region', id: it.regionId } : it.index !== undefined ? { kind: 'event', tick: it.tick, index: it.index } : null)
+            select(it.kind === 'decision' ? { kind: 'core' } : it.kind === 'crowd' && it.regionId ? { kind: 'region', id: it.regionId } : it.index !== undefined ? { kind: 'event', tick: it.frameTick ?? it.tick, index: it.index } : null)
           }}
             className={`feed-in rounded-xl border-l-2 bg-bone/80 px-2.5 py-1.5 text-left shadow-sm hover:bg-bone ${it.danger ? 'border-ember' : 'border-ink/25'}`}>
             <div className="flex items-baseline justify-between gap-2 whitespace-nowrap text-[10px]">

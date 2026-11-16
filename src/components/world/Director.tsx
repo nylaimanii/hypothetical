@@ -7,7 +7,7 @@ import { latLonToVec3 } from './lib'
 import { captionFor, shotScore, type FeedKind } from '../ui/events'
 import { useCurrentFrame, useStore } from '../state/store'
 
-type Candidate = { kind: FeedKind; regionId?: string; severity: number; text: string; score: number; at: number; force?: boolean; lat?: number; lon?: number; dist?: number }
+type Candidate = { kind: FeedKind; regionId?: string; severity: number; text: string; score: number; at: number; tick?: number; force?: boolean; lat?: number; lon?: number; dist?: number }
 type Shot = {
   c: Candidate
   phase: 'fly' | 'hold' | 'out'
@@ -74,7 +74,7 @@ export default function Director() {
       const kind: FeedKind = injected ? 'injected' : j.kind
       const score = shotScore(kind, j.severity)
       if (score <= 0) continue
-      offer({ kind: j.kind, regionId: j.regionId, severity: j.severity, text: j.text, score, at: now })
+      offer({ kind: j.kind, regionId: j.regionId, severity: j.severity, text: j.text, score, at: now, tick: j.tick })
     }
   }, [juice]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -166,7 +166,7 @@ export default function Director() {
       look(cur.fromAim.clone().lerp(cur.toAim, e))
       if (k >= 1) {
         shot.current = { ...cur, phase: 'hold', el: 0 }
-        const cap = captionFor(cur.c.kind, cur.c.text, cur.c.severity, cur.c.regionId, frameRef.current)
+        const cap = captionFor(cur.c.kind, cur.c.text, cur.c.severity, cur.c.regionId, frameRef.current, cur.c.tick)
         useStore.getState().setCaption(cap)
       }
     } else if (cur.phase === 'hold') {

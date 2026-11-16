@@ -1,5 +1,6 @@
 'use client'
 import { useMemo } from 'react'
+import { dateOfTick, populationOf } from '../truth'
 import type { Citizen, Emotion, Frame } from '@/lib/types'
 import { dominant } from '@/lib/mock/mood'
 import { frameIndexAt, useStore } from '../../state/store'
@@ -50,7 +51,7 @@ function Block({ title, sub, children, className = '' }: { title: string; sub?: 
 
 function Pyramid({ frame }: { frame: Frame }) {
   const cs = frame.citizens
-  const scale = cs.length ? frame.globalPopulation / cs.length : 0
+  const scale = cs.length ? populationOf(frame) / cs.length : 0
   const rows = BANDS.map(([lo, hi]) => ({
     label: hi > 100 ? `${lo}+` : `${lo} to ${hi}`,
     f: cs.filter((c) => c.sex === 'female' && c.age >= lo && c.age <= hi).length * scale,
@@ -162,8 +163,8 @@ export default function People({ world }: { world: ViewWorld }) {
       <ByRegion frame={frame} />
       <div className="flex flex-col gap-3">
         <Block title="everyone" sub={world.label}>
-          <Num className="font-display text-[30px] leading-none">{fmt.people(frame.globalPopulation)}</Num>
-          <span className="mt-1 text-[11.5px] text-ink/60">people alive in <Num>{frame.date.slice(0, 7)}</Num></span>
+          <Num className="font-display text-[30px] leading-none">{fmt.people(populationOf(frame))}</Num>
+          <span className="mt-1 text-[11.5px] text-ink/60">people alive in <Num>{dateOfTick(frame.tick)}</Num></span>
         </Block>
         <OffWorld frame={frame} />
       </div>

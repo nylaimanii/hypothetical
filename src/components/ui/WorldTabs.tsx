@@ -1,6 +1,7 @@
 'use client'
 // v3: every open world is a tab. a live mini globe, the agent, the world number, the year it reached and how it is doing.
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { yearOfTick } from './truth'
 import * as THREE from 'three'
 import type { Agent, Frame, RunRecord, RunSummary } from '@/lib/types'
 import { useStore } from '../state/store'
@@ -223,7 +224,8 @@ export default function WorldTabs({ onLive }: { onLive: () => void }) {
           const status = on ? playFrame.status : rec?.summary.status
           const tone = statusTone(status)
           const a = agentOf(rec, agents)
-          const year = f ? tickToDate(f.tick).getUTCFullYear() : undefined
+          // the open world shows the playhead's year (the clock's), the others the year they reached
+          const year = on ? yearOfTick(playhead) : f ? yearOfTick(f.tick) : undefined
           return (
             <div key={id} draggable onDragStart={() => { drag.current = id }} onDragOver={(e) => e.preventDefault()} onDrop={() => drop(id)}
               className={`group flex h-7 shrink-0 items-center gap-1.5 rounded-full pl-0.5 pr-1.5 text-[12px] transition ${on ? 'bg-ink/90 text-bone' : 'bg-bone/80 text-ink/75 hover:bg-bone/95'} ${tone.ring}`}>

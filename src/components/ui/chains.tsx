@@ -5,8 +5,8 @@ import { useMemo, useState } from 'react'
 import type { CauseLink, Citizen, Frame, Layer, Reasoning, RunRecord, Story } from '@/lib/types'
 import { useStore } from '../state/store'
 import { Num } from './bits'
+import { yearOfTick as yearOf } from './truth'
 
-const yearOf = (tick: number) => 2026 + Math.floor((tick + 10) / 12)
 
 // every link the world made up to the current frame
 export function useLinks(record: RunRecord, idx: number) {

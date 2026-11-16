@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useCurrentFrame, useStore, type Overlay, type View } from '../state/store'
 import { ensureWindow } from '../state/frames'
+import { yearIndexOfTick, yearSpan } from './truth'
 import { legendFor } from '../world/modes'
 import { tickToDate } from '../world/time'
 import { FrontPage, go } from './Daily'
@@ -86,22 +87,23 @@ export function OverlayLegend() {
 }
 
 function DailyView() {
-  const { record, frame } = useCurrentFrame()
+  const { record } = useCurrentFrame()
   const worlds = useViewWorlds()
-  const year = Math.floor(frame.tick / 12)
+  const playhead = useStore((s) => s.playhead)
+  const year = yearIndexOfTick(playhead)
   const [shown, setShown] = useState<number | null>(null)
   const y = Math.min(shown ?? year, year) // never a year past the playhead
-  useEffect(() => { ensureWindow(record.runId, y * 12 + 6) }, [record.runId, y])
-  const issue = useMemo(() => buildIssue(record, y, frame.tick), [record, y, frame.tick])
+  useEffect(() => { ensureWindow(record.runId, yearSpan(y).start + 5) }, [record.runId, y])
+  const issue = useMemo(() => buildIssue(record, y, playhead), [record, y, playhead])
   // same day, other worlds: the lead story every other open world printed that year
   const others = useMemo(() => worlds.filter((w) => !w.active).map((w) => {
     const last = w.record.frames[w.record.frames.length - 1]
-    const alive = y * 12 <= (last?.tick ?? 0)
+    const alive = yearSpan(y).start <= (last?.tick ?? 0)
     // the same date in the other world: nothing past this playhead
-    const iss = alive ? buildIssue(w.record, y, frame.tick) : null
+    const iss = alive ? buildIssue(w.record, y, playhead) : null
     return { w, headline: iss?.lead.headline ?? null, gone: !alive }
-  }), [worlds, y, frame.tick])
-  const date = tickToDate(y * 12 + 1)
+  }), [worlds, y, playhead])
+  const date = tickToDate(Math.min(yearSpan(y).end, playhead))
   return (
     <div className="flex h-full min-h-0 gap-4">
       <div className="scroll-thin min-w-0 flex-1 overflow-y-auto rounded-sm bg-[#F3EDE0] p-7 shadow-[0_20px_40px_-20px_rgba(0,0,0,0.4)] [background-image:radial-gradient(rgba(29,27,25,0.035)_1px,transparent_1px)] [background-size:3px_3px]">

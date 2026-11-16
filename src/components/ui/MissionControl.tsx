@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import { populationOf } from './truth'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import type { Agent, EvolveNow, Frame, RunSummary } from '@/lib/types'
@@ -168,7 +169,7 @@ export default function MissionControl() {
                 </div>
               </div>
               <div className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-bone/85 px-3 py-1 text-[11.5px]">
-                <Num>{fmt.people(shown.frame.globalPopulation)}</Num> · <Num>{shown.frame.globalPeriodLifeExpectancy.toFixed(1)}y</Num> · {frontierLabel(shown.frame.frontier)}
+                <Num>{fmt.people(populationOf(shown.frame))}</Num> · <Num>{shown.frame.globalPeriodLifeExpectancy.toFixed(1)}y</Num> · {frontierLabel(shown.frame.frontier)}
                 {shown.frame.humanCost.deaths > 0 && <> · <Num className="text-ember">{fmt.people(shown.frame.humanCost.deaths)}</Num> dead</>}
               </div>
               {death && (

@@ -5,6 +5,7 @@ import { useCurrentFrame, useStore } from '../state/store'
 import { Num } from './bits'
 import { isDanger } from './events'
 import { frontierLabel } from './Chrome'
+import { dateOfTick, eventDate, eventsBetween } from './truth'
 
 // small chunky glyphs per event kind, no letters
 export function KindIcon({ kind, danger = false }: { kind: WorldEvent['kind']; danger?: boolean }) {
@@ -44,11 +45,12 @@ export default function Chronicle() {
       if (f.tick > playhead + 1e-6) break
       if (f.frontier !== stage) {
         stage = f.frontier
-        out.push({ e: { kind: 'breakthrough', severity: 1, significance: 1, text: `frontier: ${frontierLabel(f.frontier)}`, headline: `frontier: ${frontierLabel(f.frontier)}` } as WorldEvent, index: -1, f, frontier: true })
+        out.push({ e: { tick: f.tick, kind: 'breakthrough', severity: 1, significance: 1, text: `frontier: ${frontierLabel(f.frontier)}`, headline: `frontier: ${frontierLabel(f.frontier)}` } as WorldEvent, index: -1, f, frontier: true })
       }
-      f.newEvents.forEach((e, index) => { if ((e.significance ?? e.severity) >= 0.6 && !/\[frontier: /.test(e.text)) out.push({ e, index, f }) })
     }
-    return out
+    // events by their own tick (the frame that carries one can be a year later)
+    for (const x of eventsBetween(record, 0, playhead)) if ((x.e.significance ?? x.e.severity) >= 0.6 && !/\[frontier: /.test(x.e.text)) out.push(x)
+    return out.sort((a, b) => a.e.tick - b.e.tick)
   }, [record, playhead])
   const present = KINDS.filter((k) => items.some((x) => x.e.kind === k))
   const shown = items.filter((x) => !off.has(x.e.kind))
@@ -70,12 +72,12 @@ export default function Chronicle() {
         {shown.map(({ e, index, f, frontier }) => {
           const danger = isDanger(e.kind, e.severity, e.text)
           return (
-            <li key={`${f.tick}-${index}`}>
-              <button onClick={() => { setPlayhead(f.tick); requestShot(e.regionId ? { target: 'region', regionId: e.regionId, force: true } : { target: 'core', force: true }); if (!frontier) select({ kind: 'event', tick: f.tick, index }) }}
+            <li key={`${f.tick}-${index}-${e.tick}`}>
+              <button onClick={() => { setPlayhead(e.tick); requestShot(e.regionId ? { target: 'region', regionId: e.regionId, force: true } : { target: 'core', force: true }); if (!frontier) select({ kind: 'event', tick: f.tick, index }) }}
                 className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-ink/5">
                 <span className="mt-0.5"><KindIcon kind={e.kind} danger={danger} /></span>
                 <span className="min-w-0">
-                  <span className="flex gap-2 text-[10px] text-ink/50"><Num>{f.date}</Num><span className="truncate">{regions.find((r) => r.id === e.regionId)?.name}</span></span>
+                  <span className="flex gap-2 text-[10px] text-ink/50"><Num>{frontier ? dateOfTick(f.tick) : eventDate(e)}</Num><span className="truncate">{regions.find((r) => r.id === e.regionId)?.name}</span></span>
                   <span className={`block text-[12px] leading-snug ${danger ? 'text-ember' : ''}`}>{e.headline ?? e.text}</span>
                 </span>
               </button>
