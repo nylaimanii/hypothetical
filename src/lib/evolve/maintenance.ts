@@ -21,12 +21,13 @@ import { ollamaUp } from './ollama'
 import { paceStats } from './usage'
 import { livesSection } from './lives'
 import { checkDeploy, copyDeploy, deployFiles } from './deploy'
+import { writeTradeoffs } from './tradeoffs'
 import { readEvidence, realBaseline } from './evidence'
 import { failureText, runSuite } from './consistency'
 import { freshSteps } from './steps'
 import { populationOf, yearOfTick } from './facts'
 
-type State = { lastBackup?: string; backupSha?: string; lastStable?: string; stableSha?: string; stableNote?: string; lastMorning?: string; morningLessons?: number; lastQuality?: string; lastQualityRun?: string; lastConsistency?: string; consistencyNote?: string }
+type State = { lastBackup?: string; backupSha?: string; lastStable?: string; stableSha?: string; stableNote?: string; lastMorning?: string; morningLessons?: number; lastQuality?: string; lastQualityRun?: string; lastConsistency?: string; consistencyNote?: string; consistencyWarned?: string }
 const stateFile = () => path.join(process.cwd(), 'data', 'maintenance.json')
 export const readState = (): State => readJson<State>(stateFile()) ?? {}
 const saveState = (patch: Partial<State>) => writeJson(stateFile(), { ...readState(), ...patch })
@@ -91,6 +92,7 @@ export function promoteStable(log: (l: string) => void = console.log, opts: { dr
   try { prev = git(['rev-parse', 'origin/stable']) } catch { /* first deploy */ }
   // the recipe is recomputed first so the deploy carries the current one
   try { freshSteps(true) } catch { /* steps are optional */ }
+  try { writeTradeoffs() } catch { /* the tradeoff map is optional */ }
   const files = deployFiles()
   // the tree stable would get: main's code and committed data, plus the snapshot
   const index = path.join(os.tmpdir(), `hyp-stable-index-${process.pid}`)
@@ -264,3 +266,5 @@ export const markQuality = () => saveState({ lastQualityRun: new Date().toISOStr
 // the nightly consistency suite: from 2am, once a day (the 8:05 launchd job catches up after a night asleep)
 export const consistencyDue = () => new Date().getHours() >= 2 && hoursSince(readState().lastConsistency) >= 20
 export const markConsistency = (note: string) => saveState({ lastConsistency: new Date().toISOString(), consistencyNote: note })
+// the set of older-data warnings last sent, so a warnings-only telegram goes out once per new set
+export const markConsistencyWarned = (sig: string) => saveState({ consistencyWarned: sig })

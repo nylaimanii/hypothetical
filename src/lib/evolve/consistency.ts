@@ -13,7 +13,7 @@ import path from 'node:path'
 import { listWorlds, livesFile, readIndex } from '../life/store'
 import { dirs, readRunIndex } from './store'
 
-export type Failure = { name: string; why: string }
+export type Failure = { name: string; why: string; file?: string }
 export type SuiteResult = { ran: boolean; total: number; passed: number; failed: Failure[]; note: string }
 
 // every *.test.ts under tests/consistency of the code being checked
@@ -65,12 +65,14 @@ export function parseTap(tap: string): { total: number; passed: number; failed: 
     const m = /^(\s*)(not ok|ok) \d+ - (.*?)(\s+#.*)?$/.exec(lines[i])
     if (!m) continue
     // a yaml block follows; a suite says "subtestsFailed" or has nested results before it
-    let why = '', suite = false
+    let why = '', suite = false, file: string | undefined
     for (let j = i + 1; j < lines.length && j < i + 60; j++) {
       const l = lines[j]
       if (/^\s*\.\.\.\s*$/.test(l)) break
       if (/^\s*(not ok|ok) \d+ - /.test(l)) break
       if (/failureType: '?subtestsFailed/.test(l) || /^\s*type: 'suite'/.test(l)) suite = true
+      const loc = /^\s*location: '?(.*?):\d+:\d+'?\s*$/.exec(l)
+      if (loc && !file) file = loc[1]
       const e = /^\s*error: (.*)$/.exec(l)
       if (e && !why) {
         let v = e[1].trim()
@@ -81,7 +83,7 @@ export function parseTap(tap: string): { total: number; passed: number; failed: 
     if (suite) continue
     total++
     if (m[2] === 'ok') passed++
-    else failed.push({ name: m[3].replace(/\\#/g, '#').trim(), why: why.slice(0, 240) })
+    else failed.push({ name: m[3].replace(/\\#/g, '#').trim(), why: why.slice(0, 240), ...(file ? { file } : {}) })
   }
   return { total, passed, failed }
 }
@@ -120,3 +122,77 @@ export function failureText(r: SuiteResult, where: string, max = 5): string {
   const head = r.total ? `consistency check failed on ${where}: ${r.failed.length} of ${r.total} checks disagree with the records.` : `consistency check failed on ${where}.`
   return [head, ...lines, ...more].join('\n')
 }
+
+// ---------- what blocks a commit (the user's rule, 2026-11-16) ----------
+// a commit is stopped only by a failing check that is (a) in a test for a file the commit changes (the test file
+// itself, or anything it imports, directly or not) and (b) on a world or life of the current sim version (or on no
+// world at all: a check of pure logic). every other failure is a warning: printed, and a line in the nightly
+// telegram, never a block. so a sim bug found in an old record cannot stop another agent's unrelated commit
+
+// the files a test reads, by following its relative and @/ imports inside codeRoot
+export function testDeps(codeRoot: string, testFile: string): Set<string> {
+  const seen = new Set<string>()
+  const resolve = (from: string, spec: string): string | null => {
+    const base = spec.startsWith('@/') ? path.join(codeRoot, 'src', spec.slice(2)) : spec.startsWith('.') ? path.resolve(path.dirname(from), spec) : null
+    if (!base) return null
+    for (const c of [base, `${base}.ts`, `${base}.tsx`, path.join(base, 'index.ts')]) if (fs.existsSync(c) && fs.statSync(c).isFile()) return c
+    return null
+  }
+  const walk = (f: string) => {
+    if (seen.has(f)) return
+    seen.add(f)
+    let src = ''
+    try { src = fs.readFileSync(f, 'utf8') } catch { return }
+    for (const m of src.matchAll(/(?:import|export)\s[^'"]*?from\s+['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)|^import\s+['"]([^'"]+)['"]/gm)) {
+      const r = resolve(f, m[1] ?? m[2] ?? m[3])
+      if (r) walk(r)
+    }
+  }
+  walk(path.resolve(testFile))
+  return new Set([...seen].map(f => path.relative(codeRoot, f).split(path.sep).join('/')))
+}
+
+// every world and life id the data knows, with the sim version it was made by (a life: its world's)
+export function dataVersions(dataRoot: string): Map<string, string | null> {
+  const out = new Map<string, string | null>()
+  for (const r of readRunIndex()) out.set(r.runId, r.simVersion ?? null)
+  try {
+    for (const f of fs.readdirSync(dirs.live)) {
+      if (!/^[A-Za-z0-9_-]+\.json$/.test(f)) continue
+      const id = f.replace(/\.json$/, '')
+      if (out.has(id)) continue
+      try { const fd = fs.openSync(path.join(dirs.live, f), 'r'); const b = Buffer.alloc(4096); fs.readSync(fd, b, 0, 4096, 0); fs.closeSync(fd); const m = /"simVersion":"([^"]+)"/.exec(b.toString('utf8')); out.set(id, m ? m[1] : null) } catch { out.set(id, null) }
+    }
+  } catch { /* no live worlds */ }
+  try { for (const w of listWorlds()) for (const s of readIndex(w)) out.set(s.lifeId, out.get(s.worldId ?? w) ?? null) } catch { /* no lives */ }
+  void dataRoot
+  return out
+}
+
+export type Verdict = { blocking: (Failure & { why2: string })[]; warnings: (Failure & { why2: string })[] }
+export function classify(failed: Failure[], opts: { codeRoot: string; changed: string[] | null; current: string[]; versions: Map<string, string | null> }): Verdict {
+  const ids = [...opts.versions.keys()].sort((a, b) => b.length - a.length)
+  const deps = new Map<string, Set<string>>()
+  const out: Verdict = { blocking: [], warnings: [] }
+  for (const f of failed) {
+    const text = `${f.name} ${f.why}`
+    // (b) the data: the ids it names; none named means a check of logic, which counts as current
+    const named: string[] = []
+    let rest = text
+    for (const id of ids) if (rest.includes(id)) { named.push(id); rest = rest.split(id).join(' ') }
+    const old = named.length > 0 && named.every(id => !opts.current.includes(opts.versions.get(id) ?? ''))
+    // (a) the files: a check the suite itself could not run blocks; otherwise its test must read a changed file
+    let related = true
+    if (opts.changed && f.file) {
+      const rel = path.relative(opts.codeRoot, f.file).split(path.sep).join('/')
+      if (!deps.has(rel)) deps.set(rel, testDeps(opts.codeRoot, f.file))
+      related = opts.changed.some(c => deps.get(rel)!.has(c))
+    }
+    if (old) out.warnings.push({ ...f, why2: `on data from sim ${[...new Set(named.map(id => opts.versions.get(id) ?? 'unknown'))].join(', ')}, not the current ${opts.current.join(' or ')}` })
+    else if (!related) out.warnings.push({ ...f, why2: 'its test does not read any file this commit changes' })
+    else out.blocking.push({ ...f, why2: '' })
+  }
+  return out
+}
+
+export const warningLine = (w: Verdict['warnings'], max = 3) => w.length ? `warnings (on older data, never blocking): ${w.slice(0, max).map(x => `${x.name}${x.why ? `: ${x.why}` : ''}`).join('; ')}${w.length > max ? `; and ${w.length - max} more` : ''}` : ''
