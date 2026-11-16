@@ -46,6 +46,7 @@ test('names follow the naming conventions of the country someone comes from', ()
   const father = nameFor(reg, 12, { countryId: 'ETH', sex: 'male' })
   const child = nameFor(reg, 13, { countryId: 'ETH', sex: 'male', father: { ...father, group: father.group } })
   assert.equal(child.family, father.given, 'an ethiopian child carries the father\'s given name')
+  for (let i = 0; i < 8; i++) assert.notEqual(nameFor(reg, 100 + i, { countryId: 'ETH', sex: 'male', father: { ...father, group: father.group } }).given, father.given, 'a child never takes the father\'s own given name')
   const mx = nameFor(reg, 21, { countryId: 'MEX', sex: 'male' })
   assert.equal(mx.full.split(' ').length, 3, 'mexican names have two family names')
   const ru = nameFor(reg, 31, { countryId: 'RUS', sex: 'female' })
@@ -61,4 +62,9 @@ test('names follow the naming conventions of the country someone comes from', ()
 test('no two people get the same full name in one world', () => {
   const reg = newNameRegistry(), seen = new Set<string>()
   for (let i = 0; i < 3000; i++) { const n = nameFor(reg, i * 7919, { countryId: ['NGA', 'IND', 'USA', 'CHN', 'BRA'][i % 5], sex: i % 2 ? 'female' : 'male' }).full; assert.ok(!seen.has(n), n); seen.add(n) }
+})
+
+test('the space program starts from what humans had already done by 2026 (orbit 1961, heavy lift, crew capsules)', () => {
+  const w = initWorld(42, false)
+  assert.equal(w.space.stage, 'life_support')
 })

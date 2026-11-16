@@ -37,8 +37,12 @@ const G0 = 9.80665
 
 export type SpaceState = { stage: MoonStage; stageSpend: number; stageMonths: number; cooldownUntil: number; totalSpend: number; attempts: number; failures: number }
 
+// milestones are relative to real history: by 2026 humans already had orbital launchers (Vostok 1, 1961), heavy lift
+// (Saturn V 1967; Falcon Heavy 2018, SLS 2022) and crew capsules with life support (Crew Dragon crewed 2020, Orion
+// flown 2022). what is ahead is a crewed lander and the first crewed landing since Apollo 17 (1972)
+// (https://en.wikipedia.org/wiki/Artemis_program). the program starts there
 export function initSpace(): SpaceState {
-  return { stage: 'none', stageSpend: 0, stageMonths: 0, cooldownUntil: 0, totalSpend: 0, attempts: 0, failures: 0 }
+  return { stage: 'life_support', stageSpend: 0, stageMonths: 0, cooldownUntil: 0, totalSpend: 0, attempts: 0, failures: 0 }
 }
 
 // ESTIMATE: engine and structure improve with tech. vacuum Isp from kerolox ~311 s toward hydrolox ~450 s
@@ -120,7 +124,7 @@ export function stepSpace(w: World, spaceUsd: number, researchUsd: number): bool
   s.stageSpend = 0
   s.stageMonths = 0
   if (spec.stage === 'crewed_landing') {
-    event(w, { kind: 'launch', text: `crewed landing on the moon succeeded, launched from ${site.name}, the crew is home safe [moon stage: crewed_landing]`, severity: 1 })
+    event(w, { kind: 'launch', text: `humans landed on the moon for the first time since Apollo 17 in 1972, launched from ${site.name}, the crew is home safe [moon stage: crewed_landing]`, severity: 1 })
     return true
   }
   event(w, { kind: 'launch', text: `${spec.label} flight test from ${site.name} succeeded [moon stage: ${spec.stage}]`, severity: 0.5 })

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { loadLives, loadWorld, worldIds } from './load'
 import fs from 'node:fs'
 import path from 'node:path'
-import { ageAt, monthOfTick, populationAt, pyramidAt } from '../../../src/lib/sim/truth'
+import { ageAt, monthOfTick, populationAt, pyramidAt, FRONTIER_LABELS } from '../../../src/lib/sim/truth'
 import { citizensAt } from '../../../src/lib/sim/citizens-replay'
 
 type P = { id: string; name: string; givenName?: string; familyName?: string; birthTick?: number; age: number; cityId?: string; countryId?: string; family?: { partnerId?: string } }
@@ -76,6 +76,14 @@ for (const id of worldIds()) {
 
   test(`${id}: a technology is called proven only when it is deployed at scale`, () => {
     for (const f of r.frames) for (const q of f.requirements as ({ tier?: string; progress: number; tier2026?: string })[]) if (q.tier2026 !== undefined && q.tier === 'proven') assert.ok(q.progress >= 0.9, `${(q as { name?: string }).name ?? ''} is proven at ${Math.round(q.progress * 100)}% in ${f.date}`)
+  })
+
+  test(`${id}: no milestone claims a first that humans had already achieved by 2026`, { skip: atLeast(version, '5.8.1') ? false : 'made by a sim older than 5.8.1' }, () => {
+    for (const f of r.frames) for (const e of f.newEvents) assert.ok(!/orbital launcher|heavy lift rocket|crew capsule and life support/.test(e.text), `${e.text.slice(0, 80)} (${f.date}): that was done before 2026`)
+  })
+
+  test(`${id}: the frontier shown is the record's frontier, in one wording`, () => {
+    for (const f of r.frames) assert.ok(FRONTIER_LABELS[f.frontier] !== undefined, `frontier "${f.frontier}" has no shared label`)
   })
 
   test(`${id}: its no-ai twin shares the seed, the regions and the calendar`, () => {

@@ -127,12 +127,15 @@ export function nameFor(reg: NameRegistry, seed: number, opts: { countryId?: str
     // past the plain combinations, a middle initial keeps names distinct (rare)
     if (k >= 200) full = `${full} ${String.fromCharCode(65 + (h(`${seed}:mid${k}`) % 26))}.`
     const famKey = family || full
+    // never a parent's own given name (with patronymics the father sits under another family key)
+    if (given === opts.father?.given || given === opts.mother?.given) continue
     if (reg.full[full] || (family && reg.byFamily[famKey]?.[given])) continue
     reg.full[full] = true
     if (family) (reg.byFamily[famKey] ??= {})[given] = true
     return { given, family, full, group, ...(family2 ? { family2 } : {}) }
   }
-  const full = `${pickH(pool, seed, 'last')} ${seed % 100000}`
+  const last = pool.find(n => n !== opts.father?.given && n !== opts.mother?.given) ?? pool[0]
+  const full = `${last} ${seed % 100000}`
   reg.full[full] = true
   return { given: full.split(' ')[0], family: '', full, group }
 }

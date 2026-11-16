@@ -97,3 +97,24 @@ export function agentOf(r: Rec): string | undefined {
   const a = r.agentId ?? r.summary?.agentId
   return a && a !== 'unassigned' ? a : undefined
 }
+
+// ---- milestones: one wording everywhere (hud, chronicle, reports), each a real first beyond 2026 ----
+export const FRONTIER_LABELS: Record<string, string> = {
+  none: 'no new frontier yet beyond 2026',
+  moon_landing: 'crewed moon landing, the first since Apollo 17 in 1972',
+  moon_base: 'first permanent moon base',
+  mars_crewed: 'first crewed Mars landing',
+  mars_settlement: 'first Mars settlement',
+  mars_self_sustaining: 'first self-sustaining Mars settlement',
+  asteroid_mining: 'first asteroid mining',
+  outer_system: 'first crewed mission to the outer solar system',
+}
+export const frontierLabelAt = (r: Rec, tick: number) => FRONTIER_LABELS[frontierAt(r, tick) ?? 'none'] ?? String(frontierAt(r, tick))
+// firsts that had already happened by 2026 (no world can claim them): year and source
+export const DONE_BY_2026: { what: string; year: number; url: string }[] = [
+  { what: 'first human in orbit', year: 1961, url: 'https://en.wikipedia.org/wiki/Vostok_1' },
+  { what: 'first crewed moon landing', year: 1969, url: 'https://en.wikipedia.org/wiki/Apollo_11' },
+  { what: 'first space station', year: 1971, url: 'https://en.wikipedia.org/wiki/Salyut_1' },
+  { what: 'first reusable orbital booster landing', year: 2015, url: 'https://en.wikipedia.org/wiki/Falcon_9_flight_20' },
+  { what: 'first commercial crew to orbit', year: 2020, url: 'https://en.wikipedia.org/wiki/Crew_Dragon_Demo-2' },
+]
