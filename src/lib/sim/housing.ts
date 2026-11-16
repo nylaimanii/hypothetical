@@ -123,7 +123,7 @@ export function stepHousing(w: World) {
       h.hhPrev = H
       const vacancy0 = Math.max(0, -((H - formal - h.informal) / H))
       const starts = (formal * 0.004 * clamp(1 - 10 * vacancy0) + Math.max(0, newHH) * h.coverage * (1 + Math.max(0, growth)) + formal * 0.01 * elastic * priceSignal) * clamp(1 - c.unrest) * (1 - 0.15 * rent.c)
-      h.pipeline.push({ done: w.tick + 18, units: starts, kind: 'private' }) // ~18 months start to completion (US Census Survey of Construction)
+      h.pipeline.push({ done: w.tick + 18, units: Math.max(0, starts), kind: 'private' }) // ~18 months start to completion (US Census Survey of Construction)
       // ---- public building: the social housing law spends up to ~10% of this country's share of welfare on homes,
       // capped at 2% of households a year (Singapore HDB built ~54,000 homes in its first 5 years, ~10%+ of stock:
       // https://en.wikipedia.org/wiki/Housing_and_Development_Board). 24 months to complete
@@ -135,11 +135,14 @@ export function stepHousing(w: World) {
       // ---- the stock changes: completions, ~0.4%/yr demolished or abandoned (ESTIMATE, US ~0.3-0.5%)
       // empty homes beyond ~5% are abandoned or torn down at ~10% a year (East Germany's Stadtumbau Ost demolished
       // ~300,000 empty flats from 2002: https://de.wikipedia.org/wiki/Stadtumbau_Ost)
+      // losses fall on every formal tenure in proportion, public homes included (a shrinking country with a big public
+      // stock, like Singapore, otherwise took all its demolitions out of private homes until they went negative)
       const loss = formal * 0.004 + Math.max(0, formal + h.informal - H - 0.05 * H) * 0.1
-      const ownShare = h.owned / Math.max(h.owned + h.rented, 1)
-      h.owned += done * ownShare - loss * ownShare
-      h.rented += done * (1 - ownShare) - loss * (1 - ownShare)
-      h.social += doneSocial
+      const socialLoss = loss * h.social / Math.max(formal, 1), privLoss = loss - socialLoss
+      const ownShare = clamp(h.owned / Math.max(h.owned + h.rented, 1))
+      h.owned = Math.max(0, h.owned + (done - privLoss) * ownShare)
+      h.rented = Math.max(0, h.rented + (done - privLoss) * (1 - ownShare))
+      h.social = Math.max(0, h.social - socialLoss + doneSocial)
       h.builtYear = done + doneSocial; h.socialYear = doneSocial
       if (doneSocial > 1000) link(w, { placeId: c.id, what: `${fmt(doneSocial)} public homes completed in ${c.name}`, value: clamp(doneSocial / H * 30), because: 'social housing law', byWhom: 'core', lawId: social.lawId })
       // social homes go to the worst housed first: slum and camp families move in

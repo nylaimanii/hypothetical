@@ -229,7 +229,7 @@ export function worldReport(rec: RunRecord): WorldReport {
   const summary = [
     changed.length ? `this world ran with changed assumptions: ${changed.slice(0, 3).join('; ')}${changed.length > 3 ? `; and ${changed.length - 3} more` : ''}.` : '',
     `${name} governed this world (generation ${rec.generation}, seed ${rec.seed}) from 2026 to ${s.endDate.slice(0, 4)}, and it ${s.status === 'destroyed' ? `died: ${firstSentence(s.causeOfDeath ?? 'collapse')}` : s.status === 'goal_achieved' ? 'achieved the mission' : 'was still standing at the end'}.`,
-    `it reached ${s.frontier === 'none' ? 'no frontier beyond earth' : words(s.frontier)}, with a peak period life expectancy of ${s.peakPeriodLifeExpectancy.toFixed(1)} years and ${pop(s.finalPopulation)} people at the end. score ${s.score}${base ? `; against UN projections it ${base.text}` : ''}.`,
+    `it reached ${s.frontier === 'none' ? 'no frontier beyond earth' : words(s.frontier)}, with a peak period life expectancy of ${s.peakPeriodLifeExpectancy.toFixed(1)} years and ${Number.isFinite(s.finalPopulation) ? `${pop(s.finalPopulation)} people at the end` : 'no final population on its record (a sim bug that broke the count, fixed in sim 5.10.9)'}. ${Number.isFinite(s.score) ? `score ${s.score}` : 'no score'}${base ? `; against UN projections it ${base.text}` : ''}.`,
     s.humanCost ? `the cost: ${pop(s.humanCost.deaths)} deaths and ${pop(s.humanCost.displaced)} displaced. approval ended at ${pct(s.humanCost.approval)}.` : '',
     firstDecision ? `its first move: ${trim(firstSentence(firstDecision.publicStatement || firstDecision.rationale), 160)}` : '',
     lesson ? `it left a lesson: ${lesson.rule}.` : '',

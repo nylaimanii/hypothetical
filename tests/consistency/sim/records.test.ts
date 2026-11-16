@@ -49,7 +49,8 @@ for (const id of worldIds()) {
     }
   })
 
-  test(`${id}: partners live in the same city of the same world`, () => {
+  // (5.10.9: relocation moves partners together; before it, a relocated pip could leave their partner behind)
+  test(`${id}: partners live in the same city of the same world`, { skip: atLeast(version, '5.10.9') ? false : 'made by a sim older than 5.10.9' }, () => {
     for (const t of keyTicks) {
       const people = citizensAt(r, t) as unknown as P[]
       if (!people.some(p => p.birthTick !== undefined)) return
@@ -90,7 +91,20 @@ for (const id of worldIds()) {
     const t = (r.summary as unknown as { tradeoffs?: Record<string, number> }).tradeoffs
     assert.ok(t, 'no tradeoffs on the summary')
     for (const k of ['freedom', 'freedomAverage', 'offWorld']) assert.ok(t[k] >= 0 && t[k] <= 1, `${k} ${t[k]} outside 0-1`)
-    assert.equal(t.population, Math.round(r.frames.at(-1)!.globalPopulation), 'tradeoff population vs the last frame')
+  })
+
+  test(`${id}: the summary's population is exactly the last frame's`, { skip: atLeast(version, '5.10.8') ? false : 'made by a sim older than 5.10.8' }, () => {
+    const t = (r.summary as unknown as { tradeoffs?: Record<string, number> }).tradeoffs
+    const last = r.frames.at(-1)!
+    assert.equal(r.summary.finalPopulation, last.globalPopulation, 'final population vs the last frame')
+    if (t) assert.equal(t.population, last.globalPopulation, 'tradeoff population vs the last frame')
+  })
+
+  test(`${id}: every frame's population is a real number, in the world and in every region`, { skip: atLeast(version, '5.10.9') ? false : 'made by a sim older than 5.10.9' }, () => {
+    for (const f of r.frames) {
+      assert.ok(Number.isFinite(f.globalPopulation), `${f.date}: world population is ${f.globalPopulation}`)
+      for (const reg of f.regions ?? []) assert.ok(Number.isFinite(reg.population), `${reg.id} ${f.date}: population is ${reg.population}`)
+    }
   })
 
   test(`${id}: no frame shows a life expectancy or fertility of 0 while people are alive`, { skip: atLeast(version, '5.10.4') ? false : 'made by a sim older than 5.10.4' }, () => {

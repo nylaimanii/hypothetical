@@ -57,11 +57,21 @@ for (const rec of recs) {
     assert.ok(b.year <= yearOfTick(last(rec).tick), `the baseline line on ${rec.runId} compares ${b.year}, after the world ended in ${yearOfTick(last(rec).tick)}`)
   })
 
-  test(`the report on ${rec.runId} says the same final population as the record`, { skip: versionAtLeast(versionOf(rec), '5.8.0') ? false : `${rec.runId} is from sim ${versionOf(rec) ?? 'unknown'}, before the population fix in 5.8.0` }, () => {
+  // a record from before 5.10.9 can end with no population at all (b's housing tenure bug: NaN, null in the json).
+  // the report cannot agree with a number that is not there; from 5.10.9 b's records check fails such a record itself
+  const broken = !Number.isFinite(last(rec).globalPopulation as number)
+  const popSkip = !versionAtLeast(versionOf(rec), '5.8.0') ? `${rec.runId} is from sim ${versionOf(rec) ?? 'unknown'}, before the population fix in 5.8.0`
+    : broken && !versionAtLeast(versionOf(rec), '5.10.9') ? `${rec.runId} is from sim ${versionOf(rec)} and its record has no final population (the housing bug fixed in 5.10.9)` : false
+  test(`the report on ${rec.runId} says the same final population as the record`, { skip: popSkip }, () => {
     const rep = worldReport(rec)
     const n = populationAt(rec, last(rec).tick)
     const fmt = n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1e3)}k`
     assert.ok(rep.summary[1].includes(`${fmt} people at the end`), `the report on ${rec.runId} says "${rep.summary[1].slice(0, 140)}", but the record ends with ${fmt} people`)
+  })
+
+  test(`the report on ${rec.runId} never shows a population its record does not have`, { skip: broken ? false : `${rec.runId} has a final population` }, () => {
+    const line = worldReport(rec).summary[1]
+    assert.ok(/no final population on its record/.test(line), `the record of ${rec.runId} has no final population, but its report says "${line.slice(0, 140)}"`)
   })
 
   const dead = autopsy(rec)

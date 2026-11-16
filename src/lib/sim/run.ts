@@ -300,7 +300,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
     if (autopsy) Object.assign(r, { autopsy })
     Object.assign(r, { diary: w.diary, assumptions: { overridden: rules.overridden, clamped: rules.clamped } })
     // what this world traded for what, at the end (tradeoffs.ts defines freedom and off-world progress)
-    Object.assign(r.summary, { tradeoffs: { lifespan: Math.round(globalPLE(w) * 10) / 10, population: Math.round(worldPop(w)), freedom: Math.round(worldFreedom(w) * 1000) / 1000, freedomAverage: Math.round((w.freedomSum ?? 0) / Math.max(w.wellbeingN || w.tick, 1) * 1000) / 1000, offWorld: Math.round(offWorldProgress(w) * 1000) / 1000, frontier: w.frontier } })
+    Object.assign(r.summary, { tradeoffs: { lifespan: Math.round(globalPLE(w) * 10) / 10, population: headlinePop(w, frames), freedom: Math.round(worldFreedom(w) * 1000) / 1000, freedomAverage: Math.round((w.freedomSum ?? 0) / Math.max(w.wellbeingN || w.tick, 1) * 1000) / 1000, offWorld: Math.round(offWorldProgress(w) * 1000) / 1000, frontier: w.frontier } })
     if (flip && srcRun) Object.assign(r, { whatIf: whatIfOf(flip, srcRun, frames) })
     return r
   }
@@ -365,10 +365,17 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   writePlaces(path.join(process.cwd(), 'data', 'runs', `${opts.runId}.places`), opts.runId, places, w)
   // full life histories of every pip that ever lived in this world, loaded lazily by the ui
   // the no-ai twin as its own record: same seed, same regions, countries and real cities, 2026 policy frozen
-  writeJsonAtomic(path.join(process.cwd(), 'data', 'runs', `${opts.runId}.twin.json`), { runId: `${opts.runId}.twin`, twinOf: opts.runId, seed: opts.seed, simVersion: SIM_VERSION, generation: opts.generation, constitution: 'no ai: 2026 policies frozen', frames: twinFrames, baseline: [], summary: { runId: `${opts.runId}.twin`, status: twin.status, endDate: dateOf(twin.tick), ticks: twin.tick, finalPopulation: Math.round(worldPop(twin)), frontier: twin.frontier }, snapshots: [], precedents: [], lessons: [] })
+  writeJsonAtomic(path.join(process.cwd(), 'data', 'runs', `${opts.runId}.twin.json`), { runId: `${opts.runId}.twin`, twinOf: opts.runId, seed: opts.seed, simVersion: SIM_VERSION, generation: opts.generation, constitution: 'no ai: 2026 policies frozen', frames: twinFrames, baseline: [], summary: { runId: `${opts.runId}.twin`, status: twin.status, endDate: dateOf(twin.tick), ticks: twin.tick, finalPopulation: headlinePop(twin, twinFrames), frontier: twin.frontier }, snapshots: [], precedents: [], lessons: [] })
   writeJsonAtomic(path.join(process.cwd(), 'data', 'runs', `${opts.runId}.lives.json`), { runId: opts.runId, lives: w.lifeArchive })
   if (live) writeJsonAtomic(path.join(process.cwd(), 'data', 'live', `${opts.runId}.json`), final)
   return final.summary
+}
+
+// one source: the headline population is the last frame's (the sum of its rounded regions), so the summary can
+// never disagree with populationAt by a rounding error
+function headlinePop(w: World, frames: { tick: number; globalPopulation: number }[]) {
+  const f = frames.at(-1)
+  return f && f.tick === w.tick ? f.globalPopulation : Math.round(worldPop(w))
 }
 
 function record(opts: RunOpts, w: World, twin: World, frames: Frame[], baseline: BaselineFrame[], liveFlag: boolean, usage: Usage, lessonsLearned: Lesson[], knownLessons: Lesson[], snapshots: Snapshot[], branchedFrom?: RunRecord['branchedFrom']): RunRecord {
@@ -379,7 +386,7 @@ function record(opts: RunOpts, w: World, twin: World, frames: Frame[], baseline:
     score: score(w), constitution: opts.constitution, peakPopulation: Math.round(Math.max(w.peakPop, worldPop(w))),
     moonStage: w.space.stage, topEvents,
     baselineStatus: twin.status, baselineEndDate: dateOf(twin.tick),
-    frontier: w.frontier, peakPeriodLifeExpectancy: Math.round(Math.max(w.peakPLE, globalPLE(w)) * 10) / 10, finalPopulation: Math.round(worldPop(w)),
+    frontier: w.frontier, peakPeriodLifeExpectancy: Math.round(Math.max(w.peakPLE, globalPLE(w)) * 10) / 10, finalPopulation: headlinePop(w, frames),
     citiesFounded: w.cities.length, diseasesEradicated: [...w.diseasesEradicated],
     humanCost: { deaths: Math.round(w.humanCost.deaths), famineDeaths: Math.round(w.humanCost.famineDeaths), unrestDeaths: Math.round(w.humanCost.unrestDeaths), displaced: Math.round(w.humanCost.displaced), approval: Math.round(w.humanCost.approval * 1e4) / 1e4 },
     lessonsLearned, lessonsApplied: w.lessonsApplied.size, usage: { ...usage }, agentId,

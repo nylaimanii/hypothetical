@@ -216,3 +216,36 @@ test('a pandemic hits the same regions just as hard when a region has a few thou
   startPandemic(a, a.regions[0], 0.6); startPandemic(b, b.regions[0], 0.6)
   a.regions.forEach((ra, i) => { const rb = b.regions[i]; assert.ok(Math.abs(rb.pandemicMort / Math.max(ra.pandemicMort, 1e-12) - 1) < 0.02, `${ra.r.id}: pandemic mortality ${ra.pandemicMort.toExponential(2)} vs ${rb.pandemicMort.toExponential(2)}`) })
 })
+
+test('housing stays finite and never negative when a shrinking country has more public homes than households', async () => {
+  const { stepHousing } = await import('../../../src/lib/sim/housing')
+  const w = initWorld(9004, false)
+  const sg = w.countries.find(c => c.id === 'SGP')!
+  const h = sg.housing
+  // Singapore after decades of decline: a public stock far above the households left
+  h.social = 1.4 * (h.owned + h.rented + h.social)
+  for (let y = 0; y < 40; y++) { w.tick = y * 12 + 11; stepHousing(w) }
+  for (const c of w.countries) {
+    const x = c.housing
+    for (const [k, v] of Object.entries({ owned: x.owned, rented: x.rented, social: x.social, informal: x.informal, camp: x.camp, price: x.priceIdx, mortality: x.mortMult, births: x.tfrMult }))
+      assert.ok(Number.isFinite(v) && v >= 0, `${c.name}: housing ${k} is ${v}`)
+  }
+  assert.ok(sg.housing.mortMult < 1.5, `Singapore housing mortality pinned at its ceiling (${sg.housing.mortMult})`)
+})
+
+test('a relocated person takes their partner along, to the same city', async () => {
+  const { migrateCitizens, pairPartners } = await import('../../../src/lib/sim/citizens')
+  const w = initWorld(9005, false)
+  initCitizens(w)
+  for (let y = 0; y < 20; y++) pairPartners(w)
+  const place = (c: { cityId?: string; countryId?: string }) => c.cityId ?? c.countryId
+  type C = (typeof w.citizens)[number] & { cityId?: string; countryId?: string }
+  const partnered = (r: string) => w.citizens.filter(c => c.family.partnerId && c.regionId === r).length
+  const from = w.regions.map(r => r.r.id).sort((a, b) => partnered(b) - partnered(a))[0]
+  const to = from === 'oceania' ? 'europe' : 'oceania'
+  assert.ok(partnered(from) > 0, 'no partners anywhere to test with')
+  for (let i = 0; i < 400 && partnered(from) > 0; i++) migrateCitizens(w, from, to, 1e12)
+  assert.ok(partnered(to) > 0, 'nobody with a partner was relocated')
+  const by = new Map(w.citizens.map(c => [c.id, c as C]))
+  for (const c of w.citizens as C[]) { const q = c.family.partnerId ? by.get(c.family.partnerId) : undefined; if (q) assert.equal(place(q), place(c), `${c.name} (${place(c)}) and partner ${q.name} (${place(q)}) live apart after relocation`) }
+})

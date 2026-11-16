@@ -116,6 +116,10 @@ export function currentQuintile(p: Person, env: MonthEnv): number {
 // ESTIMATE: a median worker earns ~55% of gdp per head (labor share of income, ilo ~52% globally,
 // https://ilostat.ilo.org/topics/labour-income/) , per month
 export const medianIncome = (env: MonthEnv) => Math.max(40, env.gdpPerHead * 0.55 / 12)
+// what a month of food, rent and the basics costs her household (ESTIMATE: 45% of the median income or 70% of her
+// own, whichever is more, scaled by food prices and by the children still at home). the monthly step and the
+// decision prompt both use this one function
+export const monthlyCosts = (p: Person, env: MonthEnv, income = monthlyIncome(p, env)) => Math.max(medianIncome(env) * 0.45, income * 0.7) * (0.6 + 0.4 * env.prices) * (1 + 0.15 * livingKids(p).filter(k => p.tick - k.bornTick < 216).length)
 
 // ---------- money ----------
 const JOB_MULT: Record<string, number> = { farm: 0.55, factory: 0.95, construction: 0.85, shop: 0.8, office: 1.35, clinic: 1.25, school: 1.05, lab: 1.8, launch_site: 2.0, power_plant: 1.35, none: 0.45 }
@@ -235,7 +239,7 @@ export function stepMonth(p: Person, ctx: StepCtx): MonthSnap {
   const income = monthlyIncome(p, env)
   p.lastIncome = income
   const median = medianIncome(env)
-  const costs = Math.max(median * 0.45, income * 0.7) * (0.6 + 0.4 * env.prices) * (1 + 0.15 * livingKids(p).filter(k => p.tick - k.bornTick < 216).length)
+  const costs = monthlyCosts(p, env, income)
   const remit = p.habits.has('remits') ? income * R.remittanceShare : 0
   if (age >= 16) {
     // savings below zero is debt, capped at two years of median income (ESTIMATE: informal lenders stop there)

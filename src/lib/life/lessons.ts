@@ -9,20 +9,23 @@ import type { LifeLesson, LifeRecord, MilestoneKind } from './types'
 export const readLessons = (): LifeLesson[] => readJsonSafe<LifeLesson[]>(livesFile('lessons.json')) ?? []
 export const writeLessons = (l: LifeLesson[]) => writeJsonAtomic(livesFile('lessons.json'), l)
 
-// relevance: same kind of milestone first, then shared tags, then the same part of the world, then lessons that
-// have measurably helped. a lesson that keeps losing to the twin (meanGain < 0) falls out of the top 3
+// relevance: only lessons about the same kind of decision (a lesson about saving money says nothing about whether to
+// marry now), then shared situation tags, then the same part of the world, then lessons that have measurably helped.
+// a lesson that keeps losing to the twin (meanGain < 0) falls out of the top 3; a lesson that helped gets only a small
+// lift, so one old life's lucky rule can't steer every life in every world (that made lives in different worlds
+// choose alike: tests/consistency/life/decisions.test.ts)
 export function relevantLessons(all: LifeLesson[], kind: MilestoneKind, tags: string[], regionId: string, max = 3): LifeLesson[] {
   const tagSet = new Set(tags)
   return all
+    .filter(l => l.kind === kind)
     .map(l => {
-      let s = l.kind === kind ? 3 : 0
-      s += l.tags.filter(t => tagSet.has(t)).length * 0.8
-      if (l.regionId === regionId) s += 0.4
-      if (l.meanGain !== null) s += Math.max(-3, Math.min(2, l.meanGain * 10))
-      s += Math.log1p(l.timesApplied) * 0.2
+      let s = l.tags.filter(t => tagSet.has(t)).length * 0.8
+      if (l.regionId === regionId) s += 0.8
+      if (l.meanGain !== null) s += Math.max(-3, Math.min(0.4, l.meanGain * 10))
+      s += Math.log1p(l.timesApplied) * 0.1
       return { l, s }
     })
-    .filter(x => x.s >= 1.6)
+    .filter(x => x.s >= 1.2)
     .sort((a, b) => b.s - a.s)
     .slice(0, max)
     .map(x => x.l)

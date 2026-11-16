@@ -203,11 +203,21 @@ export function migrateCitizens(w: World, from: string, to: string, people: numb
   const movers = w.citizens.filter(c => c.regionId === from && c.age >= 16)
   if (!movers.length) return
   const mover = pick(rng, movers)
-  // the mover keeps their appearance; counts are rebalanced at the next yearly sync
-  w.citizens = w.citizens.map(c => (c === mover ? { ...c, regionId: to } : c))
+  // the mover keeps their appearance; counts are rebalanced at the next yearly sync. a household moves together:
+  // their partner comes too, to the same city (one partner was left behind in Cairo while the other went to Melbourne)
+  const partner = mover.family.partnerId ? w.citizens.find(c => c.id === mover.family.partnerId && c.regionId === from) : undefined
+  w.citizens = w.citizens.map(c => (c === mover || c === partner ? { ...c, regionId: to } : c))
   const moved = w.citizens.find(c => c.id === mover.id)
-  if (moved) placeCitizen(w, moved)
-  if (moved) addLifeEvent(w, moved, `relocated from ${src.r.name} to ${dst.r.name}`)
+  if (!moved) return
+  placeCitizen(w, moved)
+  addLifeEvent(w, moved, `relocated from ${src.r.name} to ${dst.r.name}`)
+  const with_ = partner ? w.citizens.find(c => c.id === partner.id) : undefined
+  if (with_) {
+    const m = moved as Citizen & { countryId?: string; cityId?: string }
+    Object.assign(with_, { countryId: m.countryId, cityId: m.cityId })
+    if (!m.cityId) delete (with_ as Citizen & { cityId?: string }).cityId
+    addLifeEvent(w, with_, `relocated with ${moved.name} from ${src.r.name} to ${dst.r.name}`)
+  }
 }
 
 // monthly: moods, behaviors, opinions (behavior.ts). yearly: partners for unpartnered adults in the same region

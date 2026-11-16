@@ -132,6 +132,7 @@ export type LifeRecord = {
   lifeNo: number // 1-based: life #N in this world
   seed: number
   simVersion: string
+  decideVersion?: string // which decision inputs the llm was given (decide.ts DECIDE_VERSION); older records have none
   worldVersion: string // the world's sim version, or 'untagged' when the recording carries none
   name: string; sex: Sex; look: Look; temperament: Temperament
   childhood: ChildhoodMarks | null // filled at 16

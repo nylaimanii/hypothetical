@@ -9,7 +9,7 @@ import { z } from 'zod'
 import { acquireOllamaLock, chat, provider } from '../agent/llm'
 import type { MonthEnv } from './env'
 import type { Option } from './milestones'
-import { ageOf, livingKids, partnerOf, type Person } from './person'
+import { ageOf, livingKids, medianIncome, monthlyCosts, monthlyIncome, partnerOf, type Person } from './person'
 import type { LifeLesson, Temperament } from './types'
 
 export type Decision = { choice: string; reasoning: string; thought: string; lessonApplied: string | null; decidedBy: 'llm' | 'rule' | 'parents' }
@@ -111,6 +111,35 @@ function familyLine(p: Person, partner: ReturnType<typeof partnerOf>): string {
   return [...now, ...lost, ...(g ? [`${g} grandchild${g === 1 ? '' : 'ren'}`] : []), ...(partner ? [] : ['no partner'])].join(', ') + '. use these names and relations exactly'
 }
 
+// her own month in this world, in dollars: what she earns, what the basics cost at today's prices, what is left, and
+// how long her savings would last. the same numbers the monthly step uses (person.ts), so an option's real cost is
+// what it would be for her, here, now
+function moneyLine(p: Person, env: MonthEnv): string {
+  const inc = monthlyIncome(p, env), cost = monthlyCosts(p, env, inc), left = inc - cost
+  const months = cost > 0 ? p.savings / cost : 0
+  return `you bring in about $${Math.round(inc)} a month; food, rent and the basics cost about $${Math.round(cost)} at today's prices (most people here earn about $${Math.round(medianIncome(env))}), so ${left >= 0 ? `$${Math.round(left)} is left over` : `you are $${Math.round(-left)} short every month`}. ${p.savings < 0 ? `you owe $${Math.round(-p.savings)}` : `your savings would last ${months < 1 ? 'less than a month' : `about ${Math.round(months)} months`}`}.`
+}
+
+// how much room her month leaves, said the way it is: short, tight, or with room to spare. (d2 told every life that
+// money was short, so a saver in lima chose like a debtor in rio)
+export function roomLine(p: Person, env: MonthEnv): string {
+  const inc = monthlyIncome(p, env)
+  return roomWords(inc, monthlyCosts(p, env, inc), p.savings)
+}
+export function roomWords(inc: number, cost: number, savings: number): string {
+  const left = inc - cost
+  const months = cost > 0 ? savings / cost : 0
+  if (left < 0 || savings < 0) return 'money is short for you right now: what costs money or hours often loses, even if it is the "right" thing.'
+  if (months >= 6 && left >= 0.1 * cost) return 'you have some room right now: an option that costs money or hours is within your reach, if it is what you want.'
+  return 'money is tight but you are getting by: a small cost is possible, a big one is a real risk.'
+}
+
+// what the llm is given to decide with. bump it when the inputs change, so lives are only compared with lives that
+// were decided the same way (tests/consistency/life/decisions.test.ts)
+// d2: her month in dollars, every relative by name, the realism line, no example diary line
+// d3: the room line follows her real month; lessons only from the same kind of decision, a helped lesson lifts little
+export const DECIDE_VERSION = 'd3'
+
 // ---------- the llm call ----------
 const clean = (s: string) => s.replace(/[\u2014\u2013]/g, ',').replace(/\s+/g, ' ').trim()
 
@@ -127,12 +156,16 @@ export async function decideLlm(p: Person, env: MonthEnv, question: string, opts
     `family: ${familyLine(p, partner)}. health ${Math.round(p.health * 100)}/100${p.chronic.length ? ` (${p.chronic.join(', ')})` : ''}. habits: ${[...p.habits].join(', ') || 'none'}.`,
     p.marks ? `childhood left: ${p.marks.hungerMonths > 6 ? 'hungry years, ' : ''}${p.marks.displaced ? 'losing a home, ' : ''}${p.marks.lostParent ? 'losing a parent, ' : ''}${p.marks.stableHome > 0.7 ? 'a stable home, ' : ''}trust in others ${Math.round(p.marks.trust * 100)}/100.` : '',
     `the world here: food ${env.food < 0.85 ? 'short' : 'enough'}, prices ${env.prices.toFixed(1)}x normal, unrest ${env.unrest > 0.45 ? 'high' : 'normal'}, life expectancy ${env.lifeExpectancy.toFixed(0)}${world ? `. right now: ${world}` : ''}.`,
+    `your month: ${moneyLine(p, env)}`,
     brief ? `what this means for this decision, where you live:\n${brief}` : '',
   ].filter(Boolean).join('\n')
   const lessonText = lessons.length
     ? `things people who lived before you learned (wisdom you half remember; your temperament decides how much you trust it):\n${lessons.map(l => `[${l.id}] ${l.rule} (they chose: ${l.choice}; it led to: ${l.ledTo})${l.verified ? '' : ' (from an older world, unconfirmed)'}`).join('\n')}`
     : 'no advice from earlier lives applies here.'
-  const user = `${who}\n\n${lessonText}\n\ndecision: ${question}\noptions:\n${opts.map(o => `- ${o.id}: ${o.label}`).join('\n')}\n\nchoose one option id. reasoning: why, in a few plain words, the way you'd say it to a friend ("can't afford school and the rent"). thought: one line from your private diary that day. plain and specific, the way real people write: names, money, your body, the place, what happened ("long shift. feet hurt. kofi's birthday today."). no big statements, no plans, no "i will", nothing inspirational. lessonApplied: the id of the lesson that shaped your choice, or none.`
+  // (the options cost different things in different worlds: a tenth of $40 is not a tenth of $900, a week of evenings
+  // is not free when you are $60 short. the choice is made inside her month, not in the abstract)
+  const real = `you want a good life, but you can only choose what your month allows. weigh what each option really costs you here and now: money, hours, energy, and what the people around you expect. ${roomLine(p, env)}`
+  const user = `${who}\n\n${lessonText}\n\n${real}\n\ndecision: ${question}\noptions:\n${opts.map(o => `- ${o.id}: ${o.label}`).join('\n')}\n\nchoose one option id. reasoning: why, in a few plain words, the way you'd say it to a friend. thought: one line from your private diary that day, about your own day: plain and specific, the way real people write (the people above by name, money, your body, the place, what happened). no big statements, no plans, no "i will", nothing inspirational. lessonApplied: the id of the lesson that shaped your choice, or none.`
   const schema = {
     type: 'object',
     properties: {

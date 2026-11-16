@@ -12,7 +12,7 @@ import { pickBirthplace, nameFor, type Continent } from './births'
 import { RESEARCH as R, PROVENANCE } from './research'
 import { SCHEDULE, TRIGGERS, lateChildCheck, type MilestoneDef, type Option } from './milestones'
 import { addEvent, ageOf, kidsOf, livingKids, luck, medianIncome, parentsAlive, partnerOf, stepMonth, type Person } from './person'
-import { decideLlm, ruleChoice, politeLlm, type Decision } from './decide'
+import { DECIDE_VERSION, decideLlm, ruleChoice, politeLlm, type Decision } from './decide'
 import { creditLessons, readLessons, relevantLessons, writeLessons, writeLifeLessons } from './lessons'
 import { scoreLife } from './score'
 import { writeLife, writeNow } from './store'
@@ -359,7 +359,7 @@ export async function runLife(o: RunLifeOpts): Promise<LifeRecord> {
 
   const record: LifeRecord = {
     lifeId, worldId: world.id, worldSeed: world.seed, worldScore: world.record.summary.score, worldStatus: world.record.summary.status, worldVersion: o.worldVersion,
-    lifeNo, seed, simVersion: LIFE_SIM_VERSION,
+    lifeNo, seed, simVersion: LIFE_SIM_VERSION, decideVersion: DECIDE_VERSION,
     name: p.name, given: p.nameParts.given, sex: p.sex, look: p.look, temperament: p.temperament, childhood: p.marks,
     birthTick: 0, deathTick: p.tick, deathAge, deathCause: p.deathCause,
     birthplace: p.places[0], places: p.places, family: { quintile: p.quintile, story: familyStory(createPerson(world, seed, o.continent)) },
