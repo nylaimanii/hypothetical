@@ -51,7 +51,8 @@ export function startPandemic(w: World, origin: RegionState, sev: number, inject
     const local = rs === origin ? 1 : 0.6 + 0.4 * ((rs.r.population % 97) / 97) // deterministic per-region spread
     // ESTIMATE: excess mortality per year = 1% x severity^1.5 (sev 1 ~ 1918, about 1.5% of people over 18 months;
     // sev 0.3 ~ covid, about 0.15%/yr). welfare and research blunt it up to 40%.
-    const mitigation = 1 - 0.25 * clamp(rs.spend.welfare * 12 / Math.max(regionPop(rs), 1) / 4000) - 0.15 * clamp(researchShare / 0.15)
+    // misinformation above 2026 weakens distancing and vaccination (people.ts)
+    const mitigation = (1 - 0.25 * clamp(rs.spend.welfare * 12 / Math.max(regionPop(rs), 1) / 4000) - 0.15 * clamp(researchShare / 0.15)) * (1 + (rs.people ? Math.max(0, rs.people.misinfo - rs.people.misinfo0) : 0))
     rs.pandemicMort = Math.max(rs.pandemicMort * (w.tick < rs.pandemicUntil ? 1 : 0), 0.01 * Math.pow(sev * local, 1.5) * mitigation)
     rs.pandemicUntil = w.tick + 18
     rs.shock += 0.1 * sev * local

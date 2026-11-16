@@ -23,6 +23,7 @@ export const PRECEDENTS: P[] = [
   // housing
   { id: 'costa_rica_pes', event: 'Costa Rica pays landowners to protect forest', year: 1996, country: 'Costa Rica', policyKind: 'conservation', reaction: 'farmers joined voluntarily, forest cover rose from ~25% to over 50%', magnitude: 0.1, durationMonths: 12, delayMonths: 12, url: `${W}Payment_for_ecosystem_services` },
   { id: 'brazil_ppcdam', event: 'Brazil enforces its Amazon deforestation plan', year: 2004, country: 'Brazil', policyKind: 'conservation', reaction: 'ranchers and loggers protested, deforestation fell ~80% by 2012', magnitude: 0.3, durationMonths: 18, delayMonths: 6, url: `${W}Deforestation_in_Brazil` },
+  { id: 'finland_media_literacy', event: 'Finland teaches media literacy from primary school after a wave of disinformation', year: 2014, country: 'Finland', policyKind: 'media_literacy', reaction: 'broad support, Finland tops European media literacy rankings', magnitude: 0.02, durationMonths: 12, delayMonths: 12, url: `${W}Media_literacy` },
   // the physical world
   { id: 'delta_works', event: 'Delta Works dams and storm surge barriers after the 1953 flood', year: 1954, country: 'Netherlands', policyKind: 'sea_wall', reaction: 'broad national support after 1,836 deaths in the flood, built over four decades', magnitude: 0.05, durationMonths: 12, delayMonths: 12, url: `${W}Delta_Works` },
   { id: 'thames_barrier', event: 'Thames Barrier built to protect London from surges', year: 1974, country: 'United Kingdom', policyKind: 'sea_wall', reaction: 'little opposition, closed over 200 times since 1982', magnitude: 0.05, durationMonths: 12, delayMonths: 12, url: `${W}Thames_Barrier` },
@@ -128,6 +129,7 @@ const RULES: [string, RegExp][] = [
   ['rent_control', /rent (control|freeze|cap|ceiling|stabili)|cap.{0,10}rents|freez.{0,10}rents|tenant protect/],
   ['upzoning', /upzon|zoning reform|rezon|densif|(relax|loosen|reform).{0,20}(zoning|building permit|planning rule)/],
   ['social_housing', /(social|public|council|affordable|state) (housing|homes|flats|apartments)|housing (program|programme|project|estate|construction|authority)|build.{0,20}(homes|houses|housing|flats)/],
+  ['media_literacy', /media literacy|critical thinking|fact.?check|news literacy/],
   ['sea_wall', /sea ?wall|\bdikes?\b|\bdykes?\b|levee|storm surge barrier|coastal defen|flood barrier|delta works/],
   ['naval_escort', /naval escort|escort.{0,10}(tankers|ships|shipping|convoys)|protect shipping|freedom of navigation/],
   ['strategic_reserve', /strategic (petroleum|oil|fuel|energy) reserve|oil reserve|fuel stockpile/],
@@ -210,6 +212,7 @@ export const GROUP_STAKES: Record<string, { lovedBy: string[]; hatedBy: string[]
   school_reform: { lovedBy: ['kids', 'science', 'young'], hatedBy: ['religious_faction'] },
   relocation: { lovedBy: ['business'], hatedBy: ['regional_nationalist', 'farm workers', 'elders'] },
   collectivization: { lovedBy: ['bureaucrats'], hatedBy: ['farm workers', 'business', 'religious'] },
+  media_literacy: { lovedBy: ['science', 'young'], hatedBy: [] },
   sea_wall: { lovedBy: ['elders', 'business'], hatedBy: [] },
   naval_escort: { lovedBy: ['military', 'business'], hatedBy: [] },
   strategic_reserve: { lovedBy: ['business'], hatedBy: [] },

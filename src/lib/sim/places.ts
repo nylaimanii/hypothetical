@@ -40,6 +40,7 @@ export type CountryState = {
   droughtSev: number; droughtUntil: number
   power: Power
   aging: Aging
+  meaning: number; meaning0: number; despairYear: number; despairMult?: number
 }
 
 export const countryPop = (c: CountryState) => sum(c.bands)
@@ -69,7 +70,7 @@ export function initCountries(regions: RegionState[]): CountryState[] {
         gdpUsd: s.gdpUsd * rs.r.gdpUsd / Math.max(sum(seeds.map(x => x.gdpUsd)), 1), kcalRatio: clamp(s.kcal / Math.max(regionKcal, 1), 0.6, 1.6), kcal: s.kcal, foodMonthsUnder: 0,
         unrestOffset: unrestC - rs.r.unrest, complianceOffset: complianceC - rs.r.compliance, unrest: unrestC, compliance: complianceC,
         unemployment: s.unemployment, happiness: clamp(s.happiness / 10), damage: 0, shock: 0,
-        stats: emptyStats(pop), hist: [], ple: 0, housing: undefined as unknown as Housing, housingGdpPrev: 0, daily: undefined as unknown as Daily, droughtSev: 0, droughtUntil: 0, power: undefined as unknown as Power, aging: undefined as unknown as Aging,
+        stats: emptyStats(pop), hist: [], ple: 0, housing: undefined as unknown as Housing, housingGdpPrev: 0, daily: undefined as unknown as Daily, droughtSev: 0, droughtUntil: 0, power: undefined as unknown as Power, aging: undefined as unknown as Aging, meaning: 0, meaning0: 0, despairYear: 0,
       })
       out[out.length - 1].housing = initHousing(out[out.length - 1])
     }

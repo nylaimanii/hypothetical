@@ -6,6 +6,7 @@ import { initCountries, type CountryState } from './places'
 import { initDaily } from './daily'
 import { initPower, type CoreBody } from './power'
 import { initPhysical, type Physical } from './physical'
+import { initPeople, type People, type RegionPeople } from './people'
 import { initCities, initClimate, initCountryMix, type CityState, type ClimateState } from './world-layer'
 import type { InfraDiff } from '../types-v5'
 import type { Mix } from './visuals'
@@ -118,7 +119,8 @@ export type RegionState = {
   valence0: number // mood valence at tick 0 (happiness moves relative to it)
   investAvg: number // slow average of investment spending above 2026
   leak: number; leak0: number; tech0: number; powerMult: number; autoGrowth: number; flightDrag: number
-  chokeDrag: number; chokeEnergy: number; chokeFood: number; physFood: number; demoGrowth: number; pensionSqueeze: number; wa0: number; waPrev: number; waTrend0?: number // physical.ts // power.ts: corruption, administration, automation, capital flight
+  chokeDrag: number; chokeEnergy: number; chokeFood: number; physFood: number; demoGrowth: number; pensionSqueeze: number; wa0: number; waPrev: number; waTrend0?: number // physical.ts
+  people: RegionPeople; peopleMult: number // people.ts // power.ts: corruption, administration, automation, capital flight
   collectiveMult: number // harvest multiplier from collectivization
   healthLaw: number // mortality cut from health laws (phased)
   collC: number // collectivization enforcement this month
@@ -200,10 +202,11 @@ export type World = {
   builtPlants: Record<string, number>
   realCities: CityState[]
   recentRepeals: { tick: number; title: string; policyKind: string; law?: Law }[] // last 4 years
-  causeDeaths: { air: number; water: number } // excess over 2026 rates, from daily.ts
+  causeDeaths: { air: number; water: number; despair?: number } // excess over 2026 rates, from daily.ts
   skilledMigrants: number
   core: CoreBody
   phys: Physical
+  people: People
   nuclear0: number
   hiddenLoss: number // tax base hidden offshore beyond 2026
   vital: { births: number; deaths: number; famine: number; pandemic: number; riots: number; disasters: number; migration: number; welfare: number }
@@ -264,7 +267,7 @@ export function initWorld(seed: number, twin: boolean): World {
       crowds: [], privateApproval: 0.5, falsificationGap: 0.1, flipped: false, lastWellbeing: 0,
       periodLE: 0, cohortLE: 0, leTrend: 0.2, diseaseBurden: 0, travelHours: TRAVEL_HOURS[r.id] ?? 6,
       causeMult: { cardio: 1, cancer: 1, neuro: 1, metabolic: 1, infectious: 1, injury: 1, other: 1 },
-      agingSlope: GOMPERTZ_B, oldAgeFloor: 1 / 20, pronatal: 0, strikeBoost: 0, newCityPop: 0, whyAcc: {}, famineDeaths: 0, excessDeathsTick: 0, pop0: r.population, valence0: 0.5, investAvg: 0, collectiveMult: 1, collC: 0, leak: 0, leak0: 0, tech0: 0, powerMult: 1, chokeDrag: 0, chokeEnergy: 0, chokeFood: 0, physFood: 1, demoGrowth: 0, pensionSqueeze: 0, wa0: 0, waPrev: 0, autoGrowth: 0, flightDrag: 0, healthLaw: 0, yearAcc: {}, yearStart: {}, trends: [], priceIdx: 1,
+      agingSlope: GOMPERTZ_B, oldAgeFloor: 1 / 20, pronatal: 0, strikeBoost: 0, newCityPop: 0, whyAcc: {}, famineDeaths: 0, excessDeathsTick: 0, pop0: r.population, valence0: 0.5, investAvg: 0, collectiveMult: 1, collC: 0, leak: 0, leak0: 0, tech0: 0, powerMult: 1, people: undefined as unknown as RegionPeople, peopleMult: 1, chokeDrag: 0, chokeEnergy: 0, chokeFood: 0, physFood: 1, demoGrowth: 0, pensionSqueeze: 0, wa0: 0, waPrev: 0, autoGrowth: 0, flightDrag: 0, healthLaw: 0, yearAcc: {}, yearStart: {}, trends: [], priceIdx: 1,
       mixCap: initMix(r.id, r.energyTWh * START_RESERVE), farmland: LAND[r.id].farmland, forest: LAND[r.id].forest, railLinks: [], landmarks: [],
     }
   })
@@ -291,7 +294,7 @@ export function initWorld(seed: number, twin: boolean): World {
     status: 'alive', wellbeingSum: 0, wellbeingN: 0, revenueShare: REVENUE_SHARE, citizens: [], crewDeaths: 0, citizenSeq: 0, citizenMeta: {},
     requirements: initRequirements(), cities: [], cityScores: {}, companies: [], factions: initFactions(), frontier: 'none', frontierState: initFrontier(),
     humanCost: { deaths: 0, famineDeaths: 0, unrestDeaths: 0, displaced: 0, approval: 0.5 }, lessonsKnown: 0, researchFocus: [], lawMeta: {}, lawsuits: {},
-    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), lawsProposed: 0, lawsRepeated: 0, lawsAmended: 0, lawsConverted: 0, lastConverted: [], lastRepeated: [], frameCursor: 0, eventSeq: 0, eventKinds: {}, topEvents: [], spaceAssets: [], flowAcc: [], causes: [], causeSeq: 0, countries: initCountries(regions), climate: undefined as unknown as ClimateState, countryMix: {}, countryMix0: {}, retiredPlants: [], builtPlants: {}, realCities: [], railBuilt: [], housingDeaths: 0, core: undefined as unknown as CoreBody, phys: undefined as unknown as Physical, nuclear0: 0, hiddenLoss: 0, vital: { births: 0, deaths: 0, famine: 0, pandemic: 0, riots: 0, disasters: 0, migration: 0, welfare: 0 }, welfareDeathsYear: 0, welfareDeathsAcc: 0, causeDeaths: { air: 0, water: 0 }, skilledMigrants: 0, recentRepeals: [], citiesHitIdx: {}, infraAcc: [], lifeArchive: {}, lastFrameTick: 0,
+    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), lawsProposed: 0, lawsRepeated: 0, lawsAmended: 0, lawsConverted: 0, lastConverted: [], lastRepeated: [], frameCursor: 0, eventSeq: 0, eventKinds: {}, topEvents: [], spaceAssets: [], flowAcc: [], causes: [], causeSeq: 0, countries: initCountries(regions), climate: undefined as unknown as ClimateState, countryMix: {}, countryMix0: {}, retiredPlants: [], builtPlants: {}, realCities: [], railBuilt: [], housingDeaths: 0, core: undefined as unknown as CoreBody, phys: undefined as unknown as Physical, people: undefined as unknown as People, nuclear0: 0, hiddenLoss: 0, vital: { births: 0, deaths: 0, famine: 0, pandemic: 0, riots: 0, disasters: 0, migration: 0, welfare: 0 }, welfareDeathsYear: 0, welfareDeathsAcc: 0, causeDeaths: { air: 0, water: 0 }, skilledMigrants: 0, recentRepeals: [], citiesHitIdx: {}, infraAcc: [], lifeArchive: {}, lastFrameTick: 0,
   }
   initRail(world)
   world.climate = initClimate(world)
@@ -301,6 +304,7 @@ export function initWorld(seed: number, twin: boolean): World {
   initPower(world)
   world.nuclear0 = world.regions.reduce((a, r) => a + r.mixCap.nuclear, 0)
   initPhysical(world)
+  initPeople(world)
   return world
 }
 

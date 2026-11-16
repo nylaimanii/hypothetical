@@ -98,7 +98,7 @@ const REFOREST_USD_PER_HA = 2000
 
 // ---------- rail ----------
 // region pairs with a land route. islands (oceania, carib_pac) get none.
-const ADJ: [string, string][] = [['na', 'latam'], ['europe', 'rus_ca'], ['europe', 'mideast'], ['mideast', 'nafrica'], ['mideast', 'rus_ca'], ['mideast', 'sasia'], ['nafrica', 'ssa'], ['sasia', 'easia'], ['sasia', 'seasia'], ['easia', 'seasia'], ['easia', 'rus_ca'], ['rus_ca', 'sasia']]
+export const ADJ: [string, string][] = [['na', 'latam'], ['europe', 'rus_ca'], ['europe', 'mideast'], ['mideast', 'nafrica'], ['mideast', 'rus_ca'], ['mideast', 'sasia'], ['nafrica', 'ssa'], ['sasia', 'easia'], ['sasia', 'seasia'], ['easia', 'seasia'], ['easia', 'rus_ca'], ['rus_ca', 'sasia']]
 // existing long-distance rail across region borders in 2026 (Trans-Siberian, China-Laos railway, Turkey, US-Mexico)
 const START_RAIL = new Set(['europe|rus_ca', 'easia|rus_ca', 'easia|seasia', 'europe|mideast', 'na|latam'])
 

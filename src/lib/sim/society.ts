@@ -86,7 +86,7 @@ export function stepLaws(w: World): Record<string, LawEffects> {
       // households by 1937: https://en.wikipedia.org/wiki/Collectivization_in_the_Soviet_Union)
       const forced = enforceable ? (0.5 + 0.5 * rs.r.compliance) * clamp((secRatio - 1) / 2) : 0
       // the core administers every law: its compute, legitimacy and resistance scale compliance (power.ts)
-      const c = rs.seceded ? 0 : clamp(Math.max(rs.r.compliance * (0.25 + 0.75 * s), forced) * sued * (rs.powerMult ?? 1))
+      const c = rs.seceded ? 0 : clamp(Math.max(rs.r.compliance * (0.25 + 0.75 * s), forced) * sued * (rs.powerMult ?? 1) * (rs.peopleMult ?? 1))
       rs.lawSupport[l.id] = s
       rs.lawCompliance[l.id] = c
       e.science = Math.max(e.science, f.science * c)
@@ -100,8 +100,13 @@ export function stepLaws(w: World): Record<string, LawEffects> {
       e.security = Math.max(e.security, f.security * c)
       e.tax = Math.max(e.tax, f.tax * c)
       if (meta && (meta.policyKind === 'healthcare_expansion' || meta.policyKind === 'vaccination')) e.health = Math.max(e.health, c)
-      // ESTIMATE: every law with under 50% support adds unrest in proportion to how disliked it is
-      e.backlash += Math.max(0, 0.5 - s) * 0.08 * (1 + f.coercive)
+      // ESTIMATE: every law with under 50% support adds unrest in proportion to how disliked it is. people get used to
+      // most laws: anger fades over ~3 years to a 30% residual (support for Ireland's 2004 smoke-free law rose from ~67%
+      // to ~93% among the public within a year of it taking effect, Fong et al. 2006,
+      // https://doi.org/10.1136/tc.2005.013649); deeply coercive laws keep more of their sting
+      const age = Math.max(0, w.tick - (l.enactedTick ?? w.tick))
+      const habit = (0.3 + 0.3 * Math.min(1, f.coercive)) + (0.7 - 0.3 * Math.min(1, f.coercive)) * Math.exp(-age / 36)
+      e.backlash += Math.max(0, 0.5 - s) * 0.08 * (1 + f.coercive) * habit
     }
     e.backlash = Math.min(e.backlash, 0.3)
     fx[rs.r.id] = e

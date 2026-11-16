@@ -110,7 +110,10 @@ export function stepDemography(w: World, fx: Record<string, LawEffects>): { birt
     // ESTIMATE up to -80% at full compliance in a region at 55 years of life expectancy, phased in over ~3 years;
     // china's rural health campaigns are the reference (life expectancy ~44 in 1960 to ~68 by 1985)
     // https://en.wikipedia.org/wiki/Barefoot_doctor
-    const healthTarget = 0.8 * Math.sqrt(fx[rs.r.id]?.health ?? 0) * clamp((85 - (rs.periodLE || 70)) / 30)
+    // misinformation above 2026 cuts uptake of health programs (UK MMR coverage fell from ~92% to ~80% after the 1998
+    // vaccine scare, https://en.wikipedia.org/wiki/MMR_vaccine_and_autism)
+    const misinfo = rs.people ? Math.max(0, rs.people.misinfo - rs.people.misinfo0) : 0
+    const healthTarget = 0.8 * Math.sqrt(fx[rs.r.id]?.health ?? 0) * (1 - 1.5 * misinfo) * clamp((85 - (rs.periodLE || 70)) / 30)
     rs.healthLaw += (healthTarget - rs.healthLaw) / 36
     const lawMult = (1 - 0.02 * (fx[rs.r.id]?.redistributive ?? 0)) * (1 - rs.healthLaw)
     const pandemic = w.tick < rs.pandemicUntil ? rs.pandemicMort * (1 - 0.5 * reqProgress(w, 'pandemic_preparedness')) : 0
@@ -137,7 +140,7 @@ export function stepDemography(w: World, fx: Record<string, LawEffects>): { birt
     // the units: this region's countries, each with its own calibrated mortality, fertility and food supply
     const cs = countriesOf(w, rs.r.id)
     const units: Unit[] = cs.length
-      ? cs.map(c => ({ bands: c.bands, tfr: c.tfr, gompertzA: c.gompertzA, infantMort: c.infantMort, kcal: c.kcal, monthsUnder: c.foodMonthsUnder, ple: c.ple, pop: () => countryPop(c), homeMort: (c.housing?.mortMult ?? 1) * (c.daily?.mortMult ?? 1), homeTfr: c.housing?.tfrMult ?? 1 }))
+      ? cs.map(c => ({ bands: c.bands, tfr: c.tfr, gompertzA: c.gompertzA, infantMort: c.infantMort, kcal: c.kcal, monthsUnder: c.foodMonthsUnder, ple: c.ple, pop: () => countryPop(c), homeMort: (c.housing?.mortMult ?? 1) * (c.daily?.mortMult ?? 1) * (c.despairMult ?? 1), homeTfr: c.housing?.tfrMult ?? 1 }))
       : [{ bands: rs.bands, tfr: rs.tfr, gompertzA: rs.gompertzA, infantMort: rs.infantMort, kcal: rs.r.foodKcalPerCapita, monthsUnder: rs.foodMonthsUnder, ple: rs.periodLE, pop: () => regionPop(rs), homeMort: 1, homeTfr: 1 }]
     let rTotalDead = 0, rFamine = 0, rPandemicDead = 0, rBorn = 0, wTfr = 0, wPle = 0, wPop = 0
     units.forEach((u, ui) => {
