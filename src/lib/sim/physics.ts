@@ -5,7 +5,7 @@ import {
   BUILD_MONTHS, CAPEX_USD_PER_GW, ELEC_INCOME_ELASTICITY, KCAL_CAP, MIGRATION_MAX_SHARE_YEAR, MIGRATION_MONTHS,
   MIGRATION_USD_PER_PERSON, OM_USD_PER_TWH, RETIRE_PER_YEAR, SURVIVAL_KCAL, TWH_PER_GW_YEAR, YIELD_BASE_GROWTH,
 } from './constants'
-import { allocShares, clamp, effectiveBudget, event, incomeIdx, regionPop, sum, why, type RegionState, type World } from './state'
+import { allocShares, clamp, effectiveBudget, event, incomeIdx, regionPop, sum, why, type World } from './state'
 import { behaviorDrag, hoardingFactor } from './behavior'
 import { addFlow, buildShares, settleMix } from './visuals'
 import { addToRegion, removeFromRegion } from './places'

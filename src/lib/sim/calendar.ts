@@ -89,7 +89,8 @@ function lunar(y: number): Holiday[] {
 function passover(y: number): Date {
   const a = (12 * y + 12) % 19, b = y % 4
   const m = 20.0955877 + 1.5542418 * a + 0.25 * b - 0.003177794 * y
-  let M = Math.floor(m), md = m - M
+  let M = Math.floor(m)
+  const md = m - M
   const c = (M + 3 * y + 5 * b + 1) % 7
   if (c === 2 || c === 4 || c === 6) M += 1
   else if (c === 1 && a > 6 && md >= 1367 / 2160) M += 2

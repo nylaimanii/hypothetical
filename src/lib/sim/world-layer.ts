@@ -15,9 +15,9 @@ import type { Clothing, CommuteMode, InfraDiff, Weather } from '../types-v5'
 import plantsJson from '../../../data/geo/plants.json'
 import { link } from './causes'
 import { hashString, mulberry32 } from './rng'
-import { ADMIN_SEEDS, CITY_SEEDS, COUNTRY_SEEDS, countriesOf, countryPop, housingMultiple, placeStats, trendOf, type CountryState } from './places'
+import { ADMIN_SEEDS, CITY_SEEDS, COUNTRY_SEEDS, countriesOf, countryPop, housingMultiple, trendOf, type CountryState } from './places'
 import { START_MIX, SOURCES, type Mix } from './visuals'
-import { clamp, incomeIdx, regionPop, sum, type RegionState, type World } from './state'
+import { clamp, incomeIdx, regionPop, sum, type World } from './state'
 
 // ---------- climate ----------
 // 2026 anomaly ~1.3 C above pre-industrial (WMO State of the Global Climate 2024 puts the 2015-2024 mean at ~1.24 C;

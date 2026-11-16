@@ -30,7 +30,7 @@ export function snapshotWorld(w: World): Snapshot {
     // real cities as compact rows (index order of CITY_SEEDS), static fields re-derived on restore
     realCities: w.realCities.map(c => [c.pop, c.damage, c.lastDiffPop]) as unknown as World['realCities'],
     // static country seed data is re-attached on restore (it never changes)
-    countries: w.countries.map(({ seed: _s, ...c }) => c),
+    countries: w.countries.map(k => { const { seed, ...c } = k; void seed; return c }),
     regions: w.regions.map(({ eduTargets, ...r }) => ({ ...r, r: { ...r.r, provenance: {} }, eduTail: eduTargets.slice(offset), eduOffset: offset })),
     // static requirement fields come back from NODES on restore; only the moving parts are stored
     requirements: w.requirements.map(q => ({ id: q.id, progress: q.progress, spend: q.spend, stall: q.stall, stallUntil: q.stallUntil, rolled: q.rolled, ...(q.unlockedTick !== undefined ? { unlockedTick: q.unlockedTick } : {}) })) as unknown as World['requirements'],

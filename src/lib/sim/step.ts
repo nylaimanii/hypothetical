@@ -284,7 +284,7 @@ export function snapshot(w: World, newEvents: Frame['newEvents'], decision?: Dec
     budget: { ...effectiveBudget(w) }, religionPolicy: w.religionPolicy, schoolPolicy: { ...w.schoolPolicy, curriculum: [...w.schoolPolicy.curriculum] },
     moonStage: w.space.stage, moonProgress: r4(moonProgress(w.space)), status: w.status, newEvents,
     requirements: publicRequirements(w), cities: w.cities.map(c => ({ ...c })),
-    companies: w.companies.filter(c => !c.failed).map(({ health: _h, failed: _f, ...c }) => ({ ...c })),
+    companies: w.companies.filter(c => !c.failed).map(k => { const { health, failed, ...c } = k; void health; void failed; return { ...c } }),
     frontier: w.frontier, factions: w.factions.map(f => ({ ...f, power: r4(f.power), hostility: r4(f.hostility), regionIds: [...f.regionIds] })),
     humanCost: { deaths: Math.round(w.humanCost.deaths), famineDeaths: Math.round(w.humanCost.famineDeaths), unrestDeaths: Math.round(w.humanCost.unrestDeaths), displaced: Math.round(w.humanCost.displaced), approval: r4(w.humanCost.approval) },
     globalPopulation: Math.round(worldPop(w)), globalPeriodLifeExpectancy: Math.round(globalPLE(w) * 10) / 10, lessonsKnown: w.lessonsKnown,

@@ -15,7 +15,7 @@ import type { Archetype, Behavior, Citizen, Emotion, GroupKey, Mood } from '../t
 import { HEDONIC_DECAY, LOSS_AVERSION, PROTEST_TIPPING_SHARE, SURVIVAL_KCAL } from './constants'
 import { pick, pickWeighted } from './rng'
 import { link, ppl } from './causes'
-import { BEHAVIORS, EMOTIONS, MOOD_BASELINE, clamp, event, incomeIdx, popWeighted, regionPop, why, type CrowdInternal, type RegionState, type World } from './state'
+import { BEHAVIORS, EMOTIONS, MOOD_BASELINE, clamp, event, incomeIdx, popWeighted, regionPop, why, type RegionState, type World } from './state'
 
 // ---------- archetypes ----------
 // ESTIMATE population mix of archetypes (adults). sharp_kid only for kids, elder mostly 65+.
