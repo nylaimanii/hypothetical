@@ -39,3 +39,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .panel-in { animation: panel-in 0.25s ease-out both; }
 .scroll-thin { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--ink) 25%, transparent) transparent; }
 @media (prefers-reduced-motion: reduce) { .panel-in { animation: none; } }
+
+@keyframes line-in { from { opacity: 0; } to { opacity: 1; } }
+.line-in { animation: line-in 0.45s ease-out both; }
+@media (prefers-reduced-motion: reduce) { .line-in { animation: none; } }

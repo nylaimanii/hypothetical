@@ -34,7 +34,7 @@ export default function LifeCamera({ live, preset, colliders, insideLot, focus, 
   focus: React.RefObject<{ id: string; until: number } | null>; world: React.RefObject<WorldNow>; onUserCamera: () => void
 }) {
   const { camera, gl } = useThree()
-  const s = useRef({ prevHead: new THREE.Vector3(), manual: false, auto: 0, autoS: 0, autoDist: 0, yaw: PRESETS.default.yaw, pitch: PRESETS.default.pitch, dist: PRESETS.default.dist, want: { ...PRESETS.default }, heading: 0, started: false, lastGood: new THREE.Vector3(), target: new THREE.Vector3(), lost: 0 })
+  const s = useRef({ prevHead: new THREE.Vector3(), manual: false, convSide: 1, pair: 0, auto: 0, autoS: 0, autoDist: 0, yaw: PRESETS.default.yaw, pitch: PRESETS.default.pitch, dist: PRESETS.default.dist, want: { ...PRESETS.default }, heading: 0, started: false, lastGood: new THREE.Vector3(), target: new THREE.Vector3(), lost: 0 })
   const tmp = useMemo(() => ({ desired: new THREE.Vector3(), dir: new THREE.Vector3(), ray: new THREE.Ray(), hit: new THREE.Vector3(), ndc: new THREE.Vector3(), chest: new THREE.Vector3() }), [])
 
   // presets: animate the framing (yaw / pitch / distance), never the raw camera
@@ -94,6 +94,8 @@ export default function LifeCamera({ live, preset, colliders, insideLot, focus, 
     const other = f && performance.now() < f.until ? world.current?.kinPos.get(f.id) : undefined
     if (f && !other && performance.now() >= f.until) focus.current = null
     if (other) head = other
+    // framing hints: a baby in arms is framed with the person holding her; a conversation from the side, both in frame
+    const hint = !S.manual && !other ? L.frame : null
     const height = Math.max(0.5, head.y)
     tmp.chest.copy(head)
     tmp.chest.y = head.y - height * 0.2
@@ -101,14 +103,18 @@ export default function LifeCamera({ live, preset, colliders, insideLot, focus, 
 
     // framing follows her heading slowly (re-frames when she turns), plus whatever the viewer set
     S.heading = S.started ? dampAngle(S.heading, L.heading, 1.6, dt) : L.heading
-    S.yaw = dampAngle(S.yaw, S.want.yaw, 6, dt)
+    // a conversation is framed on the pair, not on her alone: the target moves to the middle of the two (the other
+    // person stands about a meter in front of her)
+    S.pair = damp(S.pair, hint === 'conversation' ? 0.47 : 0, 3, dt)
+    if (S.pair > 0.001) tmp.chest.addScaledVector(L.forward, S.pair)
+    S.yaw = dampAngle(S.yaw, hint === 'conversation' ? S.convSide * 1.35 : S.want.yaw, hint ? 2.5 : 6, dt)
     // indoors (her building cut away), the default framing comes in a little higher and closer, over the cut walls,
     // so the front view stays clear of the neighbors' houses. the viewer's own zoom and presets still win
     const indoors = insideLot.current >= 0 && !S.manual
     S.pitch = damp(S.pitch, indoors ? Math.max(S.want.pitch, 0.62) : S.want.pitch, 4, dt)
     S.dist = damp(S.dist, indoors ? Math.min(S.want.dist, 2.4) : S.want.dist, 4, dt)
     // kids are smaller, so the default framing comes in a little (an 8 year old still fills the frame)
-    const dist = other ? Math.max(4, S.dist) : Math.max(0.75, S.dist * Math.min(1, 0.6 + height / 2.2))
+        const dist = other ? Math.max(4, S.dist) : hint === 'conversation' || hint === 'held' ? Math.max(3.8, S.dist) : Math.max(0.75, S.dist * Math.min(1, 0.6 + height / 2.2))
     // walls: in a dense city the camera looks for a clear line to her. it keeps the viewer's framing when that is
     // clear; otherwise it tries nearby angles (usually down the street she is on) and keeps the one it found until it
     // is blocked. never inside a building; if nothing is clear it comes closer, and the building in between cuts away
@@ -125,6 +131,8 @@ export default function LifeCamera({ live, preset, colliders, insideLot, focus, 
       }
       return false
     }
+    // a conversation is filmed from the open side (the street), never through the house behind them
+    if (hint === 'conversation' && blocked(S.convSide * 1.35, dist) && !blocked(-S.convSide * 1.35, dist)) S.convSide = -S.convSide
     // candidates, as yaw relative to her heading: the viewer's framing, then front angles, then a closer front,
     // then the sides; behind only as a last resort (the face matters more than the view)
     let d1 = dist

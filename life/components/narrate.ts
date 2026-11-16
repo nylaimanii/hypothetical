@@ -12,13 +12,29 @@ const money = (n: number) => `$${Math.round(n)}`
 export type NarrateCtx = {
   record: LifeRecord; snap: MonthSnap; prevYearSnap: MonthSnap | null; env: EnvYear | null; prevEnv: EnvYear | null
   once: (key: string, scope: string) => boolean // a clause is said in one scene a day (scope: the walk or stop it belongs to)
-  where: Where; hour: number; family: Present[]; kin: Present[]; presentAt?: (kinId: string, lotId: number) => boolean; rain: boolean; tempC: number; canBus: boolean; busFareShare: number
+  where: Where; hour: number; family: Present[]; kin: Present[]; carrierId?: string | null; neighbor?: string; exactAge?: number; presentAt?: (kinId: string, lotId: number) => boolean; rain: boolean; tempC: number; canBus: boolean; busFareShare: number
   she: string; her: string // pronouns from the record's sex
 }
 
 export function narrate(c: NarrateCtx): string {
   const { snap: s, where: w, she, her } = c
   const t = fmtClock(c.hour)
+  // a baby's day is told through whoever is holding them
+  const exact = c.exactAge ?? s.age
+  if (exact < 2) {
+    const days = Math.floor(exact * 365.25)
+    const old = days < 1 ? 'a few hours old' : days < 14 ? `${days} ${days === 1 ? 'day' : 'days'} old` : days < 90 ? `${Math.round(days / 7)} weeks old` : `${Math.round(exact * 12)} months old`
+    const first = c.record.name.split(' ')[0]
+    const carrier = c.kin.find(k => k.id === c.carrierId)
+    const who = carrier ? `${c.her} ${carrier.relation === 'mother' ? 'mom' : carrier.relation === 'father' ? 'dad' : carrier.relation === 'sibling' ? (carrier.sex === 'female' ? 'sister' : 'brother') : carrier.relation} ${carrier.name}` : 'the family'
+    const cs = carrier?.sex === 'male' ? 'he' : 'she'
+    const a = c.where.stop.act
+    const doing = a === 'sleep' ? `asleep next to ${who}`
+      : a === 'chat' ? `${who} is holding ${c.she === 'she' ? 'her' : 'him'} outside while ${cs} talks to ${c.neighbor ? `the neighbor, ${c.neighbor}` : 'a neighbor'}`
+      : a === 'eat' ? `${who} is feeding ${c.she === 'she' ? 'her' : 'him'}`
+      : `${who} has ${c.she === 'she' ? 'her' : 'him'} in ${carrier?.sex === 'male' ? 'his' : 'her'} arms at home`
+    return `${t}. ${first}'s ${old}. ${doing}.`
+  }
   const age = s.age
   const name = c.record.name.split(' ')[0]
   const job = s.job ?? ''

@@ -6,17 +6,24 @@
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
-import { P, buildW, shoulderX, partGeometries } from '@/components/world/pipShared'
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
+import { partGeometries } from '@/components/world/pipShared'
+import { bodyFor, gait, poseFor, solve, makeSolved, blendInto, clonePose, boneMatrix, type Action, type Pose } from './rig'
 import { hairGeometry } from './hair'
 import { C, HAIR_HEX, MONK, toonGradient } from '@/components/world/lib'
 import type { Look } from '@/lib/life/types'
 import { FLINCH, moodToAUs, zeroAUs, AUS, type AUs } from './facs'
-import { grayShare, heightShare } from './day'
+import { grayShare } from './day'
+import type { Seat, Her } from './population'
 import type { Emotion } from '@/lib/types'
 
 // what the scene tells the rig every frame (a mutable object, so react never re-renders per frame)
 export type LiveState = {
   pos: THREE.Vector3; heading: number; walking: boolean; act: string; pose: string; dead: boolean
+  seat: Seat | null // the chair, bench or stoop under her when she sits (./population)
+  carrier: string | null // kin id of whoever is holding her (a baby is never alone)
+  frame: 'conversation' | 'held' | null // a framing hint for the camera
+  cradle: THREE.Vector3; cradleAt: number; cradleHeading: number // where the carrier's arms are and which way she faces (written by the crowd each frame)
   mood: Record<string, number>; fatigue: number; age: number; heat: number
   flinch: { emotion: Emotion; at: number } | null
   gaze: THREE.Vector3 | null // world point to look at (someone talking, a kid), or null
@@ -29,9 +36,23 @@ export type LiveState = {
 export const PERSON_SCALE = 0.9
 
 const toon = (color: THREE.ColorRepresentation, extra: THREE.MeshToonMaterialParameters = {}) => new THREE.MeshToonMaterial({ color, gradientMap: toonGradient(), ...extra })
+// a kanga: a bright printed cloth with a border and a repeating motif (generic pattern, not a real print)
+let kanga: THREE.Texture | null = null
+function kangaTexture(): THREE.Texture {
+  if (kanga) return kanga
+  const c = document.createElement('canvas'); c.width = c.height = 64
+  const g = c.getContext('2d')!
+  g.fillStyle = '#E8A13A'; g.fillRect(0, 0, 64, 64)
+  g.fillStyle = '#2F7F6F'; g.fillRect(0, 0, 64, 8); g.fillRect(0, 56, 64, 8)
+  g.fillStyle = '#C9483B'; for (let x = 8; x < 64; x += 16) for (let y = 16; y < 56; y += 16) { g.beginPath(); g.arc(x, y, 4, 0, Math.PI * 2); g.fill() }
+  kanga = new THREE.CanvasTexture(c); kanga.colorSpace = THREE.SRGBColorSpace
+  return kanga
+}
+const IDENT = new THREE.Matrix4()
+const IDQ = new THREE.Quaternion()
 const damp = (cur: number, target: number, rate: number, dt: number) => cur + (target - cur) * (1 - Math.exp(-rate * dt))
 
-export default function ChosenPerson({ look, live, cloth }: { look: Look; live: React.RefObject<LiveState>; cloth: string }) {
+export default function ChosenPerson({ her, look, live, cloth }: { her: Her; look: Look; live: React.RefObject<LiveState>; cloth: string }) {
   const parts = useMemo(() => partGeometries(), [])
   const hair = useMemo(() => hairGeometry(look.hair), [look.hair])
   const g = useMemo(() => ({
@@ -47,7 +68,7 @@ export default function ChosenPerson({ look, live, cloth }: { look: Look; live: 
   }), [])
   const skinHex = MONK[Math.max(0, Math.min(9, look.skinTone - 1))]
   const m = useMemo(() => ({
-    skin: toon(skinHex), cloth: toon(cloth), legs: toon(new THREE.Color(cloth).multiplyScalar(0.62)), hair: toon(HAIR_HEX[look.hairColor] ?? '#2a221c'),
+    skin: toon(skinHex), cloth: toon(cloth), shoes: toon('#2f2a26'), wrap: toon('#E8A13A', { map: kangaTexture() }), legs: toon(new THREE.Color(cloth).multiplyScalar(0.62)), hair: toon(HAIR_HEX[look.hairColor] ?? '#2a221c'),
     eye: toon(C.ink), brow: toon(new THREE.Color(HAIR_HEX[look.hairColor] ?? '#2a221c').multiplyScalar(0.8)),
     lid: toon(new THREE.Color(skinHex).multiplyScalar(0.94)), mouth: toon('#3b2724'), inner: toon('#5a2f2c'),
     tear: new THREE.MeshBasicMaterial({ color: '#9fd3ee', transparent: true, opacity: 0 }),
@@ -59,15 +80,17 @@ export default function ChosenPerson({ look, live, cloth }: { look: Look; live: 
   const gray = useMemo(() => new THREE.Color('#c9c4bb'), [])
 
   const R = {
-    root: useRef<THREE.Group>(null), hip: useRef<THREE.Group>(null), neck: useRef<THREE.Group>(null), headScale: useRef<THREE.Group>(null),
-    armL: useRef<THREE.Group>(null), armR: useRef<THREE.Group>(null), legL: useRef<THREE.Group>(null), legR: useRef<THREE.Group>(null),
+    root: useRef<THREE.Group>(null), neck: useRef<THREE.Group>(null), swaddle: useRef<THREE.Mesh>(null),
+    bones: useRef<(THREE.Mesh | null)[]>([]), torso: useRef<THREE.Mesh>(null), hands: useRef<(THREE.Mesh | null)[]>([]),
     eyeL: useRef<THREE.Mesh>(null), eyeR: useRef<THREE.Mesh>(null), lidL: useRef<THREE.Mesh>(null), lidR: useRef<THREE.Mesh>(null),
     lowL: useRef<THREE.Mesh>(null), lowR: useRef<THREE.Mesh>(null), browL: useRef<THREE.Mesh>(null), browR: useRef<THREE.Mesh>(null),
     mMid: useRef<THREE.Mesh>(null), mL: useRef<THREE.Mesh>(null), mR: useRef<THREE.Mesh>(null), mIn: useRef<THREE.Mesh>(null),
     tearL: useRef<THREE.Mesh>(null), tearR: useRef<THREE.Mesh>(null),
   }
-  const st = useRef({ aus: zeroAUs(), gazeX: 0, gazeY: 0, headYaw: 0, headPitch: 0, blinkAt: 2, blinkPhase: 0, tear: 0, walk: 0, lastX: 0, lastZ: 0, speed: 0 })
-  const tmp = useMemo(() => ({ v: new THREE.Vector3(), q: new THREE.Quaternion(), m: new THREE.Matrix4() }), [])
+  const st = useRef({ aus: zeroAUs(), gazeX: 0, gazeY: 0, headYaw: 0, headPitch: 0, blinkAt: 2, blinkPhase: 0, tear: 0, phase: 0, lastX: 0, lastZ: 0, started: false, pose: null as Pose | null })
+  const sol = useMemo(() => makeSolved(), [])
+  const box = useMemo(() => new RoundedBoxGeometry(1, 1, 1, 2, 0.32), [])
+  const tmp = useMemo(() => ({ v: new THREE.Vector3(), a: new THREE.Vector3(), b: new THREE.Vector3(), c: new THREE.Vector3(), d: new THREE.Vector3(), e: new THREE.Vector3(), q: new THREE.Quaternion(), m: new THREE.Matrix4() }), [])
 
   useFrame(({ clock }, rawDt) => {
     const L = live.current
@@ -76,48 +99,32 @@ export default function ChosenPerson({ look, live, cloth }: { look: Look; live: 
     const t = clock.elapsedTime
     const s = st.current
 
-    // ---- body: size by age, walk cycle, idle sway ----
-    const share = heightShare(L.age)
-    const scale = PERSON_SCALE * (look.adultHeightCm / 170) * share
-    const root = R.root.current
-    // after the end she is gone from the scene; the card carries her
-    root.visible = !L.dead
-    const lying = L.pose === 'lie'
-    const seated = L.pose === 'sit' || L.pose === 'ride'
-    const busy = L.pose === 'busy'
-    root.position.copy(L.pos)
-    // in bed: lie along the bed, on top of the mattress
-    root.rotation.set(lying ? -Math.PI / 2 : 0, L.heading, 0, 'YXZ')
-    if (lying) { root.position.y = 0.3; root.position.z += 0.5 * scale }
-    root.scale.setScalar(scale)
-    const moved = Math.hypot(L.pos.x - s.lastX, L.pos.z - s.lastZ) / Math.max(dt, 1e-3)
-    s.lastX = L.pos.x; s.lastZ = L.pos.z
-    s.speed = damp(s.speed, Math.min(moved, 4), 8, dt)
-    const walking = L.walking || s.speed > 0.3
-    s.walk += dt * (walking ? 9 : 0)
-    const sw = walking ? Math.sin(s.walk) : 0
-    const bw = buildW(look.build)
-    const sitting = seated
-    const sleeping = lying
+    // ---- body: ./population's Her (the same code the qa script checks): action, pose, skeleton, world transform ----
     const age = L.age
-    const stoop = age > 70 ? Math.min(0.25, (age - 70) * 0.01) : 0
+    const hf = her.step(L, look, t, dt, L.seat)
+    const body = hf.body, sol = hf.sol
+    const held = L.pose === 'held', lying = L.pose === 'lie'
     const sad = L.mood.grief ?? 0
-    R.hip.current!.position.y = sitting ? P.hipY * 0.55 : P.hipY + (walking ? Math.abs(Math.cos(s.walk)) * 0.02 : Math.sin(t * 1.6) * 0.004)
-    R.hip.current!.rotation.x = sleeping ? 0 : stoop + sad * 0.12 + (walking ? 0.05 : 0) + (busy ? 0.12 : 0)
-    R.legL.current!.rotation.x = sitting ? -1.4 : sw * 0.55
-    R.legR.current!.rotation.x = sitting ? -1.4 : -sw * 0.55
-    // children: shorter legs and a bigger head, so an 8 year old reads as a child at any zoom
-    const legK = L.age < 16 ? 0.72 + 0.28 * Math.min(1, L.age / 16) : 1
-    R.legL.current!.scale.y = legK; R.legR.current!.scale.y = legK
-    R.hip.current!.position.y -= P.hipY * (1 - legK)
-    const hug = L.hug
-    const work = busy ? Math.sin(t * 5) * 0.35 : 0
-    R.armL.current!.rotation.x = -sw * 0.5 - hug * 1.3 + (sitting ? -0.5 : 0) + (busy ? -1.0 + work : 0)
-    R.armR.current!.rotation.x = sw * 0.5 - hug * 1.3 + (sitting ? -0.5 : 0) + (busy ? -1.0 - work : 0)
-    R.armL.current!.rotation.z = 0.08 + hug * 0.35
-    R.armR.current!.rotation.z = -0.08 - hug * 0.35
-    R.armL.current!.position.x = shoulderX(bw)
-    R.armR.current!.position.x = -shoulderX(bw)
+    const root = R.root.current
+    root.visible = !L.dead // after the end she is gone from the scene; the card carries her
+    hf.root.decompose(root.position, root.quaternion, root.scale)
+    // bones: a box per bone, colored by clothing
+    const bm = R.bones.current
+    for (let i = 0; i < 10; i++) { const mesh = bm[i]; if (mesh) boneMatrix(IDENT, sol.bones[i], mesh.matrix) }
+    if (R.torso.current) boneMatrix(IDENT, sol.torso, R.torso.current.matrix)
+    R.hands.current.forEach((hm, i) => { if (hm) hm.matrix.compose(sol.hands[i], IDQ, tmp.v.setScalar(body.limb * 1.25)) })
+    // the swaddle: from the feet to the shoulders, a little wider than the body; limbs tucked inside
+    const sw = R.swaddle.current
+    if (sw) {
+      sw.visible = held || (age < 0.5 && lying)
+      if (sw.visible) { const a = sol.bones[2].b, top = sol.neck; sw.matrix.compose(tmp.v.addVectors(a, top).multiplyScalar(0.5), sol.spine, new THREE.Vector3(body.torsoW * 1.7, top.y - Math.min(a.y, sol.bones[5].b.y) + body.H * 0.14, body.torsoD * 2.4)) }
+      for (const b of R.bones.current) if (b) b.visible = !sw.visible
+      if (R.torso.current) R.torso.current.visible = !sw.visible
+      for (const h of R.hands.current) if (h) h.visible = !sw.visible
+    }
+    const neck = R.neck.current!
+    neck.position.copy(sol.headPos); neck.quaternion.copy(sol.head)
+    neck.scale.setScalar(body.headH / 0.27) // the pip face rig is built for a 0.27-tall head
 
     // ---- face: mood + fatigue -> action units, with a flinch on news ----
     const { aus: target, gaze } = moodToAUs(L.mood as Partial<Record<Emotion, number>>, L.fatigue)
@@ -148,18 +155,18 @@ export default function ChosenPerson({ look, live, cloth }: { look: Look; live: 
       gy = -wantPitch * 1.5
     }
     s.headYaw = damp(s.headYaw, wantYaw, 4, dt)
-    s.headPitch = damp(s.headPitch, wantPitch + (sleeping ? 0 : 0), 4, dt)
+    s.headPitch = damp(s.headPitch, wantPitch, 4, dt)
     s.gazeX = damp(s.gazeX, gx, 10, dt)
     s.gazeY = damp(s.gazeY, gy, 10, dt)
-    R.neck.current!.rotation.set(s.headPitch, s.headYaw, Math.sin(t * 0.7) * 0.02)
-    R.headScale.current!.scale.setScalar(age < 16 ? 1.45 - Math.min(1, age / 16) * 0.45 : 1)
+    // look at whoever she is with on top of the body's own head motion
+    R.neck.current!.quaternion.multiply(tmp.q.setFromEuler(new THREE.Euler(s.headPitch, s.headYaw, Math.sin(t * 0.7) * 0.02, 'YXZ')))
 
     // blinks: ~15-20 a minute (bentivoglio et al. 1997, https://doi.org/10.1002/mds.870120629), longer in old age
     if (t > s.blinkAt) { s.blinkPhase = 1; s.blinkAt = t + 2.2 + ((Math.sin(t * 12.9898) * 43758.5453) % 1 + 1) % 1 * 3.5 }
     const blinkDur = 0.14 + Math.max(0, age - 60) * 0.003
     s.blinkPhase = Math.max(0, s.blinkPhase - dt / blinkDur)
     const blink = s.blinkPhase > 0 ? Math.sin(Math.PI * (1 - s.blinkPhase)) : 0
-    const close = sleeping ? 1 : Math.min(1, Math.max(blink, A.au43 * 0.9))
+    const close = lying || (held && Math.sin(t * 0.07) > 0.2) ? 1 : Math.min(1, Math.max(blink, A.au43 * 0.9))
     const open = 1 + 0.35 * A.au5 // upper lid raiser shows more eye
     for (const [eye, lid, low, sx] of [[R.eyeL, R.lidL, R.lowL, 1], [R.eyeR, R.lidR, R.lowR, -1]] as const) {
       eye.current!.position.set(sx * 0.06 + s.gazeX * 0.012, 0.02 + s.gazeY * 0.01, 0.131)
@@ -214,26 +221,23 @@ export default function ChosenPerson({ look, live, cloth }: { look: Look; live: 
 
     // camera hooks
     R.neck.current!.getWorldPosition(L.head)
-    L.head.y += 0.15 * scale
     L.forward.set(Math.sin(L.heading), 0, Math.cos(L.heading))
   })
 
   const lineAt = (x: number, y: number, rz = 0, w = 1) => <mesh geometry={g.line} material={m.line} position={[x, y, 0.132]} rotation={[0, 0, rz]} scale={[w, 1, 1]} />
   return (
     <group ref={R.root}>
-      <group ref={R.hip}>
-        <mesh geometry={parts.torso} material={m.cloth} position={[0, P.torsoCenter, 0]} scale={[buildW(look.build), 1, buildW(look.build) * 0.85]} castShadow />
-        <group ref={R.armL} position={[shoulderX(buildW(look.build)), P.shoulderY, 0]}>
-          <mesh geometry={parts.limbArm} material={m.cloth} position={[0, P.armCenter, 0]} castShadow />
-          <mesh geometry={parts.hand} material={m.skin} position={[0, P.handY, 0]} />
-        </group>
-        <group ref={R.armR} position={[-shoulderX(buildW(look.build)), P.shoulderY, 0]}>
-          <mesh geometry={parts.limbArm} material={m.cloth} position={[0, P.armCenter, 0]} castShadow />
-          <mesh geometry={parts.hand} material={m.skin} position={[0, P.handY, 0]} />
-        </group>
-        <group ref={R.neck} position={[0, P.neckY, 0]}>
-          <group ref={R.headScale}>
-            <group position={[0, P.headCenter, 0]}>
+        <mesh ref={R.torso} geometry={box} material={m.cloth} matrixAutoUpdate={false} castShadow />
+        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => (
+          <mesh key={i} ref={el => { R.bones.current[i] = el }} geometry={box} matrixAutoUpdate={false} castShadow
+            material={i % 3 === 2 && i < 6 ? m.shoes : i < 6 ? m.legs : i === 7 || i === 9 ? m.skin : m.cloth} />
+        ))}
+        {[0, 1].map(i => <mesh key={`h${i}`} ref={el => { R.hands.current[i] = el }} geometry={parts.hand} material={m.skin} matrixAutoUpdate={false} />)}
+        {/* a newborn is swaddled in a bright wrap (a kanga / lamba), only the face showing */}
+        <mesh ref={R.swaddle} geometry={box} material={m.wrap} matrixAutoUpdate={false} />
+        <group ref={R.neck}>
+          <group>
+            <group>
               <mesh geometry={parts.head} material={m.skin} castShadow />
               {/* eyes, lids, brows */}
               <mesh ref={R.eyeL} geometry={parts.eye} material={m.eye} />
@@ -262,15 +266,6 @@ export default function ChosenPerson({ look, live, cloth }: { look: Look; live: 
             </group>
           </group>
         </group>
-      </group>
-      <group ref={R.legL} position={[P.hipX, P.hipY, 0]}>
-        <mesh geometry={parts.limbLeg} material={m.legs} position={[0, P.legCenter + 0.03, 0]} castShadow />
-        <mesh geometry={parts.foot} material={m.legs} position={[0, -P.hipY + 0.035, 0.03]} />
-      </group>
-      <group ref={R.legR} position={[-P.hipX, P.hipY, 0]}>
-        <mesh geometry={parts.limbLeg} material={m.legs} position={[0, P.legCenter + 0.03, 0]} castShadow />
-        <mesh geometry={parts.foot} material={m.legs} position={[0, -P.hipY + 0.035, 0.03]} />
-      </group>
     </group>
   )
 }
