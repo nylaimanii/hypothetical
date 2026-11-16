@@ -19,8 +19,8 @@ export type PetitionReply = {
 
 const Schema = z.object({
   stance: z.enum(['accept', 'consider', 'decline']),
-  reply: z.string().min(5).transform(x => x.replace(/[—–]/g, ', ').slice(0, 900)),
-  proposal: z.object({ kind: z.enum(['new_law', 'amend', 'repeal']), lawId: z.string().optional(), title: z.string().transform(x => x.slice(0, 120)), text: z.string().transform(x => x.replace(/[—–]/g, ', ').slice(0, 600)) }).nullable().optional(),
+  reply: z.string().min(5).transform(x => x.replace(/[\u2014\u2013]/g, ', ').slice(0, 900)),
+  proposal: z.object({ kind: z.enum(['new_law', 'amend', 'repeal']), lawId: z.string().optional(), title: z.string().transform(x => x.slice(0, 120)), text: z.string().transform(x => x.replace(/[\u2014\u2013]/g, ', ').slice(0, 600)) }).nullable().optional(),
   grounds: z.array(z.string()).default([]).transform(a => a.slice(0, 5).map(x => x.slice(0, 200))),
 })
 const JSON_SCHEMA = z.toJSONSchema(Schema, { io: 'input', unrepresentable: 'any' }) as Record<string, unknown>
