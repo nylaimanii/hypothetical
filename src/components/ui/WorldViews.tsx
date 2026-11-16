@@ -164,7 +164,7 @@ export function EpitaphCard() {
   const from = 2026, to = tickToDate(frame.tick).getUTCFullYear()
   const seeSteps = () => {
     useStore.getState().setView('steps')
-    setTimeout(() => document.getElementById('steps-killed')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120)
+    setTimeout(() => (document.getElementById('autopsy') ?? document.getElementById('steps-killed'))?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 400)
   }
   return (
     <div className="epitaph-in panel pointer-events-auto relative w-[30rem] max-w-full px-6 py-5 text-center shadow-xl">
@@ -173,7 +173,7 @@ export function EpitaphCard() {
       <div className="mt-1 font-display text-[22px] leading-tight">world #<Num>{worldNumber(record.runId, runs)}</Num> · governed by {agent?.name ?? prettyAgent(record.agentId)} · <Num>{from}</Num> to <Num>{to}</Num></div>
       {ep && <p className="mt-2 font-display text-[16px] italic leading-snug text-ink/85">{ep.line}</p>}
       {record.summary.causeOfDeath && <p className="mt-2 text-[12.5px] text-ink/65">cause of death: <span className="text-ember">{record.summary.causeOfDeath}</span></p>}
-      <button onClick={seeSteps} className="mt-3 rounded-full border border-ink/30 px-4 py-1.5 text-[12px] hover:bg-ink hover:text-bone">see the steps that killed it</button>
+      <button onClick={seeSteps} className="mt-3 rounded-full border border-ink/30 px-4 py-1.5 text-[12px] hover:bg-ink hover:text-bone">see how it died</button>
       <a href={`/report/${encodeURIComponent(record.runId)}`} className="mt-2 block text-[12px] text-ink/60 underline decoration-ink/25 underline-offset-2 hover:text-ink">read its full report</a>
     </div>
   )

@@ -232,7 +232,7 @@ function useLayout(frame: Frame, style: ArchStyle, agentName: string) {
       const t = tiles[tileIndexAt(p)]
       const n2 = p.clone().normalize()
       const pos = n2.clone().multiplyScalar(t?.land ? topOf(t) : LAND_TOP)
-      return { key: `${r.id}-${l.label}`, l, region: r, ri, pos, quat: surfaceQuat(n2, tangentBasis(n2).north) }
+      return { key: `${r.id}-${k}-${l.label}`, l, region: r, ri, pos, quat: surfaceQuat(n2, tangentBasis(n2).north) }
     }))
 
     return { sites, solar, poles, blades, towers, stacks, dams, steam, smoke, rails, railGeo, homes, landmarks, agentName }
