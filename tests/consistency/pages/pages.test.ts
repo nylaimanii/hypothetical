@@ -12,6 +12,8 @@ import { biggestEvent } from '../../../src/components/ui/views/shared'
 import { normalizeRecord } from '../../../src/components/state/normalize'
 import { frameIndexAt } from '../../../src/components/state/store'
 import type { RunRecord } from '../../../src/lib/types'
+import { realBaseline } from '../../../src/lib/evolve/evidence'
+import un from '../../../data/real/un-wpp-2024.json'
 
 const playheads = (r: RunRecord) => {
   const last = r.frames.at(-1)?.tick ?? 0
@@ -76,5 +78,16 @@ for (const id of worldIds()) {
       const e = eventsBetween(r, yearSpan(yearIndexOfTick(t)).start, t).find((x) => x.e.text === best.text)
       assert.ok(e, `at ${dateOfTick(t)} the biggest event of ${yearOfTick(t)} is "${best.text}", which is not from ${yearOfTick(t)} up to now`)
     }
+  })
+
+  test(`${id}: the graphs' UN projection is the same number the score is compared with`, () => {
+    const rb = realBaseline(r)
+    if (!rb) return
+    const unPop = (un.population.byYear as Record<string, number>)[String(rb.year)]
+    const unLe = (un.lifeExpectancy.byYear as Record<string, number>)[String(rb.year)]
+    assert.equal(unPop, rb.population.un, `in ${rb.year} the graphs show ${unPop} people for the UN, the score is compared with ${rb.population.un}`)
+    assert.equal(Math.round(unLe * 10) / 10, rb.lifeExpectancy.un, `in ${rb.year} the graphs show a UN life expectancy of ${unLe}, the score is compared with ${rb.lifeExpectancy.un}`)
+    // the graphs put a year's UN value at that year's december, the frame the score reads
+    assert.equal(yearOfTick((rb.year - 2026) * 12 + 1), rb.year, `the graphs place the UN value for ${rb.year} in ${yearOfTick((rb.year - 2026) * 12 + 1)}`)
   })
 }
