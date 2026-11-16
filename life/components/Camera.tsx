@@ -29,16 +29,16 @@ const dampAngle = (c: number, t: number, r: number, dt: number) => c + Math.atan
 const finite = (v: THREE.Vector3) => Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z)
 
 export default function LifeCamera({ live, preset, colliders, insideLot, focus, world, onUserCamera }: {
-  live: React.RefObject<LiveState>; preset: { kind: CamPreset; at: number } | null
+  live: React.RefObject<LiveState>; preset: { kind: CamPreset; at: number; user?: boolean } | null
   colliders: React.RefObject<Collider[]>; insideLot: React.RefObject<number>
   focus: React.RefObject<{ id: string; until: number } | null>; world: React.RefObject<WorldNow>; onUserCamera: () => void
 }) {
   const { camera, gl } = useThree()
-  const s = useRef({ auto: 0, autoS: 0, autoDist: 0, yaw: PRESETS.default.yaw, pitch: PRESETS.default.pitch, dist: PRESETS.default.dist, want: { ...PRESETS.default }, heading: 0, started: false, lastGood: new THREE.Vector3(), target: new THREE.Vector3(), lost: 0 })
+  const s = useRef({ prevHead: new THREE.Vector3(), manual: false, auto: 0, autoS: 0, autoDist: 0, yaw: PRESETS.default.yaw, pitch: PRESETS.default.pitch, dist: PRESETS.default.dist, want: { ...PRESETS.default }, heading: 0, started: false, lastGood: new THREE.Vector3(), target: new THREE.Vector3(), lost: 0 })
   const tmp = useMemo(() => ({ desired: new THREE.Vector3(), dir: new THREE.Vector3(), ray: new THREE.Ray(), hit: new THREE.Vector3(), ndc: new THREE.Vector3(), chest: new THREE.Vector3() }), [])
 
   // presets: animate the framing (yaw / pitch / distance), never the raw camera
-  useEffect(() => { if (preset) s.current.want = { ...PRESETS[preset.kind] } }, [preset])
+  useEffect(() => { if (preset) { s.current.want = { ...PRESETS[preset.kind] }; if (preset.user) s.current.manual = true } }, [preset])
 
   // drag to rotate around her, scroll or pinch to zoom from her face out to the neighborhood
   useEffect(() => {
@@ -64,10 +64,10 @@ export default function LifeCamera({ live, preset, colliders, insideLot, focus, 
       down = { x: e.clientX, y: e.clientY }
       S.want.yaw -= dx * 0.007
       S.want.pitch = Math.min(1.45, Math.max(-0.05, S.want.pitch + dy * 0.005))
-      if (Math.abs(dx) + Math.abs(dy) > 2) onUserCamera()
+      if (Math.abs(dx) + Math.abs(dy) > 2) { S.manual = true; onUserCamera() }
     }
     const onUp = (e: PointerEvent) => { pts.delete(e.pointerId); if (pts.size < 2) pinch = 0; if (!pts.size) down = null }
-    const onWheel = (e: WheelEvent) => { e.preventDefault(); const S = s.current; S.want.dist = Math.min(45, Math.max(0.9, S.want.dist * Math.exp(e.deltaY * 0.0012))); onUserCamera() }
+    const onWheel = (e: WheelEvent) => { e.preventDefault(); const S = s.current; S.manual = true; S.want.dist = Math.min(45, Math.max(0.9, S.want.dist * Math.exp(e.deltaY * 0.0012))); onUserCamera() }
     el.addEventListener('pointerdown', onDown)
     el.addEventListener('pointermove', onMove)
     el.addEventListener('pointerup', onUp)
@@ -102,8 +102,11 @@ export default function LifeCamera({ live, preset, colliders, insideLot, focus, 
     // framing follows her heading slowly (re-frames when she turns), plus whatever the viewer set
     S.heading = S.started ? dampAngle(S.heading, L.heading, 1.6, dt) : L.heading
     S.yaw = dampAngle(S.yaw, S.want.yaw, 6, dt)
-    S.pitch = damp(S.pitch, S.want.pitch, 6, dt)
-    S.dist = damp(S.dist, S.want.dist, 6, dt)
+    // indoors (her building cut away), the default framing comes in a little higher and closer, over the cut walls,
+    // so the front view stays clear of the neighbors' houses. the viewer's own zoom and presets still win
+    const indoors = insideLot.current >= 0 && !S.manual
+    S.pitch = damp(S.pitch, indoors ? Math.max(S.want.pitch, 0.62) : S.want.pitch, 4, dt)
+    S.dist = damp(S.dist, indoors ? Math.min(S.want.dist, 2.4) : S.want.dist, 4, dt)
     // kids are smaller, so the default framing comes in a little (an 8 year old still fills the frame)
     const dist = other ? Math.max(4, S.dist) : Math.max(0.75, S.dist * Math.min(1, 0.6 + height / 2.2))
     // walls: in a dense city the camera looks for a clear line to her. it keeps the viewer's framing when that is
@@ -140,8 +143,12 @@ export default function LifeCamera({ live, preset, colliders, insideLot, focus, 
     blocked(S.yaw + S.autoS, Math.max(0.75, d2)) // leaves tmp.dir / tmp.desired at the chosen framing
     if (tmp.desired.y < 0.2) tmp.desired.y = 0.2
 
-    // smooth follow, with snaps when far off (a speed switch, a move across the city, a fresh load)
-    if (!S.started || camera.position.distanceTo(tmp.desired) > 25) {
+    // smooth follow. a cut when she jumps (a montage shot, a seek, a speed switch, a move across the city): if she
+    // moved more than 2.5 units in one frame the camera cuts with her instead of gliding after her
+    const jumped = S.started && S.prevHead.distanceTo(head) > 2.5
+    S.prevHead.copy(head)
+    if (!S.started || jumped || camera.position.distanceTo(tmp.desired) > 25) {
+      if (jumped) { S.heading = L.heading; S.autoS = S.auto }
       S.started = true
       camera.position.copy(tmp.desired)
       S.target.copy(tmp.chest)
@@ -160,7 +167,9 @@ export default function LifeCamera({ live, preset, colliders, insideLot, focus, 
     tmp.ndc.copy(head).project(camera)
     const off = !(Math.abs(tmp.ndc.x) < 1 && Math.abs(tmp.ndc.y) < 1 && tmp.ndc.z < 1)
     S.lost = off ? S.lost + 1 : 0
-    if (S.lost > 3) {
+    if (process.env.NODE_ENV === 'development') (window as unknown as { __cam?: unknown }).__cam = { camera, ndc: tmp.ndc.clone(), desired: tmp.desired.clone(), chest: tmp.chest.clone(), dist: S.dist, pitch: S.pitch, yaw: S.yaw, auto: S.autoS, lost: S.lost }
+    if (process.env.NODE_ENV === 'development' && world.current) { const D = world.current as unknown as { _frames?: number; _offFrames?: number }; D._frames = (D._frames ?? 0) + 1; D._offFrames = (D._offFrames ?? 0) + (off ? 1 : 0) }
+    if (S.lost > 1) {
       console.warn('[life camera] she left the frame, snapping back', { ndc: tmp.ndc.toArray() })
       camera.position.copy(tmp.desired)
       S.target.copy(tmp.chest)

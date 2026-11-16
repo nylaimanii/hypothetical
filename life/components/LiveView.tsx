@@ -43,7 +43,7 @@ export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, ot
   const [ui, setUi] = useState({ tick: 0, day: 7 / 24, age: 0, cityId: record.birthplace.cityId, city: record.birthplace.city, home: world.current.home, playing: true, speed: 'day' as Speed, done: false })
   const [caption, setCaption] = useState<Moment | null>(null)
   const [line, setLine] = useState('')
-  const [preset, setPreset] = useState<{ kind: CamPreset; at: number } | null>(null)
+  const [preset, setPreset] = useState<{ kind: CamPreset; at: number; user?: boolean } | null>(null)
   const [director, setDirector] = useState(true)
   const [showFeel, setShowFeel] = useState(false)
   const [feel, setFeel] = useState<{ text: string; at: number } | null>(null)
@@ -244,7 +244,7 @@ export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, ot
       </Canvas>
 
       {/* top left: who and when */}
-      <div style={{ position: 'absolute', top: 16, left: 16, pointerEvents: 'none' }}>
+      <div style={{ position: 'absolute', top: 12, left: 12, pointerEvents: 'none', padding: '6px 10px', borderRadius: 12, background: 'color-mix(in srgb, var(--bone) 70%, transparent)' }}>
         <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em' }}>{record.name}</div>
         <div className="mono" style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>{date} · {Math.floor(ui.age)} · {ui.city.toLowerCase()}</div>
       </div>
@@ -268,7 +268,7 @@ export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, ot
             <div className="chip" style={{ padding: '10px 18px', maxWidth: 680, fontSize: 15, lineHeight: 1.35, textAlign: 'center', borderRadius: 16 }}><Numbers text={caption.caption} /></div>
           </div>
         )}
-        {!ui.done && line && <div aria-live="polite" style={{ alignSelf: 'center', fontSize: 14, opacity: 0.8, textAlign: 'center', maxWidth: 720, textShadow: '0 1px 0 var(--bone)' }}><Numbers text={line} /></div>}
+        {!ui.done && line && <div aria-live="polite" style={{ alignSelf: 'center', fontSize: 14, textAlign: 'center', maxWidth: 720, padding: '5px 12px', borderRadius: 10, background: 'color-mix(in srgb, var(--bone) 82%, transparent)', color: 'color-mix(in srgb, var(--ink) 85%, transparent)' }}><Numbers text={line} /></div>}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <div className="chip" style={{ display: 'flex', alignItems: 'center', padding: 3, gap: 2 }}>
             <button className="icon-btn" aria-label={ui.playing ? 'pause' : 'play'} onClick={toggle}><Icon kind={ui.playing ? 'pause' : 'play'} /></button>
@@ -278,7 +278,7 @@ export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, ot
           </div>
           <div className="chip" style={{ display: 'flex', alignItems: 'center', padding: 3, gap: 2 }}>
             {(['face', 'side', 'shoulder', 'top', 'wide'] as CamPreset[]).map(k => (
-              <button key={k} className="icon-btn" aria-label={`${k} view`} title={`${k} view`} aria-pressed={preset?.kind === k} onClick={() => { focus.current = null; setPreset({ kind: k, at: performance.now() }) }}><Icon kind={k} /></button>
+              <button key={k} className="icon-btn" aria-label={`${k} view`} title={`${k} view`} aria-pressed={preset?.kind === k} onClick={() => { focus.current = null; setPreset({ kind: k, at: performance.now(), user: true }) }}><Icon kind={k} /></button>
             ))}
             <button className="icon-btn" aria-label="director: auto camera for big moments" title="director" aria-pressed={director} onClick={() => setDirector(d => !d)}><Icon kind="director" /></button>
           </div>

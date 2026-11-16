@@ -4,7 +4,8 @@
 // people leave early enough to arrive on time. the same planner moves the chosen person, her family, her
 // coworkers and the city's crowd.
 import type { Layout, Lot, V2 } from '@/components/world/city/layout'
-import { pathBetween } from '@/components/world/city/layout'
+import { pathBetween, STREETS } from '@/components/world/city/layout'
+const STREET_SET = new Set(STREETS)
 import type { LifeActivity, Workplace } from '@/lib/life/types'
 
 export const WALK_UNITS_PER_H = 55 // sim walking speed (the diorama is small, so this is a stylized pace)
@@ -150,7 +151,9 @@ function along(l: Leg, f: number): { pos: V2; heading: number } {
   const heading = Math.atan2(b.x - a.x, b.z - a.z)
   // on foot, keep to the sidewalk on the right of the street (the path itself runs down the street's center line);
   // short hops (out a door, between stations) and the bus stay where they are
-  const side = l.kind === 'walk' && l.lens[k] > 1.5 ? 0.78 * Math.min(1, Math.min(d, l.lens[k] - d) / 0.6) : 0
+  // only on real street segments (both ends on the same street line), never on the way in or out of a door
+  const onStreet = (Math.abs(a.x - b.x) < 1e-6 && STREET_SET.has(Math.round(a.x))) || (Math.abs(a.z - b.z) < 1e-6 && STREET_SET.has(Math.round(a.z)))
+  const side = l.kind === 'walk' && onStreet && l.lens[k] > 1.5 ? 0.78 * Math.min(1, Math.min(d, l.lens[k] - d) / 0.6) : 0
   return { pos: { x: a.x + (b.x - a.x) * t - Math.cos(heading) * side, z: a.z + (b.z - a.z) * t + Math.sin(heading) * side }, heading }
 }
 

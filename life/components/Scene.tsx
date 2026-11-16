@@ -21,7 +21,7 @@ export type { CamPreset }
 export type SceneProps = {
   record: LifeRecord; layout: Layout; homeType: string
   live: React.RefObject<LiveState>; world: React.RefObject<WorldNow>
-  preset: { kind: CamPreset; at: number } | null; focus: React.RefObject<{ id: string; until: number } | null>
+  preset: { kind: CamPreset; at: number; user?: boolean } | null; focus: React.RefObject<{ id: string; until: number } | null>
   place: PlaceInfo | undefined; onUserCamera: () => void
 }
 // what the clock says about the world right now (mutable, read every frame)
@@ -77,7 +77,15 @@ export default function Scene({ record, layout, homeType, live, world, preset, f
   const homeLot = layout.homes[0]
   const colliders = useRef<Collider[]>([])
   const insideLot = useRef(-1)
-  useFrame(() => { const W = world.current; insideLot.current = W && W.indoors ? W.lotId : -1 })
+  // the building she is in: her lot when she is indoors, or (safety net) any building whose box contains her
+  const probe = useMemo(() => new THREE.Vector3(), [])
+  useFrame(() => {
+    const W = world.current, L = live.current
+    if (!W || !L) return
+    insideLot.current = W.indoors ? W.lotId : -1
+    probe.set(L.pos.x, 0.5, L.pos.z)
+    if (insideLot.current < 0) for (const c of colliders.current) if (c.box.containsPoint(probe)) { insideLot.current = c.lotId; break }
+  })
   // clothes never in skin-like hues, so nobody reads as undressed on any monk tone
   const cloth = useMemo(() => ['#5F7FA0', '#C9A046', '#6F9A6A', '#8873B0', '#4F8A8E', '#A65D57'][record.seed % 6], [record.seed])
   const fill = useMemo(() => fillers(layout, place, record.places[0]?.cityId ?? 'x'), [layout, place, record.places])
@@ -85,13 +93,13 @@ export default function Scene({ record, layout, homeType, live, world, preset, f
     <>
       <Sky world={world} />
       <Ground />
-      <Buildings layout={layout} homeLot={homeLot} homeKind={homeType} live={live} world={world} colliders={colliders} fill={fill} />
-      <Interiors layout={layout} homeLot={homeLot} world={world} />
+      <Buildings layout={layout} homeLot={homeLot} homeKind={homeType} live={live} world={world} colliders={colliders} fill={fill} insideLot={insideLot} />
+      <Interiors layout={layout} homeLot={homeLot} world={world} live={live} />
       <Market lot={layout.byKind.get('market')} world={world} />
       <People record={record} layout={layout} world={world} live={live} />
       <Bus world={world} />
       <Traffic world={world} />
-      <StreetLights world={world} />
+      <StreetLights world={world} live={live} />
       <Protest homeLot={homeLot} world={world} />
       <Rain live={live} world={world} />
       <NewsScreen homeLot={homeLot} world={world} />
@@ -113,6 +121,8 @@ function Sky({ world }: { world: React.RefObject<WorldNow> }) {
   const haze = useMemo(() => new THREE.Color('#D9B7A0'), [])
   const grey = useMemo(() => new THREE.Color('#B8B8B4'), [])
   const bg = useMemo(() => new THREE.Color(), [])
+  const nightBlue = useMemo(() => new THREE.Color('#8e9cc4'), [])
+  const nightGround = useMemo(() => new THREE.Color('#3a3a48'), [])
   useEffect(() => { scene.fog = new THREE.Fog('#EFE8DA', 26, 70); return () => { scene.fog = null } }, [scene])
   useFrame(() => {
     const W = world.current!
@@ -125,8 +135,14 @@ function Sky({ world }: { world: React.RefObject<WorldNow> }) {
     scene.background = bg
     ;(scene.fog as THREE.Fog).color.copy(bg)
     if (sun.current) { sun.current.position.set(Math.cos(a) * 30, Math.max(2, up * 40), 12); sun.current.intensity = 2.4 * lightK * (1 - W.rain * 0.5) }
-    // readable at dawn and dusk, properly dark at night (the sky, lit windows and street lights carry the night)
-    if (amb.current) amb.current.intensity = (up > -0.15 ? 0.8 : 0.42) + 0.7 * lightK
+    // readable at dawn and dusk, properly dark and cool at night (the sky, lit windows and street lights carry it)
+    const nightK = Math.max(0, Math.min(1, (-up - 0.05) * 4))
+    if (amb.current) {
+      amb.current.intensity = 0.8 + 0.7 * lightK - 0.5 * nightK
+      amb.current.color.set('#fff8ec').lerp(nightBlue, nightK)
+      amb.current.groundColor.set('#8a7f70').lerp(nightGround, nightK)
+    }
+    fillK.current = 1 - 0.55 * nightK
   })
   return (
     <>
@@ -154,7 +170,7 @@ function Ground() {
 }
 
 // ---------- buildings with cutaways ----------
-function Buildings({ layout, homeLot, homeKind, live, world, colliders, fill }: { layout: Layout; homeLot: Lot; homeKind: string; live: React.RefObject<LiveState>; world: React.RefObject<WorldNow>; colliders: React.RefObject<Collider[]>; fill: Filler[] }) {
+function Buildings({ layout, homeLot, homeKind, live, world, colliders, fill, insideLot }: { layout: Layout; homeLot: Lot; homeKind: string; live: React.RefObject<LiveState>; world: React.RefObject<WorldNow>; colliders: React.RefObject<Collider[]>; fill: Filler[]; insideLot: React.RefObject<number> }) {
   const { camera } = useThree()
   const items = useMemo(() => [
     ...layout.lots.filter(l => !['park', 'square', 'market', 'farm'].includes(l.kind)).map(l => {
@@ -181,7 +197,7 @@ function Buildings({ layout, homeLot, homeKind, live, world, colliders, fill }: 
     ray.origin.copy(camera.position)
     ray.direction.copy(L.head).sub(camera.position).normalize()
     for (const it of items) {
-      const inside = W.lotId === it.id && W.indoors
+      const inside = insideLot.current === it.id
       const between = !!ray.intersectBox(it.box, hit) && camera.position.distanceTo(hit) < dist - 0.2
       const target = inside ? 0.12 : between ? 0.18 : 1
       it.mat.opacity = damp(it.mat.opacity, target, 6, dt)
@@ -235,14 +251,17 @@ function Buildings({ layout, homeLot, homeKind, live, world, colliders, fill }: 
 }
 
 // ---------- inside her home and her workplace: a bed, a table, a stove, workstations ----------
-function Interiors({ layout, homeLot, world }: { layout: Layout; homeLot: Lot; world: React.RefObject<WorldNow> }) {
+function Interiors({ layout, homeLot, world, live }: { layout: Layout; homeLot: Lot; world: React.RefObject<WorldNow>; live: React.RefObject<LiveState> }) {
   const work = useRef<THREE.Group>(null)
+  const blanket = useRef<THREE.Mesh>(null)
+  const cover = useMemo(() => toon('#A65D57'), [])
   const wood = useMemo(() => toon('#9C7B5E'), [])
   const sheet = useMemo(() => toon('#E8E2D6'), [])
   const steel = useMemo(() => toon('#8F969C'), [])
   useFrame(() => {
     const W = world.current
     if (!W || !work.current) return
+    if (blanket.current) blanket.current.visible = live.current?.pose === 'lie' && W.lotId === homeLot.id
     const lot = layout.lots.find(l => l.id === W.workLotId)
     work.current.visible = !!lot && lot.kind !== 'market' && lot.kind !== 'farm'
     if (lot) work.current.position.set(lot.x, 0, lot.z)
@@ -254,6 +273,8 @@ function Interiors({ layout, homeLot, world }: { layout: Layout; homeLot: Lot; w
       <mesh position={[bed.pos.x, 0.3, bed.pos.z - 0.5]} material={wood}><boxGeometry args={[0.5, 0.3, 0.06]} /></mesh>
       <mesh position={[homeLot.x, 0.33, homeLot.z + 0.25]} material={wood}><cylinderGeometry args={[0.24, 0.24, 0.05, 16]} /></mesh>
       <mesh position={[stove.pos.x, 0.3, stove.pos.z - 0.12]} material={steel}><boxGeometry args={[0.3, 0.42, 0.22]} /></mesh>
+      {/* the blanket, over her when she sleeps */}
+      <mesh ref={blanket} position={[bed.pos.x, 0.36, bed.pos.z + 0.14]} material={cover}><boxGeometry args={[0.52, 0.1, 0.72]} /></mesh>
       <group ref={work}>
         {Array.from({ length: 8 }, (_, i) => {
           const gx = (i % 4 - 1.5) * 0.9, gz = (Math.floor(i / 4) - 0.5) * 1.1
@@ -562,14 +583,29 @@ function Traffic({ world }: { world: React.RefObject<WorldNow> }) {
 }
 
 // ---------- street lights, on at night ----------
-function StreetLights({ world }: { world: React.RefObject<WorldNow> }) {
+function StreetLights({ world, live }: { world: React.RefObject<WorldNow>; live: React.RefObject<LiveState> }) {
   const mat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#f6d58c' }), [])
   const pts = useMemo(() => STREETS.flatMap(x => [-12, -6, 0, 6, 12].map(z => [x + 0.75, z + 3] as const)), [])
-  useFrame(() => { const W = world.current; if (W) mat.color.set(W.hour > 18.2 || W.hour < 6.2 ? '#f6d58c' : '#8f8a80') })
+  const poles = useRef<(THREE.Group | null)[]>([])
+  const { camera } = useThree()
+  useFrame(() => {
+    const W = world.current, L = live.current
+    if (W) mat.color.set(W.hour > 18.2 || W.hour < 6.2 ? '#f6d58c' : '#8f8a80')
+    if (!L) return
+    // a pole between the camera and her steps out of the way (she is always visible)
+    const ax = camera.position.x, az = camera.position.z, bx = L.head.x - ax, bz = L.head.z - az, len2 = bx * bx + bz * bz
+    pts.forEach(([x, z], i) => {
+      const g = poles.current[i]
+      if (!g || len2 < 1e-6) return
+      const k = ((x - ax) * bx + (z - az) * bz) / len2
+      const d = Math.hypot(x - (ax + bx * k), z - (az + bz * k))
+      g.visible = !(k > 0 && k < 0.95 && d < 0.35)
+    })
+  })
   return (
     <group>
       {pts.map(([x, z], i) => (
-        <group key={i} position={[x, 0, z]}>
+        <group key={i} ref={el => { poles.current[i] = el }} position={[x, 0, z]}>
           <mesh position={[0, 0.9, 0]}><cylinderGeometry args={[0.03, 0.04, 1.8, 6]} /><meshToonMaterial color="#5f5a52" gradientMap={toonGradient()} /></mesh>
           <mesh position={[0, 1.82, 0]} material={mat}><sphereGeometry args={[0.09, 8, 6]} /></mesh>
         </group>
@@ -639,9 +675,11 @@ function NewsScreen({ homeLot, world }: { homeLot: Lot; world: React.RefObject<W
 }
 
 // a soft light that rides with the camera, so a face in close-up is readable even with the sun behind them
+// shared with Sky: the camera light dims at night so the night stays a night
+const fillK = { current: 1 }
 function FillLight() {
   const ref = useRef<THREE.PointLight>(null)
   const { camera } = useThree()
-  useFrame(() => { ref.current?.position.copy(camera.position) })
+  useFrame(() => { if (!ref.current) return; ref.current.position.copy(camera.position); ref.current.intensity = 1.6 * fillK.current })
   return <pointLight ref={ref} intensity={1.6} distance={9} decay={1.2} color="#fff4e6" />
 }
