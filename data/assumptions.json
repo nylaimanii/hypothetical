@@ -450,6 +450,16 @@
       "min": 0.02,
       "max": 0.5,
       "file": "physics.ts"
+    },
+    {
+      "id": "energy_capex_share",
+      "label": "share of the public energy budget that builds new power capacity (the rest is subsidies, fuel, grids and upkeep)",
+      "value": 0.5,
+      "unit": "share",
+      "source": "our guess, so world capacity grows ~1.5x in 20 years under 2026 policy (IEA: ~600 GW new capacity in 2024, demand +2-3% a year)",
+      "min": 0.1,
+      "max": 1,
+      "file": "physics.ts"
     }
   ]
 }

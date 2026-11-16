@@ -55,7 +55,10 @@ export function stepEnergy(w: World, fx: Record<string, LawEffects>, sectors: Re
     // most power investment is private: ~$1.4T/yr worldwide, ~1.2% of GDP (IEA World Energy Investment 2024,
     // https://www.iea.org/reports/world-energy-investment-2024). it shrinks with unrest; government money adds on top
     const privateCapex = 0.012 * rs.r.gdpUsd / 12 * clamp(1 - rs.r.unrest)
-    let capex = rs.spend.energy + privateCapex - om
+    // only part of a public energy budget builds new capacity; the rest is subsidies, fuel, grids and upkeep
+    // (ESTIMATE energy_capex_share; with all of it as capex the world built ~1,000 GW a year, vs ~600 GW real in 2024:
+    // https://www.iea.org/reports/renewables-2024)
+    let capex = A(w, 'energy_capex_share') * rs.spend.energy + privateCapex - om
     if (capex < 0) {
       // unfunded maintenance: plants fall out of service
       const unfunded = -capex / om
