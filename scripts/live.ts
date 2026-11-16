@@ -1,6 +1,8 @@
 // npm run live -- --runId <id> --seed <n> --constitution-file <path> [--agentId <id>] [--start-from <runId>:<tick>] [--batch]
 // live (default): 1 tick per --msPerTick, overrides from data/inject/<runId>, runWorld writes data/live/<runId>.json
 // --batch: runs at full speed with no live file (compare fills in missing worlds this way)
+// --whatif: a what-if world (data/whatif/<runId>.json). kept out of the run index and the agent's record, since
+//   its conditions were changed by hand
 import fs from 'node:fs'
 // env first, so keys are set before the sim modules load
 import '../src/lib/evolve/env'
@@ -21,6 +23,7 @@ async function main() {
   const from = arg('start-from')
   const startFrom = from ? { runId: from.slice(0, from.lastIndexOf(':')), tick: Number(from.slice(from.lastIndexOf(':') + 1)) } : undefined
   const batch = process.argv.includes('--batch')
+  const whatif = process.argv.includes('--whatif')
   try {
     if (batch) {
       const summary = await runWorld({ runId, generation: 0, seed, constitution, frameEvery: 12, ...(agentId ? { agentId } : {}) })
@@ -35,8 +38,10 @@ async function main() {
     // placeholder until the first frame; from then on runWorld owns data/live/<runId>.json
     if (!fs.existsSync(liveFile(runId))) writeJson(liveFile(runId), liveRecord(runId, seed, constitution, [], undefined, agentId))
     const summary = await runWorld({ runId, generation: 0, seed, constitution, overrideDir, live: { msPerTick }, frameEvery: 1, ...(agentId ? { agentId } : {}), ...(startFrom ? { startFrom } : {}) })
-    indexRun(summary, seed)
-    if (agentId) recordAgentRun(summary)
+    if (!whatif) {
+      indexRun(summary, seed)
+      if (agentId) recordAgentRun(summary)
+    }
     console.log(`live ${runId} ${summary.status} ${summary.endDate} score ${summary.score}`)
   } finally {
     fs.rmSync(pendingFile(runId), { force: true })

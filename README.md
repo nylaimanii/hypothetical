@@ -194,6 +194,10 @@ PDFs styled like the site go out over gmail and are always saved to `data/report
 | `GET /api/reality-check` | the latest monthly twin vs reality comparison, with flagged parameters (null before the first check) |
 | `GET /api/report/learning` | the cross-world story: every world in order, its cause of death, the lesson it added, and whether later worlds avoided that mistake |
 | `POST /api/branch` `{ runId, tick, agentId }` | `{ runId }`, a new live world from that moment, governed by that agent |
+| `POST /api/petition` `{ runId, tick, text }` | the petition, `status: 'pending'`. the core answers in the background from the world as it stood at that tick. until the sim supports petitions the answer changes nothing (`effect: null`, `simulated: false`). 503 in read-only |
+| `GET /api/petitions/[runId]` | every petition for that world, oldest first, with the core's answers |
+| `POST /api/whatif` `{ runId, tick, change }` | `{ runId, original, appliedAt, exact }`, a new world from that moment with one override flipped (`inject_event`, `veto_law` or `force_budget`), same agent, full speed. a budget forced on a decision tick lands one tick later, since the governor takes a forced budget back at its next decision. `exact: false` until the sim can replay the original decisions. 409 when the original was made by another sim version. 503 in read-only |
+| `GET /api/whatif/[id]` | the what-if and its original side by side (slim), the decisions that diverged from the flip on, and whether it is still running |
 | `GET /api/runs/[id]` | `RunRecord`; with `?slim=1` a `SlimRun` (no frames, yearly rows and decision rows) |
 | `POST /api/live/start` `{ constitution?, seed? }` | `{ runId }`, spawns a live world at 1 second per month |
 | `GET /api/live/[id]` | the live `RunRecord` so far |
