@@ -31,3 +31,15 @@ for (const f of requests) {
     assert.deepEqual(rec!.assumptions!.overridden, req.overridden, `the rerun ${runId} was asked for ${JSON.stringify(req.overridden)} but its record says it used ${JSON.stringify(rec!.assumptions!.overridden)}`)
   })
 }
+
+// the a/b view pairs a rerun with its source from tick 0 (GET /api/assumptions?runId= -> from), so both must be the
+// same world apart from the assumptions: same seed, same agent
+for (const f of requests) {
+  const runId = f.replace(/\.assumptions\.json$/, '')
+  const req = JSON.parse(fs.readFileSync(path.join(live, f), 'utf8')) as { sourceRunId?: string }
+  const rec = loadRecord(runId), src = req.sourceRunId ? loadRecord(req.sourceRunId) : null
+  test(`the rerun ${runId} has the seed and agent of the world it was rerun from`, { skip: rec && src ? false : `${runId} or its source ${req.sourceRunId} has no record` }, () => {
+    assert.equal(rec!.seed, src!.seed, `the rerun ${runId} ran on seed ${rec!.seed}, but its source ${req.sourceRunId} ran on seed ${src!.seed}, so the a/b view would compare two different worlds`)
+    assert.equal(rec!.agentId, src!.agentId, `the rerun ${runId} was governed by ${rec!.agentId}, but its source ${req.sourceRunId} by ${src!.agentId}`)
+  })
+}
