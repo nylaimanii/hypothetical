@@ -11,7 +11,8 @@ import { Num } from './bits'
 type Rule = { id: string; label: string; value: number; unit: string; source: string; min: number; max: number; file: string }
 type Clamp = { id: string; asked: number; used: number; min: number; max: number; text: string }
 type Used = { overridden: Record<string, number>; clamped: Clamp[]; changes: string[] }
-type Rerun = { runId: string; from: string; clamped: Clamp[]; changes: string[] }
+// waiting: the model is busy with another world (one at a time); null means the first frame comes in seconds
+type Rerun = { runId: string; from: string; clamped: Clamp[]; changes: string[]; waiting?: { behind: string; minutes: number; text: string } | null }
 
 const groupOf = (file: string) => file.replace(/\.ts$/, '').replace(/[-_]/g, ' ')
 const isUrl = (s: string) => /^https?:\/\//.test(s)
@@ -57,7 +58,11 @@ export default function Assumptions() {
       const res = await fetch('/api/rerun', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runId: run, assumptions }) })
       const body = await res.json().catch(() => null)
       if (!res.ok) setProblem(body?.error ?? (res.status === 503 ? 'this server cannot run worlds' : 'the rerun did not start'))
-      else setResult(body as Rerun)
+      else {
+        setResult(body as Rerun)
+        // the main site's waiting screen says the same while the rerun queues for the model
+        try { if (body?.waiting?.text) sessionStorage.setItem(`hyp:waiting:${body.runId}`, body.waiting.text) } catch { /* storage off */ }
+      }
     } catch { setProblem('the world runner is offline') } finally { setBusy(false) }
   }
 
@@ -138,6 +143,7 @@ export default function Assumptions() {
                 <p>rerunning <span className="font-mono text-[12px]">{result.from}</span> from 2026 on the same seed and agent{result.changes.length ? ':' : '.'}</p>
                 {result.changes.map((c, i) => <p key={i} className="text-ink/70">{c}</p>)}
                 {result.clamped.map((c) => <p key={c.id} className="text-ink/70">{c.text}</p>)}
+                {result.waiting && <p className="text-ink/70">{result.waiting.text}</p>}
                 <p className="pt-1"><Link href={`/?live=${encodeURIComponent(result.runId)}`} className="underline decoration-ink/30 underline-offset-2">watch the rerun</Link> <span className="text-ink/50">(kept off the leaderboard)</span></p>
               </div>
             ) : (

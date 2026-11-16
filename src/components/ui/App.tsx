@@ -49,13 +49,16 @@ async function openDefaultWorld() {
   if (first && useStore.getState().source === 'mock') { await openRun(first.runId); useStore.getState().setTabs([first.runId]) }
 }
 
+// a rerun queued behind another world: the server's own words, saved by /assumptions when it started the rerun
+const waitingText = (runId: string) => { try { return sessionStorage.getItem(`hyp:waiting:${runId}`) ?? 'the world is starting' } catch { return 'the world is starting' } }
+
 // until a real world is loaded: say what's happening instead of showing an invented one
 function Waiting() {
   const runsSource = useStore((s) => s.runsSource)
   const runs = useStore((s) => s.runs)
   const offline = useStore((s) => s.runnerOffline)
   const live = useStore((s) => s.liveRunId)
-  const text = offline ? 'the world runner is offline' : live && live !== 'sandbox' ? 'the world is starting' : runsSource === 'api' && runs.length === 0 ? 'no worlds have run yet' : 'loading worlds'
+  const text = offline ? 'the world runner is offline' : live && live !== 'sandbox' ? waitingText(live) : runsSource === 'api' && runs.length === 0 ? 'no worlds have run yet' : 'loading worlds'
   return <main className="flex h-screen w-screen items-center justify-center bg-bone"><p className="font-display text-[17px] text-ink/60">{text}</p></main>
 }
 
@@ -91,7 +94,14 @@ function useLive() {
         const fresh = s.overrides.filter((o) => !o.responded && answered.includes(o.id))
         if (fresh.length) { s.markResponded(fresh.map((o) => o.id)); s.setNotice('the core responded to your override') }
       } catch (e) {
-        if (e instanceof Offline) useStore.getState().setRunnerOffline(true)
+        // no such live world: say so and show the best real world instead of waiting forever
+        if (e instanceof Offline && e.message === 'not found') {
+          stop = true
+          const s = useStore.getState()
+          s.setLive(null)
+          s.setNotice('there is no live world with that id')
+          if (s.source === 'mock') openDefaultWorld()
+        } else if (e instanceof Offline) useStore.getState().setRunnerOffline(true)
       }
     }
     tick()
@@ -168,7 +178,8 @@ function useUrlState() {
     let lastKey = ''
     let lastWrite = 0
     const unsub = useStore.subscribe((s) => {
-      if (applying.current) return
+      // nothing real loaded yet (the waiting screen): don't put the placeholder in the url
+      if (applying.current || (s.source === 'mock' && !s.compare)) return
       const key = s.compare ? `cmp=${s.compare.agentIds.join(',')}` : `tabs=${(s.tabs.length ? s.tabs : [s.record.runId]).join(',')}&active=${s.record.runId}`
       const url = `?${key}&t=${Math.round(s.playhead)}`
       if (`${window.location.search}` === url) return
