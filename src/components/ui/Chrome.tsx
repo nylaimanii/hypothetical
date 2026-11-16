@@ -13,6 +13,7 @@ import { DirectorToggle, SoundControls, replayIntro } from './Extras'
 import { formatDay, formatTime, tickToDate } from '../world/time'
 import { openRun, startAB } from './worlds'
 import { mayPair } from './ab'
+import { AgentBoard } from './WhyItWon'
 
 export function StatusPill({ status }: { status: string }) {
   const danger = status === 'destroyed'
@@ -242,7 +243,10 @@ export function Leaderboard() {
         </div>
       )}
       {open && (
-        <ul className="scroll-thin min-h-0 max-h-[40vh] overflow-y-auto pb-2">
+        <div className="scroll-thin min-h-0 max-h-[60vh] overflow-y-auto">
+        <AgentBoard />
+        <div className="px-4 pb-1 pt-1 text-[10px] uppercase tracking-[0.12em] text-ink/45">worlds</div>
+        <ul className="pb-2">
           {sorted.map((r, i) => (
             <li key={r.runId}>
               <button onClick={() => load(r.runId)} className={`w-full px-4 py-1.5 text-left hover:bg-ink/5 ${record.runId === r.runId ? 'bg-ink/[0.07]' : ''}`}>
@@ -258,10 +262,12 @@ export function Leaderboard() {
                   <Num>{r.endDate}</Num>
                   <span>gen <Num>{r.generation}</Num></span>
                 </div>
+                {(r as { realBaseline?: { text: string } | null }).realBaseline?.text && <div className="ml-6 text-[11px] text-ink/55">{(r as { realBaseline?: { text: string } }).realBaseline!.text}</div>}
               </button>
             </li>
           ))}
         </ul>
+        </div>
       )}
     </div>
   )
