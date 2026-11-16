@@ -77,7 +77,9 @@ export function surfaceQuat(normal: THREE.Vector3, forward: THREE.Vector3, out =
 let toonTex: THREE.DataTexture | null = null
 export function toonGradient() {
   if (!toonTex) {
-    toonTex = new THREE.DataTexture(new Uint8Array([90, 90, 90, 255, 170, 170, 170, 255, 255, 255, 255, 255]), 3, 1, THREE.RGBAFormat)
+    // four steps: faces turned well away from the sun get almost nothing (true night, so moonlight and city
+    // lights carry the dark side); the terminator keeps the old 35% twilight band; the day side reads as before
+    toonTex = new THREE.DataTexture(new Uint8Array([14, 14, 14, 255, 90, 90, 90, 255, 170, 170, 170, 255, 255, 255, 255, 255]), 4, 1, THREE.RGBAFormat)
     toonTex.minFilter = THREE.NearestFilter
     toonTex.magFilter = THREE.NearestFilter
     toonTex.generateMipmaps = false
@@ -223,6 +225,9 @@ export const sceneRefs = {
   focus: new THREE.Vector3(0, 0, R),
   camDist: 50,
   sunDir: new THREE.Vector3(1, 0.3, 0.5).normalize(), // written by the key light
+  // how much of what the camera looks at is in night, 0..1 (written by the key light): windows, street
+  // lights, city glow and the sky all follow it
+  night: 0,
 }
 
 export const LAYERS = ['government', 'economy', 'tech', 'religion', 'media', 'family', 'biology', 'physics'] as const

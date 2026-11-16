@@ -59,21 +59,46 @@ export default function RealCities({ frame, agent }: { frame: Frame; agent?: Age
   const geo = useMemo(() => { const g = new RoundedBoxGeometry(1, 1, 1, 1, 0.14); g.translate(0, 0.5, 0); return g }, [])
   const roofGeo = useMemo(() => { const g = new RoundedBoxGeometry(1, 0.18, 1, 1, 0.06); g.translate(0, 0.09, 0); return g }, [])
   const grow = useMemo(() => ({ value: 0 }), [])
+  const night = useMemo(() => ({ value: 0 }), [])
   const mat = useMemo(() => {
     const m = new THREE.MeshToonMaterial({ gradientMap: toonGradient() })
     m.onBeforeCompile = (sh) => {
       sh.uniforms.uGrow = grow
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uGrow;').replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.y *= uGrow;')
+      sh.uniforms.uNight = night
+      // lit windows at night: rows of warm windows on the side faces, a different share lit in every block
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform float uGrow;\nvarying vec3 vUnit;\nvarying float vSide;\nvarying float vSeed;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvUnit = position;\nvSide = 1.0 - abs(normal.y);\nvSeed = float(gl_InstanceID);\ntransformed.y *= uGrow;')
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform float uNight;\nvarying vec3 vUnit;\nvarying float vSide;\nvarying float vSeed;\nfloat hash2(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }')
+        .replace('#include <opaque_fragment>', `#include <opaque_fragment>
+          float rowsN = 6.0;
+          vec2 uv = vec2(vUnit.y * rowsN, (vUnit.x + vUnit.z + 1.0) * 3.0);
+          vec2 cell = floor(uv), fr = fract(uv);
+          float win = step(0.28, fr.x) * step(fr.x, 0.78) * step(0.22, fr.y) * step(fr.y, 0.78);
+          float lit = step(hash2(cell + vSeed * 1.37), 0.5 + 0.35 * hash2(vec2(vSeed, 3.1)));
+          float m = win * lit * step(0.6, vSide) * step(0.06, vUnit.y);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(1.0, 0.76, 0.42) * 2.4, m * uNight);`)
     }
-    m.customProgramCacheKey = () => 'realcity'
+    m.customProgramCacheKey = () => 'realcity-night'
     return m
-  }, [grow])
+  }, [grow, night])
+  // a soft warm glow over each city at night
+  const glowGeo = useMemo(() => new THREE.CircleGeometry(1, 28), [])
+  const glowMat = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: { uNight: night },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = position.xy; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }',
+    fragmentShader: 'uniform float uNight; varying vec2 vUv; void main() { float d = length(vUv); float a = pow(max(0.0, 1.0 - d), 1.8) * 0.95 * uNight; gl_FragColor = vec4(vec3(1.0, 0.72, 0.4) * a, a); }',
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
+  }), [night])
+  const glows = useRef<THREE.InstancedMesh>(null)
   const roofMat = useMemo(() => new THREE.MeshToonMaterial({ color: style.accent, gradientMap: toonGradient() }), [style.accent])
 
   // fetch the index the first time we reach mid zoom; afterwards, the regional files for cities in view
   useFrame((_, dt) => {
     const f = midFade(sceneRefs.camDist, ZOOM_CLOSE - 2, ZOOM_FAR)
     grow.value = f
+    night.value = sceneRefs.night
     if (group.current) group.current.visible = f > 0.01
     if (f <= 0.01) return
     if (!index) { if (!wanted.current) { wanted.current = true; loadIndex().then(setIndex) } return }
@@ -140,6 +165,21 @@ export default function RealCities({ frame, agent }: { frame: Frame; agent?: Age
       }
     }
     B.count = n; Rf.count = r
+    // city glow: one soft disc per city, lying on the ground, sized by population
+    const G = glows.current
+    if (G) {
+      let g = 0
+      for (const c of visible) {
+        const up = latLonToVec3(c.lat, c.lon, 1).normalize()
+        const pos = up.clone().multiplyScalar(groundRadius(up) + 0.02)
+        const q2 = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), up)
+        const rad = 0.35 + Math.sqrt(c.pop / 1e6) * 0.16
+        G.setMatrixAt(g++, mtx.compose(pos, q2, s.set(rad, rad, rad)))
+      }
+      G.count = g
+      G.instanceMatrix.needsUpdate = true
+      G.computeBoundingSphere()
+    }
     B.instanceMatrix.needsUpdate = true; Rf.instanceMatrix.needsUpdate = true
     if (B.instanceColor) B.instanceColor.needsUpdate = true
     B.computeBoundingSphere(); Rf.computeBoundingSphere()
@@ -173,6 +213,7 @@ export default function RealCities({ frame, agent }: { frame: Frame; agent?: Age
     <group ref={group} visible={false}>
       <instancedMesh ref={bodies} args={[geo, mat, MAX_BLOCKS]} frustumCulled={false} {...events} />
       <instancedMesh ref={roofs} args={[roofGeo, roofMat, Math.ceil(MAX_BLOCKS / 4)]} frustumCulled={false} raycast={() => null} />
+      <instancedMesh ref={glows} args={[glowGeo, glowMat, 64]} frustumCulled={false} raycast={() => null} renderOrder={2} />
       <LabelPool items={items} opacity={() => midFade(sceneRefs.camDist, ZOOM_CLOSE, ZOOM_FAR)} />
     </group>
   )

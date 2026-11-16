@@ -138,7 +138,8 @@ export default function RoadsRail({ frame }: { frame: Frame }) {
   useEffect(() => () => { if (built) { built.roads.dispose(); built.rail.dispose(); built.dots.dispose() } }, [built])
   const group = useRef<THREE.Group>(null)
   // roads read as quiet seams in the clay, not a bright web
-  const roadMat = useMemo(() => new THREE.MeshLambertMaterial({ color: '#8C8377', transparent: true, depthWrite: false }), [])
+  // roads read as quiet seams in the clay by day; at night their street lights glow warm
+  const roadMat = useMemo(() => new THREE.MeshLambertMaterial({ color: '#8C8377', emissive: '#FFB45A', emissiveIntensity: 0, transparent: true, depthWrite: false }), [])
   const rail = useMemo(() => railMaterial(), [])
   const dotMat = useMemo(() => new THREE.ShaderMaterial({
     vertexShader: DOT_VS, fragmentShader: DOT_FS, transparent: true, depthWrite: false, toneMapped: false,
@@ -174,7 +175,8 @@ export default function RoadsRail({ frame }: { frame: Frame }) {
     ;(dotMat.uniforms.uSun.value as THREE.Vector3).copy(sceneRefs.sunDir)
     rail.u.uSun.value.copy(sceneRefs.sunDir)
     rail.u.uFade.value = fade
-    roadMat.opacity = fade * 0.55
+    roadMat.opacity = fade * (0.55 + 0.35 * sceneRefs.night)
+    roadMat.emissiveIntensity = 1.4 * sceneRefs.night
   })
   return (
     <group ref={group} visible={false}>
