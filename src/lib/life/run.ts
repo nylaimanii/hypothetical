@@ -395,3 +395,21 @@ export async function twinOnly(world: WorldEnv, seed: number) {
   const out = await simulate(world, seed, { kind: 'twin', lessons: [], telegram: false, lifeId: 'calibration' })
   return { p: out.p, score: scoreLife(out.p), milestones: out.milestones }
 }
+
+// the rule-only twin as a full life record (no files, no llm): the same shape the pages read. used by the
+// consistency checks to test many lives (partners, children, funerals) without waiting on the llm
+export async function twinRecord(world: WorldEnv, seed: number, continent?: Continent): Promise<LifeRecord> {
+  const lifeId = `twin-${world.id}-${seed}`
+  const t = await simulate(world, seed, { kind: 'twin', continent, lessons: [], telegram: false, lifeId })
+  const p = t.p
+  return {
+    lifeId, worldId: world.id, worldSeed: world.seed, worldScore: world.record.summary.score, worldStatus: world.record.summary.status, worldVersion: 'twin',
+    lifeNo: 0, seed, simVersion: LIFE_SIM_VERSION,
+    name: p.name, given: p.nameParts.given, sex: p.sex, look: p.look, temperament: p.temperament, childhood: p.marks,
+    birthTick: 0, deathTick: p.tick, deathAge: Math.round(ageOf(p) * 10) / 10, deathCause: p.deathCause,
+    birthplace: p.places[0], places: p.places, family: { quintile: p.quintile, story: '' },
+    kin: p.kin, snaps: t.snaps, milestones: t.milestones, events: p.events, journal: t.journal, env: t.env,
+    laws: [], score: scoreLife(p), twin: { score: scoreLife(p), deathAge: Math.round(ageOf(p) * 10) / 10, deathCause: p.deathCause ?? '' }, lessonsGiven: [], lessonsLeft: [], epitaph: '',
+    usage: { llmCalls: 0, tokens: 0, ruleFallbacks: t.ruleFallbacks }, provenance: { ...PROVENANCE }, createdAt: new Date(0).toISOString(), status: 'done',
+  }
+}
