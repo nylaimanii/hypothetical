@@ -2,8 +2,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import type { Budget, Frontier } from '@/lib/types'
-import { mockRuns } from '@/lib/mock/run'
-import { LEARNING_CURVE } from '@/lib/mock/v2'
 import { learningByLineage } from '@/lib/mock/agents'
 import type { Agent } from '@/lib/types'
 import { useCurrentFrame, useStore } from '../state/store'
@@ -209,7 +207,6 @@ function LineageCurve({ rows, agents }: { rows: { generation: number; bestScore:
 
 export function Leaderboard() {
   const runs = useStore((s) => s.runs)
-  const runsSource = useStore((s) => s.runsSource)
   const record = useStore((s) => s.record)
   const setRecord = useStore((s) => s.setRecord)
   const setNotice = useStore((s) => s.setNotice)
@@ -218,12 +215,10 @@ export function Leaderboard() {
   const agents = useStore((s) => s.agents)
   const [apiCurve, setApiCurve] = useState<{ generation: number; bestScore: number; lineage?: string }[] | null>(null)
   useEffect(() => { api.learning().then((c) => { if (Array.isArray(c) && c.length > 1) setApiCurve(c) }).catch(() => {}) }, [])
-  const curveMock = !apiCurve
-  const curve = apiCurve ?? (agents.length ? learningByLineage(agents) : LEARNING_CURVE.map((p) => ({ ...p, lineage: 'all' })))
+  // the learning curve from the api, else computed from the real agents; nothing when neither has data
+  const curve = apiCurve ?? (agents.length ? learningByLineage(agents) : [])
   if (!sorted.length) return null
   const load = async (id: string) => {
-    const mock = mockRuns().find((r) => r.runId === id)
-    if (runsSource === 'mock' && mock) return setRecord(mock, 'mock')
     try { setRecord(await api.run(id), 'api') } catch (e) { setNotice(e instanceof Offline ? 'runner offline' : 'could not load run') }
   }
   return (
@@ -231,13 +226,12 @@ export function Leaderboard() {
       <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between px-4 py-2.5 text-left">
         <span className="font-display text-[15px]">leaderboard</span>
         <span className="flex items-center gap-2">
-          {runsSource === 'mock' && <span className="font-mono text-[9px] tracking-[0.2em] text-ink/45">MOCK</span>}
           <span className="text-ink/40">{open ? '−' : '+'}</span>
         </span>
       </button>
       {open && curve.length > 1 && (
         <div className="px-4 pb-2">
-          <div className="flex items-baseline justify-between text-[10px] text-ink/50"><span>best score by generation{curveMock ? ' · mock' : ''}</span><Num>gen {Math.max(...curve.map((p) => p.generation))}</Num></div>
+          <div className="flex items-baseline justify-between text-[10px] text-ink/50"><span>best score by generation</span><Num>gen {Math.max(...curve.map((p) => p.generation))}</Num></div>
           <LineageCurve rows={curve} agents={agents} />
         </div>
       )}

@@ -1,11 +1,8 @@
 'use client'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import type { Agent, EvolveNow, Frame, RunSummary } from '@/lib/types'
-import { buildAgents } from '@/lib/mock/agents'
-import { mockRuns } from '@/lib/mock/run'
-import { makeMockEvolution } from '@/lib/mock/evolve'
 import { useStore } from '../state/store'
 import { normalizeFrame } from '../state/normalize'
 import { Num, Skel, fmt } from './bits'
@@ -28,24 +25,17 @@ function ago(iso: string) {
   if (s < 172800) return `${Math.round(s / 3600)} h ago`
   return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).toLowerCase()
 }
-type Mode = 'loading' | 'idle' | 'live' | 'mock'
+type Mode = 'loading' | 'idle' | 'live'
 
 // polls the runner; a 404 means nothing is evolving right now
-function useEvolveNow(mock: boolean) {
+function useEvolveNow() {
   const [mode, setMode] = useState<Mode>('loading')
   const [now, setNow] = useState<EvolveNow | null>(null)
   const [heartbeat, setHeartbeat] = useState<string | null>(null)
   const [staleBeat, setStaleBeat] = useState(false)
-  const sim = useRef<ReturnType<typeof makeMockEvolution> | null>(null)
   useEffect(() => {
     let stop = false
     const tick = async () => {
-      if (mock) {
-        sim.current ??= makeMockEvolution()
-        setNow(sim.current.next())
-        setMode('mock')
-        return
-      }
       try {
         const res = await fetch('/api/evolve/now', { cache: 'no-store' })
         if (stop) return
@@ -65,7 +55,7 @@ function useEvolveNow(mock: boolean) {
     tick()
     const id = setInterval(tick, POLL_MS)
     return () => { stop = true; clearInterval(id) }
-  }, [mock])
+  }, [])
   return { mode, now, heartbeat, staleBeat }
 }
 
@@ -93,15 +83,13 @@ function RecentRow({ r, agents }: { r: RunSummary; agents: Agent[] }) {
 }
 
 export default function MissionControl() {
-  const [mock, setMock] = useState(false)
-  const { mode, now, heartbeat, staleBeat } = useEvolveNow(mock)
+  const { mode, now, heartbeat, staleBeat } = useEvolveNow()
   // re-render once a minute so "last seen" keeps counting while offline
   const [, setClock] = useState(0)
   useEffect(() => { const id = setInterval(() => setClock((n) => n + 1), 60000); return () => clearInterval(id) }, [])
   const long = staleBeat
   const storeAgents = useStore((s) => s.agents)
-  // the mock feed uses the mock roster; the live feed uses the runner's
-  const agents = useMemo(() => (mock ? buildAgents(mockRuns()) : storeAgents), [mock, storeAgents])
+  const agents = storeAgents
   useEffect(() => { loadAgents() }, [])
 
   // what the globe shows: the live world, or a dying one held for its moment
@@ -144,7 +132,6 @@ export default function MissionControl() {
           <h1 className="font-display text-2xl">mission control</h1>
           {mode === 'live' && <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.2em]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ink" />live</span>}
           {mode === 'idle' && heartbeat && <span className={`font-mono text-[11px] ${long ? 'text-ember' : 'text-ink/55'}`}>runner offline · last seen {ago(heartbeat)}</span>}
-          {mode === 'mock' && <span className="rounded border border-dashed border-ink/40 px-1.5 font-mono text-[10px] tracking-[0.2em] text-ink/60">MOCK</span>}
         </div>
         {now && <div className="text-[13px] text-ink/70">generation <Num className="text-ink">{now.generation}</Num> · world <Num className="text-ink">{now.worldIndex}</Num> of <Num className="text-ink">{now.worldsInGen}</Num></div>}
       </header>
@@ -209,7 +196,6 @@ export default function MissionControl() {
                   <p className="max-w-sm text-[13px] text-ink/60">no evolution is running right now. start one from the runner and this screen follows it live.</p>
                 </>
               )}
-              <button onClick={() => setMock(true)} className="mt-2 rounded-full border border-ink/30 px-4 py-1.5 text-[12px] hover:bg-ink hover:text-bone">preview with mock data</button>
             </div>
           )}
         </section>

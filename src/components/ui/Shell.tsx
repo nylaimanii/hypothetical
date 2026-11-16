@@ -23,7 +23,6 @@ import { usePhone } from './usePhone'
 import { lifeHref, lifeNear, useLives } from '../state/useLives'
 import { StoryLine, useLinks } from './chains'
 
-const DEV = process.env.NODE_ENV === 'development'
 
 // ---------- top left: just text ----------
 export function WorldTitle() {
@@ -44,7 +43,6 @@ export function WorldTitle() {
         <span className={`h-2 w-2 rounded-full ${dot}`} title={frame.status} aria-label={frame.status} />
         {compare ? <span>comparing <Num>{compare.records.length}</Num> worlds</span> : <span>{agent?.name ?? prettyAgent(record.agentId)} <span className="text-ink/55">· world #<Num>{worldNumber(record.runId, runs)}</Num></span></span>}
         {source === 'live' && !compare && <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink/60">live</span>}
-        {DEV && source === 'mock' && !compare && <span className="rounded border border-dashed border-ink/35 px-1 font-mono text-[9px] tracking-[0.2em] text-ink/50">MOCK</span>}
       </div>
       <Num className="mt-0.5 block text-[12.5px] text-ink/65">{formatDay(d)} · {formatTime(d)}</Num>
       {!compare && record.branchedFrom && (

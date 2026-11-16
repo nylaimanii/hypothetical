@@ -42,10 +42,27 @@ function usePlayback() {
   }, [])
 }
 
+// the first world on the leaderboard (the api lists the best first), once the list has answered
+async function openDefaultWorld() {
+  for (let i = 0; i < 100 && useStore.getState().runsSource !== 'api' && !useStore.getState().runnerOffline; i++) await new Promise((r) => setTimeout(r, 100))
+  const first = useStore.getState().runs[0]
+  if (first && useStore.getState().source === 'mock') { await openRun(first.runId); useStore.getState().setTabs([first.runId]) }
+}
+
+// until a real world is loaded: say what's happening instead of showing an invented one
+function Waiting() {
+  const runsSource = useStore((s) => s.runsSource)
+  const runs = useStore((s) => s.runs)
+  const offline = useStore((s) => s.runnerOffline)
+  const text = offline ? 'the world runner is offline' : runsSource === 'api' && runs.length === 0 ? 'no worlds have run yet' : 'loading worlds'
+  return <main className="flex h-screen w-screen items-center justify-center bg-bone"><p className="font-display text-[17px] text-ink/60">{text}</p></main>
+}
+
 function useRuns() {
   const setRuns = useStore((s) => s.setRuns)
   useEffect(() => {
-    api.runs().then((runs) => { if (Array.isArray(runs) && runs.length) setRuns(runs, 'api') }).catch(() => {})
+    // the real run list, even when empty (no mock worlds); offline is said, not papered over
+    api.runs().then((runs) => setRuns(Array.isArray(runs) ? runs : [], 'api')).catch(() => useStore.getState().setRunnerOffline(true))
   }, [setRuns])
 }
 
@@ -121,7 +138,9 @@ function useUrlState() {
         const run = q.get('active') ?? q.get('run') ?? tabs[0]
         if (tabs.length) useStore.getState().setTabs(run && !tabs.includes(run) ? [...tabs, run] : tabs)
         if (run && run !== useStore.getState().record.runId) await openRun(run, t)
-        if (!useStore.getState().tabs.length) useStore.getState().setTabs([useStore.getState().record.runId])
+        // no world in the url: open the best real world once the run list is in (never the placeholder)
+        if (!run && useStore.getState().source === 'mock') await openDefaultWorld()
+        if (!useStore.getState().tabs.length && useStore.getState().source !== 'mock') useStore.getState().setTabs([useStore.getState().record.runId])
       }
       if (t !== undefined && isFinite(t)) useStore.getState().setPlayhead(t)
       // ?place=<country>: fly to that country (iso3 code or name, any case), used by the one-life site's world button
@@ -207,6 +226,7 @@ export default function App() {
   const globeOnly = useStore((s) => s.globeOnly)
   useEffect(() => { loadAgents() }, [])
   const compare = useStore((s) => s.compare)
+  const source = useStore((s) => s.source)
   const setLive = useStore((s) => s.setLive)
   const liveRunId = useStore((s) => s.liveRunId)
   useEscape()
@@ -237,6 +257,8 @@ export default function App() {
     }
   }
 
+  // nothing real loaded yet: no globe, no panels (they'd show the placeholder)
+  if (source === 'mock' && !compare) return <Waiting />
   return (
     <main className="relative h-screen w-screen overflow-hidden">
       {compare ? <CompareView /> : <Globe />}

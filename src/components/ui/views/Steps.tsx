@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import type { Step } from '@/lib/types'
-import { mockSteps, worldSteps, type WorldStep } from '@/lib/mock/steps'
+import { worldSteps, type WorldStep } from '@/lib/mock/steps'
 import { useStore } from '../../state/store'
 import { Num } from '../bits'
 import { yearOfTick, type ViewWorld } from './shared'
@@ -64,8 +64,8 @@ function useRecipe(worlds: ViewWorld[]) {
       .catch(() => {})
     return () => { stop = true }
   }, [ids])
-  const fallback = useMemo(() => mockSteps(worlds.map((w) => w.record)), [worlds])
-  return api && api.ids === ids ? { steps: api.steps, mock: false } : { steps: fallback, mock: true }
+  // the recipe only from the api (no invented confidence): nothing until it answers
+  return api && api.ids === ids ? { steps: api.steps, mock: false } : { steps: [] as Step[], mock: false }
 }
 
 export default function Steps({ worlds }: { worlds: ViewWorld[] }) {

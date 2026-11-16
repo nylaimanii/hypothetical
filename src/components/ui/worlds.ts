@@ -1,11 +1,9 @@
 'use client'
 import type { Agent, CompareResponse, Divergence, HallEntry, RunRecord, SlimRun } from '@/lib/types'
-import { mockRuns } from '@/lib/mock/run'
-import { buildAgents, computeDivergences, computeHall } from '@/lib/mock/agents'
 import { useStore } from '../state/store'
 import { Offline } from './api'
 import { normalizeRecord } from '../state/normalize'
-import { lazyMock, loadInitial, metaFromSlim, shellFromSlim, slimFromMock, slimFromRecord } from '../state/frames'
+import { loadInitial, metaFromSlim, shellFromSlim, slimFromRecord } from '../state/frames'
 
 async function get<T>(url: string): Promise<T> {
   let res: Response
@@ -27,10 +25,8 @@ async function fromSlim(s: SlimRun, center: number): Promise<RunRecord | null> {
 }
 
 // prefer the slim api (long runs load frames lazily); fall back to a full record
-export async function fetchRecord(runId: string, center = 0): Promise<{ rec: RunRecord; source: 'mock' | 'api' } | null> {
-  const mock = mockRuns().find((r) => r.runId === runId)
-  if (mock && lazyMock()) { const rec = await fromSlim(slimFromMock(mock), center); return rec ? { rec, source: 'api' } : null }
-  if (mock) { useStore.getState().setSlim(runId, slimFromRecord(mock)); return { rec: mock, source: 'mock' } }
+// every world shown comes from the records (no mock worlds: an api that has nothing means nothing is shown)
+export async function fetchRecord(runId: string, center = 0): Promise<{ rec: RunRecord; source: 'api' } | null> {
   try {
     const body = await get<SlimRun | RunRecord>(`/api/runs/${encodeURIComponent(runId)}?slim=1`)
     if (isSlim(body)) { const rec = await fromSlim(body, center); if (rec) return { rec, source: 'api' } }
@@ -63,17 +59,17 @@ export async function loadAgents() {
   const s = useStore.getState()
   try {
     const agents = await get<Agent[]>('/api/agents')
-    if (Array.isArray(agents) && agents.length) { s.setAgents(agents, 'api'); return }
-  } catch { /* fall back */ }
-  s.setAgents(buildAgents(mockRuns()), 'mock')
+    if (Array.isArray(agents)) { s.setAgents(agents, 'api'); return }
+  } catch { /* offline: nothing to show */ }
+  s.setAgents([], 'api')
 }
 
 export async function loadHall(): Promise<{ entries: HallEntry[]; mock: boolean }> {
   try {
     const entries = await get<HallEntry[]>('/api/hall')
-    if (Array.isArray(entries) && entries.length) return { entries, mock: false }
-  } catch { /* fall back */ }
-  return { entries: computeHall(mockRuns()), mock: true }
+    if (Array.isArray(entries)) return { entries, mock: false }
+  } catch { /* offline: nothing to show */ }
+  return { entries: [], mock: false }
 }
 
 // one world per agent, on the same seed when possible. the api answers slim; frames load per globe
@@ -99,17 +95,7 @@ async function compareInner(agentIds: string[], tick: number) {
       return rec
     }))
     records = built.filter(Boolean) as RunRecord[]
-  } catch { /* fall back to mock */ }
-  if (records.length < 2) {
-    const pool = mockRuns()
-    const bySeed = new Map<number, number>()
-    for (const r of pool) bySeed.set(r.seed, (bySeed.get(r.seed) ?? 0) + 1)
-    const pickFor = (id: string) => pool.filter((r) => r.agentId === id).sort((a, b) => (bySeed.get(b.seed) ?? 0) - (bySeed.get(a.seed) ?? 0))[0]
-    const picked = ids.map(pickFor).filter(Boolean) as RunRecord[]
-    if (lazyMock()) records = (await Promise.all(picked.map((r) => fromSlim(slimFromMock(r), tick)))).filter(Boolean) as RunRecord[]
-    else { records = picked; for (const r of picked) useStore.getState().setSlim(r.runId, slimFromRecord(r)) }
-    divergences = computeDivergences(picked)
-  }
+  } catch { /* offline: nothing to compare */ }
   if (records.length < 2) { s.setNotice(note ?? 'need at least two agents with worlds to compare'); return false }
   s.setCompare({ agentIds: records.map((r) => r.agentId), records, divergences })
   s.setPlayhead(tick)

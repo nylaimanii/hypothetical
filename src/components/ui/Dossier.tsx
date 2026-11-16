@@ -8,7 +8,7 @@ import { localHour, utcHourOf, worldDate } from '../world/time'
 import { useState } from 'react'
 import type { Budget, Citizen, Emotion, Frame, Law, Layer, Migration, Precedent, Region, RunRecord, Why } from '@/lib/types'
 import { EMOTIONS, valence } from '@/lib/mock/mood'
-import { MOON_STAGES, mockRuns } from '@/lib/mock/run'
+import { MOON_STAGES } from '@/lib/mock/run'
 import Emblem from './Emblem'
 import { openRun } from './worlds'
 import { layerMetric } from '../world/lib'
@@ -621,8 +621,9 @@ function AgentDossier({ id }: { id: string }) {
   if (!a) return null
   const parents = a.parentIds.map((p) => agents.find((x) => x.id === p)).filter(Boolean) as typeof agents
   const children = agents.filter((x) => x.parentIds.includes(a.id))
-  const summaries = [...mockRuns().map((r) => r.summary), ...runs].filter((r, i, all) => (r.agentId === a.id || a.runIds.includes(r.runId)) && all.findIndex((x) => x.runId === r.runId) === i)
-  const records = mockRuns().filter((r) => r.agentId === a.id)
+  const summaries = runs.filter((r, i, all) => (r.agentId === a.id || a.runIds.includes(r.runId)) && all.findIndex((x) => x.runId === r.runId) === i)
+  // lessons from this agent's real worlds that are loaded (open tabs)
+  const records = Object.values(useStore.getState().tabRecords).filter((r) => r.agentId === a.id)
   const applied = new Set(records.flatMap((r) => r.frames.flatMap((f) => f.decision?.lessonsApplied ?? [])))
   const known = records.flatMap((r) => r.lessons ?? []).filter((l, i, all) => all.findIndex((x) => x.id === l.id) === i)
   return (

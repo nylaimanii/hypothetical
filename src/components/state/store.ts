@@ -3,7 +3,6 @@ import { useMemo } from 'react'
 import { create } from 'zustand'
 import type { Agent, BaselineFrame, DecisionRow, Divergence, Frame, Override, RunRecord, RunSummary, WorldEvent, Layer, YearRow, Country } from '@/lib/types'
 import { mockRuns, stageFor } from '@/lib/mock/run'
-import { moodFrom } from '@/lib/mock/mood'
 import { normalizeRecord } from './normalize'
 import { citizensAt, requirementsAt } from '@/lib/sim/replay-pure'
 import { useCountriesYear } from './usePlaces'
@@ -171,9 +170,11 @@ export const TICKS_PER_SECOND = 3
 export const speedLabel = (speed: number) => { const months = TICKS_PER_SECOND * speed; return months < 12 ? `${months} mo/s` : `${months / 12} y/s` }
 
 export const useStore = create<State>((set) => ({
+  // a placeholder until a real world loads (source 'mock' means "nothing loaded yet": the app shows no world
+  // until a real record arrives, see App). runsSource 'mock' means the run list hasn't answered yet
   record: mockRuns()[0],
   source: 'mock',
-  runs: mockRuns().map((r) => r.summary),
+  runs: [],
   runsSource: 'mock',
   playhead: 0,
   playing: false,
@@ -307,10 +308,8 @@ export function baselineAsFrame(rec: RunRecord, idx: number): Frame {
     const br = b?.regions.find((x) => x.id === r.id)
     return br ? { ...r, ...br } : r
   })
-  const citizens = withRoster(rec, f0).citizens.map((c) => {
-    const reg = regions.find((r) => r.id === c.regionId)
-    return reg ? { ...c, mood: moodFrom(Math.max(0, Math.min(1, 0.85 - reg.unrest * 0.9 + ((c.personalitySeed % 100) / 100 - 0.5) * 0.3))) } : c
-  })
+  // the twin has no recorded people: show none (the old tick-0 roster with made-up moods contradicted the real one)
+  const citizens: Frame['citizens'] = []
   const progress = b?.moonProgress ?? 0
   return { ...f0, tick: f.tick, date: f.date, regions, citizens, moonProgress: progress, moonStage: stageFor(progress), status: b?.status ?? 'alive', newEvents: [], decision: undefined }
 }
