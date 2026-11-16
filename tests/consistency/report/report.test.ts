@@ -66,11 +66,13 @@ for (const rec of recs) {
 
   const dead = autopsy(rec)
   test(`the autopsy of ${rec.runId} only names links that are in its record, at their own dates`, { skip: dead ? false : `${rec.runId} did not die` }, () => {
-    const links = new Map(rec.frames.flatMap(f => f.causes ?? []).map(l => [l.id, l]))
-    const byWhat = new Set([...links.values()].map(l => `${l.tick}|${l.what.replace(/[.\s]+$/, '')}`))
+    // the sim's own autopsy (5.10.2+) is the source when the record has one; older records are checked against their cause links
+    const sim = (rec as RunRecord & { autopsy?: { chain: { tick: number; what: string }[] } }).autopsy
+    const source = sim?.chain?.length ? sim.chain : rec.frames.flatMap(f => f.causes ?? [])
+    const byWhat = new Set(source.map(l => `${l.tick}|${l.what.replace(/[.\s]+$/, '')}`))
     for (const c of dead!.chain) {
       assert.equal(c.date, dateOfTick(c.tick), `the autopsy of ${rec.runId} dates "${c.what}" ${c.date}, but its tick is ${dateOfTick(c.tick)}`)
-      assert.ok(byWhat.has(`${c.tick}|${c.what}`), `the autopsy of ${rec.runId} says "${c.what}" happened in ${c.date}, but no cause link in the record says that`)
+      assert.ok(byWhat.has(`${c.tick}|${c.what}`), `the autopsy of ${rec.runId} says "${c.what}" happened in ${c.date}, but neither the record's autopsy nor its cause links say that`)
     }
     assert.equal(dead!.died, dateOfTick(last(rec).tick), `the autopsy of ${rec.runId} says it died ${dead!.died}, but its last frame is ${dateOfTick(last(rec).tick)}`)
   })

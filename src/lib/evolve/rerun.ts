@@ -8,6 +8,7 @@ import path from 'node:path'
 import type { RunRecord } from '../types'
 import { ASSUMPTIONS, assumptionsFor, type Clamped } from '../sim/assumptions'
 import { dirs } from './store'
+import { ollamaQueue } from './lifegap'
 
 export type RerunPlan = {
   overrides: Record<string, number>
@@ -49,4 +50,22 @@ export function saveRequest(runId: string, plan: RerunPlan, sourceRunId: string)
   fs.writeFileSync(requestFile(runId), JSON.stringify({ sourceRunId, asked: plan.overrides, overridden: plan.overridden, clamped: plan.clamped, at: new Date().toISOString() }))
   fs.writeFileSync(overridesFile(runId), JSON.stringify(plan.overridden))
   return overridesFile(runId)
+}
+
+// what a new rerun (or any live world) waits for before its first frame: worlds hold ollama for their whole run,
+// so it starts when the world holding the lock finishes (b's fair queue then takes the oldest ticket first). the
+// estimate is that world's remaining ticks at its own pace so far. null when ollama is free
+export function waitingFor(now = Date.now()): { behind: string; minutes: number | null; text: string } | null {
+  const holder = ollamaQueue().holder
+  if (!holder) return null
+  let tick: number | null = null
+  try {
+    const n = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'data', 'evolve-now.json'), 'utf8')) as { runId?: string; latestFrame?: { tick?: number } }
+    if (n.runId === holder.label && typeof n.latestFrame?.tick === 'number') tick = n.latestFrame.tick
+  } catch { /* no evolution running */ }
+  const horizon = /-full-s\d+$/.test(holder.label) ? 1200 : 600
+  const elapsed = (now - Date.parse(holder.since)) / 60000
+  const minutes = tick && tick > 0 && elapsed > 0 ? Math.max(1, Math.round(((horizon - tick) / tick) * elapsed)) : null
+  const what = /^(g\d+|div)-/.test(holder.label) ? `the evolution world ${holder.label}` : /^life/.test(holder.label) ? 'a chosen life' : holder.label
+  return { behind: holder.label, minutes, text: `waiting for ${what} to finish${minutes ? `, about ${minutes} min` : ''} (one world uses the model at a time)` }
 }

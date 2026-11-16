@@ -3,11 +3,11 @@ import { z } from 'zod'
 import { isReadOnly, loadRecord, runnerOffline, SAFE_ID, writeJson } from '@/lib/evolve/store'
 import { liveFile, liveRecord } from '@/lib/evolve/live'
 import { newRunId, runnerAvailable, spawnRunner } from '@/lib/evolve/spawn'
-import { planRerun, saveRequest } from '@/lib/evolve/rerun'
+import { planRerun, saveRequest, waitingFor } from '@/lib/evolve/rerun'
 
 const Body = z.object({ runId: z.string().regex(SAFE_ID), assumptions: z.record(z.string(), z.unknown()), msPerTick: z.number().int().min(0).max(10_000).optional() })
 
-// POST /api/rerun { runId, assumptions: { id: value }, msPerTick? } -> { runId, overridden, clamped, changes }
+// POST /api/rerun { runId, assumptions: { id: value }, msPerTick? } -> { runId, from, overridden, clamped, changes, waiting }
 // local only (503 on the deployed site). reruns that world from 2026 on the same seed, with the same agent and
 // constitution, and only the named rules changed (GET /api/assumptions lists them). an unknown rule or a value that
 // is not a number is a 400 with the reason; a value outside a rule's range is clamped and said back in `clamped`
@@ -32,5 +32,6 @@ export async function POST(req: Request) {
   } catch (e) {
     return Response.json({ error: `could not start the rerun: ${(e as Error).message}` }, { status: 500 })
   }
-  return Response.json({ runId, from: source.runId, overridden: plan.overridden, clamped: plan.clamped, changes: plan.changes })
+  // why the first frame may take a while: the world that holds the model right now, and about how long it has left
+  return Response.json({ runId, from: source.runId, overridden: plan.overridden, clamped: plan.clamped, changes: plan.changes, waiting: waitingFor() })
 }

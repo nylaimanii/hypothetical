@@ -491,3 +491,21 @@ test('autopsy walks the cause chain back from the recorded cause, and explainGap
   assert.deepEqual(g.decisive, ['meridian iii put 25% of the budget into food, halcyon 10%', 'meridian iii passed a food reserve law in 2027, halcyon never did'])
   assert.equal(g.consequence, 'halcyon lost 1 region to revolt by 2028')
 })
+
+test("autopsy reads the sim's own record.autopsy when there is one, and says when a step is only linked by timing", async () => {
+  const { autopsy, autopsyLines } = await import('./evidence')
+  const region = { id: 'na', name: 'North Africa', population: 1e9, visual: { damage: { kind: 'none', level: 0 } } }
+  const f = (tick: number, status = 'alive') => ({ tick, date: '', regions: [region], laws: [], newEvents: [], humanCost: { deaths: 1e6, famineDeaths: 0, unrestDeaths: 1e6, displaced: 0, approval: 0.1 }, status, decision: tick === 0 ? { rationale: 'security keeps order' } : undefined })
+  const rec = {
+    runId: 'w', frames: [f(0), f(36, 'destroyed')], summary: { status: 'destroyed', causeOfDeath: 'North Africa revolted.' },
+    autopsy: { tick: 36, date: '2029-11', death: 'North Africa revolted.', chain: [
+      { tick: 0, date: '2026-11', place: 'the world', what: 'the core raised security from 12% to 40% of the budget', because: 'its decision', value: 0.4, byWhom: 'core', how: 'timing' },
+      { tick: 30, date: '2029-05', place: 'North Africa', what: 'North Africa is in open revolt', because: 'unrest stayed above 0.65 for six months', value: 1, byWhom: 'people', how: 'cause' },
+    ] },
+  } as never
+  const a = autopsy(rec)!
+  assert.equal(a.died, '2029-11')
+  assert.deepEqual(a.chain.map(c => c.what), ['the core raised security from 12% to 40% of the budget', 'North Africa is in open revolt'])
+  assert.match(a.chain[0].because, /linked by timing, not proven$/)
+  assert.match(autopsyLines(a).join('\n'), /the core's call, 2026-11: the core raised security from 12% to 40% of the budget \(linked by timing, not proven\)\. its reasoning that year: "security keeps order"/)
+})

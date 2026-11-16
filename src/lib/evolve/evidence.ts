@@ -30,9 +30,15 @@ export type Autopsy = {
 }
 type Link = CauseLink & { sig?: number }
 
+// b's own autopsy in the record (sim 5.10.2+): the chain from the core's first decision to the death. one source:
+// when it is there, it is the autopsy; the walk below is only for older records
+type SimAutopsy = { tick: number; date: string; death: string; chain: { tick: number; date: string; place: string; what: string; because: string; value: number; byWhom: string; how: 'cause' | 'timing'; lawId?: string }[] }
+
 export function autopsy(rec: RunRecord): Autopsy | null {
   const last = lastFrame(rec)
   if (!last || (rec.summary.status !== 'destroyed' && last.status !== 'destroyed')) return null
+  const sim = (rec as RunRecord & { autopsy?: SimAutopsy }).autopsy
+  if (sim?.chain?.length) return fromSim(rec, sim, last)
   const links = new Map<string, Link>()
   for (const f of rec.frames) for (const l of (f.causes ?? []) as Link[]) links.set(l.id, l)
   const all = [...links.values()]
@@ -83,6 +89,44 @@ export function autopsy(rec: RunRecord): Autopsy | null {
     }, []),
     decision,
     lost: [...lost].map(([kind, v]) => ({ kind, regions: v.regions, since: dateOfTick(v.since) })),
+    cost: c ? { deaths: c.deaths, famineDeaths: c.famineDeaths, unrestDeaths: c.unrestDeaths, displaced: c.displaced } : null,
+  }
+}
+
+function lostRegions(rec: RunRecord, last: Frame): Autopsy['lost'] {
+  const lost = new Map<string, { regions: string[]; since: number }>()
+  for (const r of last.regions) {
+    const d = r.visual?.damage
+    if (!d || d.kind === 'none' || d.level < 1) continue
+    const first = rec.frames.filter(f => f.regions.find(x => x.id === r.id)?.visual?.damage?.kind === d.kind && (f.regions.find(x => x.id === r.id)?.visual?.damage?.level ?? 0) >= 0.5).sort((a, b) => a.tick - b.tick)[0]
+    const e = lost.get(d.kind) ?? { regions: [], since: -1 }
+    e.regions.push(r.name)
+    e.since = Math.max(e.since, first?.tick ?? last.tick)
+    lost.set(d.kind, e)
+  }
+  return [...lost].map(([kind, v]) => ({ kind, regions: v.regions, since: dateOfTick(v.since) }))
+}
+
+function fromSim(rec: RunRecord, sim: SimAutopsy, last: Frame): Autopsy {
+  const chain: Autopsy['chain'] = []
+  for (const l of sim.chain) {
+    const e = { tick: l.tick, date: l.date || dateOfTick(l.tick), place: l.place, what: stripEnd(l.what), because: stripEnd(l.because) + (l.how === 'timing' ? ', linked by timing, not proven' : ''), byWhom: l.byWhom, again: [] as string[] }
+    const same = chain.find(x => x.place === e.place && x.what === e.what)
+    if (same) same.again.push(e.date)
+    else chain.push(e)
+  }
+  // the core's call: the decision the chain starts from
+  const first = sim.chain.find(l => l.byWhom === 'core')
+  const decided = first ? rec.frames.filter(f => f.decision && f.tick <= first.tick).sort((a, b) => b.tick - a.tick)[0]?.decision : undefined
+  const said = decided?.reasoning?.expected || decided?.rationale || null
+  const c = last.humanCost ?? rec.summary.humanCost
+  return {
+    runId: rec.runId, died: sim.date || dateOf(last),
+    kind: [...last.newEvents].sort((x, y) => y.severity - x.severity)[0]?.kind ?? 'collapse',
+    cause: sim.death ?? rec.summary.causeOfDeath ?? null,
+    chain,
+    decision: first ? { tick: first.tick, date: first.date || dateOfTick(first.tick), what: lower(stripEnd(first.what)) + (first.how === 'timing' ? ' (linked by timing, not proven)' : ''), said: said ? stripEnd(said).slice(0, 160) : null } : null,
+    lost: lostRegions(rec, last),
     cost: c ? { deaths: c.deaths, famineDeaths: c.famineDeaths, unrestDeaths: c.unrestDeaths, displaced: c.displaced } : null,
   }
 }
