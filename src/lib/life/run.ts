@@ -5,6 +5,8 @@ import path from 'node:path'
 import { normal, pickWeighted, stream } from '../sim/rng'
 import { provider, withUsage } from '../agent/llm'
 import { WorldEnv } from './env'
+import { worldBrief } from './brief'
+import { yearOf } from './facts'
 import { pickBirthplace, nameFor, type Continent } from './births'
 import { RESEARCH as R, PROVENANCE } from './research'
 import { SCHEDULE, TRIGGERS, lateChildCheck, type MilestoneDef, type Option } from './milestones'
@@ -106,6 +108,7 @@ type Mode = { kind: 'self' | 'twin'; continent?: Continent; lessons: LifeLesson[
 type SimOut = { p: Person; snaps: MonthSnap[]; milestones: Milestone[]; journal: JournalLine[]; env: EnvYear[]; lessonsGiven: Set<string>; ruleFallbacks: number }
 
 async function simulate(world: WorldEnv, seed: number, mode: Mode): Promise<SimOut> {
+  const W = world // (the milestone helper below shadows `world` with the month's news line)
   const p = createPerson(world, seed, mode.continent)
   const snaps: MonthSnap[] = [], milestones: Milestone[] = [], journal: JournalLine[] = [], env: EnvYear[] = []
   const lessonsGiven = new Set<string>()
@@ -225,7 +228,7 @@ async function simulate(world: WorldEnv, seed: number, mode: Mode): Promise<SimO
     if (mode.kind === 'twin' || decider === 'parents' || provider() === 'offline') {
       d = { choice: usual.id, reasoning: decider === 'parents' ? parentReason(p, usual) : 'did what most people do', thought: '', lessonApplied: null, decidedBy: decider === 'parents' ? 'parents' : 'rule' }
     } else {
-      try { d = await decideLlm(p, e, question, opts, lessons, world); llmFailStreak = 0 } catch (err) {
+      try { d = await decideLlm(p, e, question, opts, lessons, world, worldBrief(W, p.tick, p.place.regionId, def.kind)); llmFailStreak = 0 } catch (err) {
         console.error(`[life] milestone ${def.id} llm failed (${(err as Error).message}), using the rule choice`)
         ruleFallbacks++
         // fail loudly: a run of failures means the llm is broken, not unlucky. never finish a whole life on rules
@@ -296,44 +299,29 @@ const short = (label: string) => label.replace(/^(have |take |keep |join |go |st
 // the journal: one line a year in their voice. plain and specific, like a real diary ("long shift. feet hurt."),
 // built from what actually happened that year. years with a milestone use the llm's diary line instead
 function journalLine(p: Person, ys: MonthSnap[], ms: Milestone[], t: number): JournalLine {
-  const year = 2026 + Math.floor((t - 2 + 10) / 12)
+  const year = yearOf(t - 2)
   const age = Math.floor(t / 12)
   const m = ms.filter(x => x.tick > t - 12 && x.tick <= t && x.thought).pop()
   if (m) return { year, age, text: m.thought, byLlm: true }
-  const r = luck(p, 'journal')
-  const pick = (xs: string[]) => xs[Math.floor(r() * xs.length)]
+  // no llm line this year: the year in her words, but only what the record says happened (no invented detail).
+  // one clause per fact: a death, a birth, a move, a lost home, a job, hunger, then what her days were.
   const evs = p.events.filter(e => e.tick > t - 12 && e.tick <= t && e.kind !== 'milestone' && e.kind !== 'death' && e.kind !== 'birth')
   const s = ys[ys.length - 1]
   const hungry = ys.filter(x => x.hunger).length
   const inc = Math.round(ys.reduce((a, x) => a + x.income, 0) / Math.max(1, ys.length))
-  const city = p.place.city.toLowerCase()
-  const sib = p.kin.find(k => k.relation === 'sibling' && k.diedTick === undefined)?.name
-  const death = evs.find(e => / died/.test(e.text))
-  const born = evs.find(e => /was born$/.test(e.text))
-  const moved = evs.find(e => /^moved from/.test(e.text))
-  const lostHome = evs.find(e => /home was lost/.test(e.text))
-  const job = evs.find(e => /^(first job|new job|found work):/.test(e.text))
+  const facts: string[] = []
+  for (const e of evs) {
+    if (/ died/.test(e.text)) facts.push(e.text)
+    else if (/was born$/.test(e.text) || /^moved from/.test(e.text) || /home was lost/.test(e.text) || /^(first job|new job|found work):/.test(e.text) || /^laid off|^diagnosed with/.test(e.text)) facts.push(e.text)
+  }
+  if (hungry >= 3) facts.push(`hungry ${hungry} months of the year`)
   let text: string
   if (age < 6) text = '(too young to write.)'
-  else if (death) {
-    const who = death.text.replace(/ died.*/, '')
-    const rel = /my mother/.test(death.text) ? 'mum' : /my father/.test(death.text) ? 'dad' : /my partner/.test(death.text) ? who : /my child/.test(death.text) ? who : who
-    const kinOf = p.kin.find(k => k.name === who)
-    const pos = kinOf?.sex === 'female' ? 'her' : kinOf?.sex === 'male' ? 'his' : 'their'
-    text = pick([`${rel} died. ${who === rel ? '' : `${who}. `}everyone came to the house.`, `buried ${rel === who ? who : `${rel}`}. back at work a week later.`, `${rel} is gone. still have ${pos} coat.`])
-  } else if (lostHome) text = pick([`lost the house. staying with ${sib ?? 'neighbors'} for now.`, 'the house is gone. slept at the church hall.'])
-  else if (born) text = pick([`${born.text.replace(/ was born$/, '')} was born. haven't slept.`, `${born.text.replace(/ was born$/, '')} is here. tiny. loud.`])
-  else if (moved) text = pick([`moved to ${city}. don't know anyone yet.`, `new place in ${city}. the rent is too much.`])
-  else if (job) text = `${job.text.replace(/^(first job|new job|found work): /, 'started as ')}.${inc ? ` $${inc} a month.` : ''}`
-  else if (hungry >= 3) text = pick(['ate once a day most of this year.', 'rice costs twice what it did. we eat less.', 'the market stalls were half empty again.'])
-  else if (age < 13) text = pick([`school. ${sib ? `${sib} walks me there.` : 'walked there alone.'}`, 'school, then chores. played football in the street after.', `${sib ? `${sib} and i fought most of the year.` : 'school. nothing much.'}`])
-  else if (s && (s.activity === 'studying' || (s.activity === 'school' && age >= 18))) text = pick([`classes all year. ${p.path === 'nursing' ? 'night shifts at the ward for practice.' : p.path === 'trade' ? 'hands are all cuts.' : 'library till late.'}`, 'exams in june. barely slept.', `${p.path ?? 'school'}. ${sib ? `${sib} sends money sometimes.` : 'money is tight.'}`])
-  else if (age < 18) text = pick(['school. exams soon.', `helped at the market on weekends. ${city} is so hot this year.`, 'mostly school and friends.'])
-  else if (p.retired) {
-    const gk = p.kin.filter(k => k.relation === 'grandchild' && k.diedTick === undefined)
-    text = gk.length ? pick([`${gk[0].name} came over on sunday.`, 'walked to the square most mornings. knees bad.']) : pick(['walked to the square most mornings. knees bad.', 'quiet year. radio, tea, the neighbors.'])
-  } else if (s?.job) text = pick([`${s.job}. $${inc} a month. tired.`, `long year at work. ${s.health < 0.6 ? 'back hurts.' : 'fine.'}`, `${s.job} still. ${s.savings < 0 ? `owe $${Math.round(-s.savings)}.` : `$${Math.round(s.savings)} saved.`}`])
-  else text = pick(['no work most of the year.', 'looked for work. nothing.'])
+  else if (facts.length) text = `${facts.slice(0, 2).join('. ')}.`
+  else if (s?.job) text = `${s.job}. $${inc} a month. ${s.savings < 0 ? `$${Math.round(-s.savings)} in debt.` : `$${Math.round(s.savings)} saved.`}`
+  else if (p.retired) { const gk = p.kin.filter(k => k.relation === 'grandchild' && k.diedTick === undefined).length; text = `retired.${gk ? ` ${gk} ${gk === 1 ? 'grandchild' : 'grandchildren'}.` : ''}` }
+  else if (s && (s.activity === 'studying' || s.activity === 'school')) text = `${s.activity === 'school' ? 'school' : p.path ? `${p.path} training` : 'studying'}, year ${Math.max(1, Math.round(p.schoolYears))}.`
+  else text = '(a year with nothing written down.)'
   return { year, age, text: text.replace(/\s+/g, ' ').trim().toLowerCase(), byLlm: false }
 }
 

@@ -102,7 +102,7 @@ let inFlight: Promise<void> = Promise.resolve()
 // ---------- the llm call ----------
 const clean = (s: string) => s.replace(/[\u2014\u2013]/g, ',').replace(/\s+/g, ' ').trim()
 
-export async function decideLlm(p: Person, env: MonthEnv, question: string, opts: Option[], lessons: LifeLesson[], world: string | undefined): Promise<Decision> {
+export async function decideLlm(p: Person, env: MonthEnv, question: string, opts: Option[], lessons: LifeLesson[], world: string | undefined, brief?: string): Promise<Decision> {
   const age = Math.floor(ageOf(p))
   const partner = partnerOf(p)
   const kids = livingKids(p)
@@ -115,6 +115,7 @@ export async function decideLlm(p: Person, env: MonthEnv, question: string, opts
     `family: ${partner ? `partner ${partner.name}` : 'no partner'}${kids.length ? `, ${kids.length} ${kids.length === 1 ? 'child' : 'children'}` : ''}. health ${Math.round(p.health * 100)}/100${p.chronic.length ? ` (${p.chronic.join(', ')})` : ''}. habits: ${[...p.habits].join(', ') || 'none'}.`,
     p.marks ? `childhood left: ${p.marks.hungerMonths > 6 ? 'hungry years, ' : ''}${p.marks.displaced ? 'losing a home, ' : ''}${p.marks.lostParent ? 'losing a parent, ' : ''}${p.marks.stableHome > 0.7 ? 'a stable home, ' : ''}trust in others ${Math.round(p.marks.trust * 100)}/100.` : '',
     `the world here: food ${env.food < 0.85 ? 'short' : 'enough'}, prices ${env.prices.toFixed(1)}x normal, unrest ${env.unrest > 0.45 ? 'high' : 'normal'}, life expectancy ${env.lifeExpectancy.toFixed(0)}${world ? `. right now: ${world}` : ''}.`,
+    brief ? `what this means for this decision, where you live:\n${brief}` : '',
   ].filter(Boolean).join('\n')
   const lessonText = lessons.length
     ? `things people who lived before you learned (wisdom you half remember; your temperament decides how much you trust it):\n${lessons.map(l => `[${l.id}] ${l.rule} (they chose: ${l.choice}; it led to: ${l.ledTo})${l.verified ? '' : ' (from an older world, unconfirmed)'}`).join('\n')}`

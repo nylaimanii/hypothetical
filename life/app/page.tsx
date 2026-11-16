@@ -3,6 +3,7 @@ import { listWorlds, readIndex, readJsonSafe, livesFile } from '@/lib/life/store
 import { CONTINENTS, CONTINENT_NAME, continentOf, type Continent } from '@/lib/life/births'
 import type { LifeSummary } from '@/lib/life/types'
 import Portrait from '../components/Portrait'
+import { cardView } from '@/lib/life/views'
 
 export const dynamic = 'force-dynamic'
 
@@ -49,14 +50,15 @@ function ContinentRow({ name, lives }: { name: string; lives: Card[] }) {
 }
 
 function LifeCard({ l }: { l: Card }) {
-  const dead = l.deathAge !== null
+  const v = cardView(l)
+  const dead = v.deathAge !== null
   return (
     <Link href={`/live?life=${l.lifeId}`} className="chip" style={{ borderRadius: 20, padding: 16, color: 'inherit', textDecoration: 'none', display: 'grid', gap: 10, justifyItems: 'start' }}>
-      <Portrait look={l.look} age={l.deathAge ?? 30} dead={dead} size={88} title={`${l.name}, ${dead ? `died at ${Math.floor(l.deathAge!)}` : 'alive'}`} />
+      <Portrait look={l.look} age={l.deathAge ?? 30} dead={dead} size={88} title={`${v.name}, ${v.status}`} />
       <div style={{ minWidth: 0, width: '100%' }}>
         <div style={{ fontSize: 16, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.name}</div>
         <div style={{ fontSize: 13, opacity: 0.6, marginTop: 2 }}>{l.birthplace.city.toLowerCase()} · {l.agent}</div>
-        <div style={{ fontSize: 13, opacity: 0.6, marginTop: 2 }}><span className="mono">{dead ? `2026–${2026 + Math.floor(((l.deathTick ?? 0) + 10) / 12)}` : 'alive'}</span></div>
+        <div style={{ fontSize: 13, opacity: 0.6, marginTop: 2 }}><span className="mono">{v.years}</span> · {v.status}</div>
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
         {l.score !== null && <span className="mono" style={{ fontSize: 24, lineHeight: 1 }}>{l.score.toFixed(2)}</span>}

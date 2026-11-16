@@ -2,7 +2,8 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { findLife, listWorlds, readIndex } from '@/lib/life/store'
 import { lifeStory, scoreWords } from '@/lib/life/story'
-import type { LifeRecord, Milestone, ScoreParts } from '@/lib/life/types'
+import type { LifeRecord, ScoreParts } from '@/lib/life/types'
+import { compareView } from '@/lib/life/views'
 import Portrait from '../../components/Portrait'
 
 export const metadata: Metadata = { title: 'one life · compare' }
@@ -10,8 +11,6 @@ export const dynamic = 'force-dynamic'
 
 const PARTS: [keyof ScoreParts, string][] = [['healthyYears', 'healthy years'], ['relationships', 'people close to them'], ['contribution', 'help given to others'], ['meaning', 'sense of purpose'], ['wellbeing', 'how good the days felt']]
 const first = (r: LifeRecord) => r.name.split(' ')[0]
-const short = (m: Milestone) => (m.caption.split(' · ')[1] ?? m.kind).split('.')[0]
-const label = (m: Milestone) => m.options.find(o => o.id === m.choice)?.label ?? m.choice
 
 // /compare?a=<lifeId>&b=<lifeId>: two lives in the same world. what did one do differently from the other?
 export default async function Compare({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
@@ -23,9 +22,8 @@ export default async function Compare({ searchParams }: { searchParams: Promise<
   const sameWorld = all.filter(l => l.worldId === a.worldId)
 
   // decisions lined up by the kind of decision, in the order they came in life
-  const ids = [...new Set([...a.milestones, ...b.milestones].filter(m => m.decider === 'self').sort((x, y) => x.age - y.age).map(m => m.id.replace(/-\d+$/, '')))]
-  const rows = ids.map(id => ({ id, a: a.milestones.find(m => m.id.startsWith(`${id}-`)), b: b.milestones.find(m => m.id.startsWith(`${id}-`)) })).filter(r => r.a || r.b)
-  const differ = rows.filter(r => r.a && r.b && r.a.choice !== r.b.choice)
+  const cv = compareView(a, b)
+  const rows = cv.rows
   const lessonsB = b.milestones.filter(m => m.lessonApplied).length
 
   return (
@@ -33,7 +31,7 @@ export default async function Compare({ searchParams }: { searchParams: Promise<
       <div style={{ maxWidth: 1040, margin: '0 auto' }}>
         <Link href="/" style={{ fontSize: 13, color: 'inherit', opacity: 0.6 }}>← one life</Link>
         <h1 style={{ fontSize: 26, fontWeight: 600, margin: '10px 0 4px' }}>{first(a)} and {first(b)}</h1>
-        <p style={{ margin: 0, fontSize: 15, opacity: 0.75, maxWidth: 720 }}>{takeaway(a, b, differ.length, rows.length, lessonsB)}</p>
+        <p style={{ margin: 0, fontSize: 15, opacity: 0.75, maxWidth: 720 }}>{takeaway(a, b, cv.differ, cv.both, lessonsB)}</p>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginTop: 22 }}>
           {[a, b].map(r => (
@@ -60,13 +58,13 @@ export default async function Compare({ searchParams }: { searchParams: Promise<
             <thead><tr style={{ textAlign: 'left', fontSize: 12, opacity: 0.6 }}><th style={{ padding: '6px 8px', fontWeight: 400 }}>decision</th><th style={{ padding: '6px 8px', fontWeight: 400 }}>{first(a)}</th><th style={{ padding: '6px 8px', fontWeight: 400 }}>{first(b)}</th></tr></thead>
             <tbody>
               {rows.map(r => {
-                const diff = r.a && r.b && r.a.choice !== r.b.choice
+                const diff = r.differ
                 return (
                   <tr key={r.id} style={{ borderTop: '1px solid var(--line)', background: diff ? 'color-mix(in srgb, var(--ink) 5%, transparent)' : 'none' }}>
-                    <td style={{ padding: '7px 8px', opacity: 0.75 }}>{diff ? '● ' : ''}{short((r.a ?? r.b)!)}</td>
+                    <td style={{ padding: '7px 8px', opacity: 0.75 }}>{diff ? '● ' : ''}{r.what}</td>
                     {[r.a, r.b].map((m, i) => (
                       <td key={i} style={{ padding: '7px 8px' }}>
-                        {m ? <>{label(m)} <span className="mono" style={{ fontSize: 11, opacity: 0.5 }}>at {Math.floor(m.age)}</span>{m.lessonApplied && <span style={{ fontSize: 11, opacity: 0.6 }}> · lesson</span>}</> : <span style={{ opacity: 0.4 }}>didn&apos;t come up</span>}
+                        {m ? <>{m.label} <span className="mono" style={{ fontSize: 11, opacity: 0.5 }}>at {m.age}</span>{m.lesson && <span style={{ fontSize: 11, opacity: 0.6 }}> · lesson</span>}</> : <span style={{ opacity: 0.4 }}>didn&apos;t come up</span>}
                       </td>
                     ))}
                   </tr>
@@ -87,7 +85,7 @@ function takeaway(a: LifeRecord, b: LifeRecord, differ: number, total: number, l
   const parts = PARTS.map(([k, w]) => ({ w, d: (b.score?.[k] ?? 0) - (a.score?.[k] ?? 0) })).sort((x, y) => Math.abs(y.d) - Math.abs(x.d))
   const raw = (b.score?.total ?? 0) - (a.score?.total ?? 0)
   const s1 = `${first(b)} scored ${Math.abs(raw) < 0.01 ? 'the same as' : raw > 0 ? `${raw.toFixed(2)} more than` : `${(-raw).toFixed(2)} less than`} ${first(a)}${Math.abs(parts[0].d) > 0.03 ? `, mostly in ${parts[0].w}` : ''}.`
-  const s2 = `they chose differently at ${differ} of ${total} decisions, and ${lessonsB} of ${first(b)}'s choices leaned on an earlier life's advice.`
+  const s2 = `they chose differently at ${differ} of the ${total} decisions both of them faced, and ${lessonsB} of ${first(b)}'s choices leaned on an earlier life's advice.`
   const s3 = Math.abs(gb - ga) < 0.03
     ? `against their own usual-choices selves they did about equally well (${ga >= 0 ? '+' : ''}${ga.toFixed(2)} and ${gb >= 0 ? '+' : ''}${gb.toFixed(2)}), so the difference is mostly where and to whom they were born.`
     : `against their own usual-choices selves, ${gb > ga ? first(b) : first(a)} gained more (${ga >= 0 ? '+' : ''}${ga.toFixed(2)} vs ${gb >= 0 ? '+' : ''}${gb.toFixed(2)}).`

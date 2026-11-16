@@ -13,7 +13,7 @@ export function evolveRunning(): boolean {
   } catch { return false }
 }
 
-const yr = (tick: number) => 2026 + Math.floor((tick + 10) / 12)
+import { yearOf as yr } from './facts'
 
 export function describeLife(r: LifeRecord, seconds?: number): string {
   const s = r.score!

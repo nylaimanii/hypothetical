@@ -2,9 +2,9 @@
 // every clause comes from the record (milestones, events, kin, childhood marks). nothing is invented, and if a part
 // of the life has nothing notable, it is left out rather than padded.
 import type { LifeRecord } from './types'
+import { yearOf as yr } from './facts'
 
-const yr = (tick: number) => 2026 + Math.floor((tick + 10) / 12)
-const age = (tick: number) => Math.floor(tick / 12)
+const age = (tick: number) => Math.floor(tick / 12) // (her age at a tick: birthTick is always 0, see facts.ageYears)
 const num = (n: number) => (['no', 'one', 'two', 'three', 'four', 'five', 'six'][n] ?? String(n))
 
 export type Pron = { she: string; her: string; her2: string } // her2: object pronoun

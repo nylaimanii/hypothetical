@@ -1,4 +1,5 @@
 'use client'
+import { pronouns } from '@/lib/life/facts'
 // place context, small, always there. one tap cycles: her street (home, work, family as dots, her live position) ->
 // the real city (ghsl built-up around her city, 1 x 1 degree, data/geo) -> the globe (orthographic, natural earth
 // land) -> back to her street.
@@ -20,7 +21,7 @@ const land = feature(landTopo as unknown as Topology, (landTopo as unknown as To
 export default function Minimap({ place, record, tick, world, live }: { place: PlaceInfo; record: LifeRecord; tick: number; world: React.RefObject<WorldNow>; live: React.RefObject<LiveState> }) {
   const [level, setLevel] = useState<Level>('street')
   const next: Record<Level, Level> = { street: 'city', city: 'globe', globe: 'street' }
-  const label = level === 'street' ? `${place.city.toLowerCase()}, her street` : level === 'city' ? place.city.toLowerCase() : place.country.toLowerCase()
+  const label = level === 'street' ? `${place.city.toLowerCase()}, ${pronouns(record).her} street` : level === 'city' ? place.city.toLowerCase() : place.country.toLowerCase()
   return (
     <button className="chip" onClick={() => setLevel(l => next[l])} aria-label={`map: ${label}. tap to zoom out`} title="tap to zoom out" style={{ borderRadius: 16, padding: 6, display: 'grid', gap: 4, justifyItems: 'center' }}>
       <div style={{ width: S, height: S, borderRadius: 12, overflow: 'hidden', background: 'var(--bone-deep)' }}>
