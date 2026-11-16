@@ -76,7 +76,7 @@ function RecentRow({ r, agents }: { r: RunSummary; agents: Agent[] }) {
     <li className={`fade-in flex items-center gap-2.5 rounded-xl border-l-2 bg-bone/70 px-2.5 py-2 ${dead ? 'border-ember' : 'border-ink/25'}`}>
       {a ? <Emblem seed={a.emblemSeed} size={28} faded={a.retired} /> : <Skel className="h-7 w-7 rounded-full" />}
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-2"><span className="truncate text-[12.5px]">{a?.name ?? r.agentId}</span><Num className="text-[12px]">{r.score.toFixed(2)}</Num></div>
+        <div className="flex items-baseline justify-between gap-2"><span className="truncate text-[12.5px]">{a?.name ?? r.agentId}</span><Num className="text-[12px]">{fmt.score(r.score)}</Num></div>
         <div className={`truncate text-[11px] ${dead ? 'text-ember' : 'text-ink/55'}`}>{dead ? r.causeOfDeath ?? 'world lost' : `${r.status} · ${frontierLabel(r.frontier)} · ${r.endDate}`}</div>
       </div>
     </li>
@@ -142,7 +142,7 @@ export default function MissionControl() {
           <>
             <Counter label="worlds lost" danger={stats.worldsLost > 0}>{stats.worldsLost}</Counter>
             <Counter label="lessons known">{stats.lessonsKnown}</Counter>
-            <Counter label="best score">{stats.bestScore.toFixed(2)}</Counter>
+            <Counter label="best score">{fmt.score(stats.bestScore)}</Counter>
             {(champion || stats.champion) && <Counter label="champion"><span className="flex items-center gap-2 font-display text-[19px]">{champion && <Emblem seed={champion.emblemSeed} size={24} glow />}{champion?.name ?? stats.champion}</span></Counter>}
             {stats.avgMinutesPerWorld !== null && <Counter label="min per world">{stats.avgMinutesPerWorld.toFixed(1)}</Counter>}
             {stats.estWorldsByMorning !== null && <Counter label="worlds by morning">{stats.estWorldsByMorning}</Counter>}

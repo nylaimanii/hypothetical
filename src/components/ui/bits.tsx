@@ -7,6 +7,8 @@ export const fmt = {
   pct: (n: number) => `${Math.round(n * 100)}%`,
   kcal: (n: number) => `${Math.round(n)}`,
   twh: (n: number) => `${Math.round(n).toLocaleString('en-US')}`,
+  // a score the record could not compute (null, or NaN from a broken run) reads as such, never as 0 or a crash
+  score: (n: number | null | undefined, digits = 2) => (typeof n === 'number' && Number.isFinite(n) ? n.toFixed(digits) : 'no score'),
 }
 
 export function Num({ children, className = '', style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {

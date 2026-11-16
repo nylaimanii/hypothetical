@@ -6,7 +6,7 @@
 // while the current sim version has no finished generation, the latest archived board is shown, labeled as such
 import { useEffect, useState } from 'react'
 import type { RunSummary } from '@/lib/types'
-import { Num } from './bits'
+import { Num, fmt } from './bits'
 import { openRun } from './worlds'
 import { dateOfTick } from './truth'
 
@@ -85,7 +85,7 @@ export function AgentBoard() {
                 <Num className="w-4 text-[11px] text-ink/40">{i + 1}</Num>
                 <span className="truncate text-[13px]">{e.name}</span>
               </button>
-              <Num className="text-[12px]">{e.score.toFixed(4)}</Num>
+              <Num className="text-[12px]">{fmt.score(e.score, 4)}</Num>
             </div>
             <div className="ml-6 text-[11px] text-ink/55">
               <span className={e.best.status === 'destroyed' ? 'text-ember' : ''}>{e.best.status}</span> <Num>{e.best.endDate}</Num> · gen <Num>{e.generation}</Num>

@@ -641,7 +641,7 @@ function AgentDossier({ id }: { id: string }) {
           <Section title="record">
             <div className="grid grid-cols-2 gap-1 text-[12px]">
               <span>worlds <Num>{a.worlds}</Num></span><span>deaths <Num className={a.deaths ? 'text-ember' : ''}>{a.deaths}</Num></span>
-              <span>best score <Num>{a.bestScore.toFixed(2)}</Num></span><span>avg score <Num>{a.avgScore.toFixed(2)}</Num></span>
+              <span>best score <Num>{fmt.score(a.bestScore)}</Num></span><span>avg score <Num>{fmt.score(a.avgScore)}</Num></span>
               <span>best frontier {words(a.bestFrontier)}</span><span>best life <Num>{a.bestPeriodLifeExpectancy.toFixed(1)}y</Num></span>
             </div>
           </Section>
@@ -663,7 +663,7 @@ function AgentDossier({ id }: { id: string }) {
                 <li key={r.runId}>
                   <button onClick={() => openRun(r.runId)} className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1 text-left hover:bg-ink/5">
                     <span><Num className="text-[12px]">{r.runId}</Num><span className={`ml-2 text-[11px] ${r.status === 'destroyed' ? 'text-ember' : 'text-ink/55'}`}>{r.status}</span></span>
-                    <span className="text-[11px] text-ink/55"><Num>{r.endDate}</Num> · <Num>{r.score.toFixed(2)}</Num></span>
+                    <span className="text-[11px] text-ink/55"><Num>{r.endDate}</Num> · <Num>{fmt.score(r.score)}</Num></span>
                   </button>
                 </li>
               ))}

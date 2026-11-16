@@ -8,7 +8,7 @@ import { useStore } from '../state/store'
 import { buildTiles, latLonToVec3, tileIndexAt } from '../world/lib'
 import { sunDirection, tickToDate } from '../world/time'
 import Emblem from './Emblem'
-import { Num } from './bits'
+import { Num, fmt } from './bits'
 import { fetchRecord, openRun } from './worlds'
 
 // "world #7": the run's own trailing number when it has one, else its place in the run list
@@ -168,7 +168,7 @@ function Picker({ onClose, onLive }: { onClose: () => void; onLive: () => void }
                 <span className="min-w-0 flex-1 truncate">{a?.name ?? prettyAgent(r.agentId)} <span className="text-ink/50">world #<Num>{worldNumber(r.runId, runs)}</Num></span></span>
                 <span className={`h-2 w-2 rounded-full ${tone.dot}`} />
                 <Num className="w-10 text-right text-ink/60">{r.endDate.slice(0, 4)}</Num>
-                <Num className="w-12 text-right">{r.score.toFixed(2)}</Num>
+                <Num className="w-12 text-right">{fmt.score(r.score)}</Num>
                 {open && <span className="text-[10px] text-ink/45">open</span>}
               </button>
             </li>

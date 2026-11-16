@@ -255,7 +255,7 @@ export function Leaderboard() {
                     <Num className="w-4 text-[11px] text-ink/40">{i + 1}</Num>
                     <Num className="text-[12px]">{r.runId}</Num>
                   </span>
-                  <Num className="text-[12px]">{r.score.toFixed(2)}</Num>
+                  <Num className="text-[12px]">{fmt.score(r.score)}</Num>
                 </div>
                 <div className="ml-6 flex items-center gap-2 text-[11px] text-ink/55">
                   <span className={r.status === 'destroyed' ? 'text-ember' : ''}>{r.status}</span>

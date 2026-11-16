@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Agent, HallEntry } from '@/lib/types'
 import { rootOf } from '@/lib/mock/agents'
 import { useStore } from '../state/store'
-import { Num, Skel } from './bits'
+import { Num, Skel, fmt } from './bits'
 import Emblem from './Emblem'
 import { frontierLabel } from './Chrome'
 import { loadHall, openRun, startCompare } from './worlds'
@@ -34,11 +34,11 @@ function Card({ a, checked, onCheck }: { a: Agent; checked: boolean; onCheck: (v
         <div className="mt-2 grid grid-cols-3 gap-x-2 gap-y-0.5 text-[10.5px]">
           <span className="text-ink/50">worlds <Num className="text-ink">{a.worlds}</Num></span>
           <span className="text-ink/50">deaths <Num className={a.deaths ? 'text-ember' : 'text-ink'}>{a.deaths}</Num></span>
-          <span className="text-ink/50">avg <Num className="text-ink">{a.avgScore.toFixed(2)}</Num></span>
+          <span className="text-ink/50">avg <Num className="text-ink">{fmt.score(a.avgScore)}</Num></span>
           <span className="col-span-2 truncate text-ink/50">frontier <span className="text-ink">{frontierLabel(a.bestFrontier)}</span></span>
           <span className="text-ink/50">life <Num className="text-ink">{a.bestPeriodLifeExpectancy.toFixed(0)}y</Num></span>
         </div>
-        <div className="mt-2 flex items-center justify-between"><Badge a={a} /><Num className="text-[12px]">best {a.bestScore.toFixed(2)}</Num></div>
+        <div className="mt-2 flex items-center justify-between"><Badge a={a} /><Num className="text-[12px]">best {fmt.score(a.bestScore)}</Num></div>
       </button>
     </div>
   )
