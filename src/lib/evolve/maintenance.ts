@@ -125,7 +125,7 @@ export function promoteStable(log: (l: string) => void = console.log, opts: { dr
     for (const [name, cmd, args, extra] of steps) {
       log(`stable: ${name} on ${sha.slice(0, 7)}`)
       const r = run(cmd, args, dir, extra)
-      if (r.status !== 0) return fail(`${name} failed on ${sha.slice(0, 7)}: ${(r.stdout + r.stderr).split('\n').filter(l => /error|fail/i.test(l)).slice(0, 3).join(' | ').slice(0, 300)}`)
+      if (r.status !== 0) return fail(`${name} failed on ${sha.slice(0, 7)}: ${(r.stdout + r.stderr).split('\n').filter(l => /^\s*✖|error|not ok/i.test(l) && !/^\s*✔/.test(l)).slice(0, 3).join(' | ').slice(0, 300)}`)
     }
     log(`stable: consistency on ${sha.slice(0, 7)} with the deployed data`)
     const c = runSuite({ codeRoot: dir, dataRoot: dir, env: { READ_ONLY: '1' } })

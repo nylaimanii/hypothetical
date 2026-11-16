@@ -518,8 +518,9 @@ test('leaderboard gaps: decisions said from the two records, replayed ones first
   const lb = [e('a', { vs: 'w2', decisive: ['x'], consequence: null, text: 'a put more into food.' }), e('b'), e('c')]
   assert.equal(gapFor(lb, 0, {})!.method, 'pattern')
   assert.match(gapFor(lb, 0, {})!.text, /not yet tested by replay\)$/)
-  const g = { [gapKey('a', 'b')]: { lowerRun: 'w2', seed: 7, gap: 5e6, reasons: [{ text: 'in 2030-11, a put 30% into food' }], text: 'on seed 7, a had 5 million more people alive' } } as never
-  assert.deepEqual(gapFor(lb, 0, g), { method: 'replay', vs: 'w2', seed: 7, gap: 5e6, decisive: ['in 2030-11, a put 30% into food'], text: 'on seed 7, a had 5 million more people alive' })
+  const g = { [gapKey('a', 'b')]: { higherRun: 'w1', lowerRun: 'w2', seed: 7, gap: 5e6, reasons: [{ tick: 48, date: '2030-11', share: 0.4, text: 'in 2030-11, a put 30% into food' }], text: 'on seed 7, a had 5 million more people alive' } } as never
+  // each decisive decision carries its moment, so the ui can jump there: the tick in the higher world, and its share
+  assert.deepEqual(gapFor(lb, 0, g), { method: 'replay', vs: 'w2', seed: 7, gap: 5e6, decisive: ['in 2030-11, a put 30% into food'], reasons: [{ text: 'in 2030-11, a put 30% into food', tick: 48, share: 0.4, run: 'w1' }], text: 'on seed 7, a had 5 million more people alive' })
   assert.equal(gapFor(lb, 2, {}), null)
 })
 
