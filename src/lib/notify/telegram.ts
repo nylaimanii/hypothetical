@@ -6,6 +6,7 @@ import { readAgents } from '../evolve/agents'
 import { epitaphOf } from './epitaph'
 import { deathStory, hallStory } from './story'
 import { readLessons } from '../evolve/lessons'
+import { yearOfTick } from '../evolve/facts'
 
 let warned = false
 export function telegramEnv(): { token: string; chatId: string } | null {
@@ -105,5 +106,5 @@ export async function notifyGeneration(line: string) {
 export async function notifyHallBatch(_generation: number, entries: HallEntry[]) {
   if (!entries.length) return
   const names = new Map(readAgents().map(a => [a.id, a.name]))
-  await send(hallStory(entries.map(e => ({ title: e.title, agentName: names.get(e.agentId) ?? e.agentId, year: 2026 + Math.floor((e.tick + 10) / 12), text: e.text, kind: e.kind }))))
+  await send(hallStory(entries.map(e => ({ title: e.title, agentName: names.get(e.agentId) ?? e.agentId, year: yearOfTick(e.tick), text: e.text, kind: e.kind }))))
 }

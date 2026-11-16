@@ -3,6 +3,7 @@
 import type { DecisionRow, Frame, RunRecord, SlimRun, YearRow } from '../types'
 import { readAgents } from './agents'
 import { epitaphOf } from '../notify/epitaph'
+import { populationOf } from './facts'
 
 // v3 look-and-feel at yearly resolution, so tab thumbnails and graphs work without full frames. each field is
 // only present when the sim filled it (hide empty instead of sending blanks)
@@ -43,7 +44,7 @@ function visualsOf(f: Frame): YearVisuals {
 const r3 = (x: number) => Math.round(x * 1000) / 1000
 
 function approvalOf(f: Frame): number {
-  const pop = f.regions.reduce((a, r) => a + r.population, 0) || 1
+  const pop = populationOf(f) || 1
   return f.humanCost?.approval ?? f.regions.reduce((a, r) => a + (r.approval ?? 0) * r.population, 0) / pop
 }
 
@@ -52,7 +53,7 @@ export function yearRows(frames: Frame[]): SlimYearRow[] {
   const last = sorted[sorted.length - 1]
   return sorted.filter(f => f.tick % 12 === 0 || f === last).map(f => ({
     tick: f.tick, date: f.date, status: f.status,
-    globalPopulation: Math.round(f.globalPopulation ?? f.regions.reduce((a, r) => a + r.population, 0)),
+    globalPopulation: populationOf(f),
     globalPeriodLifeExpectancy: r3(f.globalPeriodLifeExpectancy ?? 0), frontier: f.frontier ?? 'none', moonProgress: r3(f.moonProgress),
     approval: r3(approvalOf(f)), deaths: f.humanCost?.deaths ?? 0, displaced: f.humanCost?.displaced ?? 0,
     ...visualsOf(f),

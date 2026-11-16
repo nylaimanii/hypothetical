@@ -123,6 +123,9 @@ function goodness(runs: RunFeatures[]): Map<string, number> {
   return g
 }
 
+// the same measure, for the playbook's a/b tests
+export const goodnessOf = (runs: RunFeatures[]) => goodness(runs)
+
 export function computeSteps(runs: RunFeatures[], top = 15): StepsFile {
   const at = new Date().toISOString()
   if (runs.length < 2) return { computedAt: at, worlds: runs.length, helped: [], hurt: [] }

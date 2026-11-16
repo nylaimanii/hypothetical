@@ -26,6 +26,8 @@ import { isTransient, realClock, runQueue, type Clock } from './queue'
 import { trackWorld } from './usage'
 import { lineageRoots, recordAgentRun, registerPopulation, settleGeneration } from './agents'
 import { indexFeatures, recomputeSteps } from './steps'
+import { backfillEvidence, explainGap, indexEvidence, realBaseline } from './evidence'
+import { lessonLine, writePlaybook, type PlaybookLesson } from './playbook'
 import { generationStory } from '../notify/story'
 import { lifeGap, livesRunning, openGap } from './lifegap'
 import { livesSection } from './lives'
@@ -38,6 +40,7 @@ import { realityCheckDue, runRealityCheck } from './reality'
 import { agentRanges, EXTRA_SEEDS, markUncertaintyDone, milestoneYears, readUncertainty, versionTopAgents } from './uncertainty'
 import { checkHall } from './hall'
 import { sendDigest, sendGoalReport } from '../notify/email'
+import { populationOf } from './facts'
 
 export type EvolveOptions = {
   // generations to run; default keeps going until a world achieves the goal
@@ -173,7 +176,7 @@ function crashedSummary(runId: string, gen: number, agentId: string, constitutio
   return placeholderSummary({
     runId, generation: gen, agentId, status: 'destroyed', endDate: last?.date ?? '2026-11', ticks: last?.tick ?? 0,
     causeOfDeath: `runner error: ${err.message}`, constitution,
-    peakPopulation: Math.max(0, ...frames.map(f => f.regions.reduce((a, r) => a + r.population, 0))),
+    peakPopulation: Math.max(0, ...frames.map(f => populationOf(f))),
     moonStage: last?.moonStage ?? 'none',
   })
 }
@@ -252,6 +255,7 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, stage: Stag
   try { writeSlim(record) } catch (e) { deps.log(`  could not write slim for ${runId}: ${(e as Error).message}`) }
   // feature row for the steps recipe (real llm runs only)
   try { indexFeatures(record) } catch (e) { deps.log(`  steps: could not index ${runId}: ${(e as Error).message}`) }
+  try { indexEvidence(record) } catch (e) { deps.log(`  evidence: could not index ${runId}: ${(e as Error).message}`) }
   const learning = readLearning()
   learning.worldsRun++
   writeLearning(learning)
@@ -320,6 +324,13 @@ function updateLeaderboard(g: GenerationFile): LeaderboardEntry[] {
     if (!prev || e.score > prev.score) byText.set(e.constitution, e)
   }
   const top = [...byText.values()].sort((a, b) => b.score - a.score).slice(0, 20)
+  // the evidence: each entry against the one ranked below it, and its best world against UN projections
+  const recs = new Map(top.map(e => [e.best.runId, readRunRecord(e.best.runId)]))
+  top.forEach((e, i) => {
+    const rec = recs.get(e.best.runId), next = top[i + 1], nrec = next ? recs.get(next.best.runId) : null
+    try { e.explainGap = rec && next && nrec ? explainGap({ name: e.name, record: rec }, { name: next.name, record: nrec }) : (e.explainGap ?? null) } catch { e.explainGap = e.explainGap ?? null }
+    try { e.realBaseline = rec ? realBaseline(rec) : (e.realBaseline ?? null) } catch { e.realBaseline = e.realBaseline ?? null }
+  })
   writeJson(leaderboardFile(), top)
   return top
 }
@@ -497,10 +508,20 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
   writeLearning(learning)
 
   const steps = recomputeSteps()
+  // the evidence for older worlds, then the playbook: every lesson re-tested on the same-seed a/b pairs
+  try { const n = backfillEvidence(readRunIndex().map(r => r.runId), readRunRecord); if (n) deps.log(`evidence: backfilled ${n} worlds`) } catch (e) { deps.log(`evidence backfill failed: ${(e as Error).message}`) }
+  let moved: PlaybookLesson | undefined
+  try {
+    const pb = writePlaybook(g.generation)
+    deps.log(`playbook: ${pb.lessons.length} lessons, ${pb.pairs} a/b pairs over ${pb.worlds} worlds`)
+    moved = pb.lessons.filter(l => l.previous !== null && l.confidence !== null).sort((a, b) => Math.abs(b.confidence! - b.previous!) - Math.abs(a.confidence! - a.previous!))[0]
+    if (moved && moved.confidence === moved.previous) moved = undefined
+  } catch (e) { deps.log(`playbook failed: ${(e as Error).message}`) }
   const topStep = steps.helped[0], deadliest = steps.hurt[0]
   const stepLines = [
     topStep ? `top step so far: ${topStep.text} (effect +${topStep.effect}, ${topStep.helpedWorlds.length} worlds helped)` : '',
     deadliest ? `deadliest step so far: ${deadliest.text} (in ${deadliest.hurtWorlds.length} worlds that did worse${deadliest.hurtWorlds.some(id => allRuns.some(r => r.runId === id && r.status === 'destroyed')) ? ' or died' : ''})` : '',
+    moved ? `playbook: ${lessonLine(moved)}` : '',
   ].filter(Boolean)
   const champRange = champion ? agentRanges(champion.id) : null
   if (champRange) stepLines.unshift(`champion across ${champRange.runs} full runs: ${champRange.lines.slice(0, 2).join('; ')}`)

@@ -8,7 +8,7 @@ import path from 'node:path'
 import zlib from 'node:zlib'
 
 // top-level files the read-only routes read (missing ones are skipped)
-const TOP = ['agents.json', 'lessons.json', 'life-lessons.json', 'version.json', 'hall.json', 'learning.json', 'leaderboard.json', 'steps.json', 'reality-check.json', 'uncertainty.json', 'runs/features.json']
+const TOP = ['agents.json', 'lessons.json', 'life-lessons.json', 'version.json', 'hall.json', 'learning.json', 'leaderboard.json', 'steps.json', 'reality-check.json', 'uncertainty.json', 'runs/features.json', 'runs/evidence.json', 'playbook.json', 'real/un-wpp-2024.json']
 // whole folders: the replayable worlds, older versions' hall/steps/learning, D's lives
 const DIRS = ['showcase', 'versions', 'lives']
 // never shipped, whatever folder they turn up in

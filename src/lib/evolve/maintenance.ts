@@ -21,8 +21,10 @@ import { ollamaUp } from './ollama'
 import { paceStats } from './usage'
 import { livesSection } from './lives'
 import { checkDeploy, copyDeploy, deployFiles } from './deploy'
+import { readEvidence, realBaseline } from './evidence'
 import { failureText, runSuite } from './consistency'
 import { freshSteps } from './steps'
+import { populationOf, yearOfTick } from './facts'
 
 type State = { lastBackup?: string; backupSha?: string; lastStable?: string; stableSha?: string; stableNote?: string; lastMorning?: string; morningLessons?: number; lastQuality?: string; lastQualityRun?: string; lastConsistency?: string; consistencyNote?: string }
 const stateFile = () => path.join(process.cwd(), 'data', 'maintenance.json')
@@ -143,14 +145,13 @@ export function promoteStable(log: (l: string) => void = console.log, opts: { dr
 // ---------- morning digest ----------
 // is the ai beating "do nothing" yet? each world against its no-ai twin (same seed, 2026 policies frozen) at the
 // same tick: it beats the twin when it is still standing and has at least as many people alive
-const yearOfTick = (tick: number) => 2026 + Math.floor((tick + 10) / 12)
 export function twinVerdict(recs: RunRecord[], version?: string): string | null {
   const rows = recs.map(rec => {
     const last = [...rec.frames].sort((a, b) => b.tick - a.tick)[0]
     const b = [...(rec.baseline ?? [])].filter(x => !last || x.tick <= last.tick).sort((x, y) => y.tick - x.tick)[0]
     if (!last || !b) return null
-    const ai = last.regions.reduce((a, r) => a + r.population, 0)
-    const tw = b.regions.reduce((a, r) => a + r.population, 0)
+    const ai = populationOf(last)
+    const tw = populationOf(b)
     const aiMoonF = [...rec.frames].sort((x, y) => x.tick - y.tick).find(f => f.frontier && f.frontier !== 'none')
     const twMoon = [...rec.baseline].sort((x, y) => x.tick - y.tick).find(x => x.moonProgress >= 1)
     const aiAlive = last.status !== 'destroyed', twAlive = b.status !== 'destroyed'
@@ -205,9 +206,11 @@ export async function morningDigest(opts: { dry?: boolean } = {}): Promise<strin
     .map(r => { const rec = readRunRecord(r.runId); return rec ? worldStory(rec, names.get(r.agentId) ?? r.agentId) : null })
     .filter((x): x is NonNullable<typeof x> => !!x).sort((a, b) => b.score - a.score)
   const lead = stories[0]?.lines.slice(0, 2) ?? [night.length ? `${night.length} worlds overnight and nothing worth waking you for.` : 'no worlds finished overnight.']
+  // every score next to the real baseline: the best world against UN projections at the same year
+  const bestBase = best ? (readEvidence()[best.runId]?.realBaseline ?? (() => { const r = readRunRecord(best.runId); return r ? realBaseline(r) : null })()) : null
   const byVersion = [...runs.reduce((m, r) => m.set(r.simVersion ?? '?', (m.get(r.simVersion ?? '?') ?? 0) + 1), new Map<string, number>())]
   const versions = byVersion.length > 1 ? ` (${byVersion.map(([v, n]) => `${n} on ${v}`).join(', ')})` : ''
-  const tally = night.length ? `${night.length} worlds overnight${versions}${deaths.length ? `, ${deaths.length} died` : ', nobody died'}${newLessons.length ? `, ${newLessons.length} new lesson${newLessons.length > 1 ? 's' : ''}` : ''}${best && stories[0] ? `. best was ${names.get(best.agentId) ?? best.agentId}` : ''}.` : ''
+  const tally = night.length ? `${night.length} worlds overnight${versions}${deaths.length ? `, ${deaths.length} died` : ', nobody died'}${newLessons.length ? `, ${newLessons.length} new lesson${newLessons.length > 1 ? 's' : ''}` : ''}${best && stories[0] ? `. best was ${names.get(best.agentId) ?? best.agentId}${bestBase ? `, which ${bestBase.text}` : ''}` : ''}.` : ''
   // D's chosen lives: the most interesting one that ended, at most 2 lines
   const lives = livesSection(since)
   const health = `${up ? 'ollama up' : 'ollama is DOWN'}${pace ? `, ${Math.round(pace.avgMinutesPerWorld)} min a world` : ''}, ${diskLine().replace(/^disk: /, '')}.`

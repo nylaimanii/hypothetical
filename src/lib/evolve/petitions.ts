@@ -8,6 +8,7 @@ import path from 'node:path'
 import type { RunRecord } from '../types'
 import { askCore } from './core'
 import { readJson, writeJson } from './store'
+import { dateOfTick } from './facts'
 
 export type Petition = {
   id: string; runId: string; tick: number; date: string; text: string; at: string
@@ -20,7 +21,7 @@ export type Petition = {
 }
 
 const file = (runId: string) => path.join(process.cwd(), 'data', 'petitions', `${runId}.json`)
-const dateOf = (tick: number) => { const m = 10 + tick; return `${2026 + Math.floor(m / 12)}-${String((m % 12) + 1).padStart(2, '0')}` }
+const dateOf = dateOfTick
 
 export const readPetitions = (runId: string): Petition[] => readJson<Petition[]>(file(runId)) ?? []
 

@@ -13,6 +13,8 @@ import { moonYear, people, turningPoint, twin } from './story'
 import { readRealityCheck, type RealityCheck } from '../evolve/reality'
 import { familyTree, readAgents } from '../evolve/agents'
 import { agentRanges } from '../evolve/uncertainty'
+import { yearOfTick } from '../evolve/facts'
+import { realBaseline } from '../evolve/evidence'
 
 const C = { bone: '#EFE9DD', ink: '#1C1A17', muted: '#6B655B', rule: '#CFC6B4', ember: '#C2410C' }
 const FONTS = path.join(process.cwd(), 'fonts')
@@ -130,11 +132,13 @@ function humanCost(doc: Doc, s: RunSummary) {
   ])
 }
 
-function summaryFacts(doc: Doc, s: RunSummary) {
+function summaryFacts(doc: Doc, s: RunSummary, record?: RunRecord) {
+  const base = record ? realBaseline(record) : null
   facts(doc, [
     ['world', s.runId],
     ['outcome', `${words(s.status)} ${s.endDate}`],
     ['score', s.score],
+    ['against UN projections', base ? `${base.text} (UN World Population Prospects 2024)` : undefined],
     ['frontier', s.frontier === 'none' ? undefined : words(s.frontier)],
     ['period life expectancy', s.peakPeriodLifeExpectancy ? s.peakPeriodLifeExpectancy.toFixed(1) : undefined],
     ['peak population', pop(s.peakPopulation)],
@@ -421,7 +425,7 @@ export async function digestPdf(input: DigestInput): Promise<Buffer> {
   if (hall.length) {
     h2(doc, 'new in the hall of history')
     for (const e of hall) {
-      const year = 2026 + Math.floor((e.tick + 10) / 12)
+      const year = yearOfTick(e.tick)
       h3(doc, `${e.title}, ${year}`, e.kind === 'catastrophe' ? C.ember : C.ink)
       para(doc, e.text, e.kind === 'catastrophe' ? C.ember : C.ink)
       mono(doc, `${e.kind}   world ${e.runId}`)
@@ -470,7 +474,7 @@ export async function goalPdf(record: RunRecord, agentName: string): Promise<Buf
   renderReport(doc, worldReport(record))
   humanCost(doc, s)
   doc.moveDown(0.3)
-  summaryFacts(doc, s)
+  summaryFacts(doc, s, record)
   h2(doc, 'the constitution')
   para(doc, record.constitution)
   requirementsTable(doc, record)

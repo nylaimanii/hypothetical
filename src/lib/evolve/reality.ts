@@ -11,6 +11,7 @@ import path from 'node:path'
 import type { BaselineFrame, RunRecord } from '../types'
 import { dirs, readJson, readRunIndex, writeJson } from './store'
 import { codeRoot } from './version'
+import { populationOf } from './facts'
 
 const file = () => path.join(process.cwd(), 'data', 'reality-check.json')
 const START_YEAR = 2026
@@ -95,7 +96,7 @@ function twinAt(baseline: BaselineFrame[], year: number) {
   const target = (year - START_YEAR) * 12 - 4
   const f = [...baseline].sort((a, b) => Math.abs(a.tick - Math.max(0, target)) - Math.abs(b.tick - Math.max(0, target)))[0]
   if (!f) return null
-  const pop = f.regions.reduce((a, r) => a + r.population, 0)
+  const pop = populationOf(f)
   const kcal = pop ? f.regions.reduce((a, r) => a + r.foodKcalPerCapita * r.population, 0) / pop : 0
   return { population: pop, foodKcalPerCapita: kcal, tick: f.tick }
 }

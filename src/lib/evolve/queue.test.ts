@@ -445,3 +445,49 @@ test('deploy snapshot ships real worlds and never runtime files, and checks they
   assert.match(checkDeploy(dir).join('\n'), /no showcase worlds/)
   fs.rmSync(dir, { recursive: true, force: true })
 })
+
+test('playbook: rules map to budget tests in plain words, confidence moves with same-seed a/b evidence', async () => {
+  const { testOf, computePlaybook, lessonLine } = await import('./playbook')
+  assert.deepEqual(testOf('Ensure basic human needs are met before pursuing long-term space goals.'), { up: ['food', 'welfare'], down: ['space'], text: 'a bigger share of the budget on food and welfare than on space, compared with a rival on the same seed' })
+  assert.deepEqual(testOf('Avoid crackdowns on protests.')?.down, ['security'])
+  assert.equal(testOf('Adapt policies swiftly in response to emerging threats.'), null)
+  const b = (food: number) => ({ food, energy: 0.1, education: 0.1, space: 0.2 - food / 2, security: 0.1, welfare: 0.2, research: 0.1 })
+  const f = (runId: string, agentId: string, food: number, score: number) => ({ runId, agentId, generation: 1, horizon: 'screen' as const, budget: b(food), lawFirstTick: {}, religion: 'free', schoolYearsMax: 12, citiesFirstTick: null, research: {}, decisions: 4, outcome: { score, le: 70, popTrend: 1, deathRatio: 0, approval: 0.5, destroyed: false } })
+  // two seeds: on s1 the food-first world wins, on s2 too, on s3 it loses
+  const feats = [f('g1-a-s1', 'a', 0.3, 0.6), f('g1-b-s1', 'b', 0.1, 0.4), f('g1-a-s2', 'a', 0.3, 0.7), f('g1-b-s2', 'b', 0.1, 0.5), f('g1-a-s3', 'a', 0.3, 0.2), f('g1-b-s3', 'b', 0.1, 0.6)]
+  const lesson = { id: 'l1', fromRunId: 'g0-x-s9', generation: 0, mistake: 'm', consequence: 'c', rule: 'Ensure basic human needs are met before pursuing long-term space goals.', timesRelevant: 1 }
+  const untested = { ...lesson, id: 'l2', rule: 'Adapt policies swiftly.' }
+  const pb = computePlaybook([lesson, untested], feats, () => '5.1.0', null, 1)
+  assert.equal(pb.pairs, 3)
+  const l = pb.lessons.find(x => x.id === 'l1')!
+  assert.equal(l.supported, 2); assert.equal(l.contradicted, 1); assert.equal(l.confidence, 0.6); assert.equal(l.trend, 'new')
+  assert.equal(pb.lessons.find(x => x.id === 'l2')!.confidence, null)
+  // one more contradicting test next generation: confidence goes down, and says from what
+  const pb2 = computePlaybook([lesson], [...feats, f('g2-a-s4', 'a', 0.3, 0.1), f('g2-b-s4', 'b', 0.1, 0.9)], () => '5.1.0', pb, 2)
+  const l2 = pb2.lessons[0]
+  assert.equal(l2.confidence, 0.5); assert.equal(l2.trend, 'down')
+  assert.equal(lessonLine(l2), 'ensure basic human needs are met before pursuing long-term space goals: 50% sure (2 of 4 a/b tests agree, down from 60%)')
+})
+
+test('autopsy walks the cause chain back from the recorded cause, and explainGap names real differences', async () => {
+  const { autopsy, autopsyLines, explainGap } = await import('./evidence')
+  const region = (id: string, name: string, kind = 'none', level = 0) => ({ id, name, population: 1e9, visual: { damage: { kind, level } } })
+  const frame = (tick: number, extra: Record<string, unknown> = {}) => ({ tick, date: '', regions: [region('na', 'North Africa', tick >= 24 ? 'revolt' : 'none', tick >= 24 ? 1 : 0), region('eu', 'Europe')], laws: [], newEvents: [], humanCost: { deaths: 2e6, famineDeaths: 1e6, unrestDeaths: 5e5, displaced: 3e6, approval: 0.2 }, status: 'alive', ...extra })
+  const causes = [
+    { id: 'k1', tick: 12, placeId: 'na', what: 'food prices in North Africa rose 40%', value: 0.4, because: 'drought cut the harvest', byWhom: 'nature', causeIds: [], nextIds: ['k2'], sig: 0.5 },
+    { id: 'k2', tick: 20, placeId: 'na', what: 'North Africa is in open revolt', value: 1, because: 'unrest stayed above 0.65 for six months', byWhom: 'people', causeIds: ['k1'], nextIds: [], sig: 0.9 },
+    { id: 'k3', tick: 25, placeId: 'eu', what: 'major disaster in Spain, 9k dead', value: 1, because: 'a natural hazard', byWhom: 'nature', causeIds: [], nextIds: [], sig: 0.95 },
+  ]
+  const rec = { runId: 'w-dead', agentId: 'x', frames: [frame(0), frame(12, { causes: [causes[0]] }), frame(24, { causes: [causes[1], causes[2]], status: 'destroyed' })], summary: { status: 'destroyed', causeOfDeath: 'North Africa stayed in open revolt and the government fell.' } } as never
+  const a = autopsy(rec)!
+  assert.deepEqual(a.chain.map(c => c.what), ['food prices in North Africa rose 40%', 'North Africa is in open revolt'])
+  assert.deepEqual(a.lost, [{ kind: 'revolt', regions: ['North Africa'], since: '2028-11' }])
+  const lines = autopsyLines(a)
+  assert.equal(lines[0], 'autopsy: died 2028-11. North Africa stayed in open revolt and the government fell.')
+  assert.equal(lines[1], '2027-11, North Africa: food prices in North Africa rose 40% (drought cut the harvest)')
+  assert.match(lines.join('\n'), /cost: 2 million deaths \(1 million famine, 500,000 unrest\), 3 million displaced\./)
+  const feat = (food: number, laws: Record<string, number>) => ({ runId: 'r', agentId: 'a', generation: 1, horizon: 'screen' as const, budget: { food, energy: 0.1, education: 0.1, space: 0.1, security: 0.1, welfare: 0.2, research: 0.1 }, lawFirstTick: laws, religion: 'free', schoolYearsMax: 12, citiesFirstTick: null, research: {}, decisions: 4, outcome: { score: 0.5, le: 70, popTrend: 1, deathRatio: 0, approval: 0.5, destroyed: false } })
+  const g = explainGap({ name: 'meridian iii', record: { runId: 'win', frames: [frame(0)] } as never, features: feat(0.25, { food_reserve: 6 }) }, { name: 'halcyon', record: rec, features: feat(0.1, {}) })
+  assert.deepEqual(g.decisive, ['meridian iii put 25% of the budget into food, halcyon 10%', 'meridian iii passed a food reserve law in 2027, halcyon never did'])
+  assert.equal(g.consequence, 'halcyon lost 1 region to revolt by 2028')
+})

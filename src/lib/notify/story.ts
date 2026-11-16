@@ -4,11 +4,13 @@
 // so every claim is traceable. quotes are the core's real rationale and public statements.
 //
 // style: lead with the story, 2-4 short lowercase lines, numbers only when they are the point, no emoji, no hype.
+import { autopsy, autopsyLines } from '../evolve/evidence'
 import type { Frame, Frontier, Lesson, RunRecord, RunSummary } from '../types'
+import { populationOf, yearOfTick } from '../evolve/facts'
 
 export type Story = { score: number; lines: string[] }
 
-const yearOf = (tick: number) => 2026 + Math.floor((tick + 10) / 12)
+const yearOf = yearOfTick
 export const people = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(1)} billion` : n >= 1e6 ? `${Math.round(n / 1e6)} million` : n >= 1e3 ? `${Math.round(n / 1e3)} thousand` : String(Math.round(n))
 const pct = (x: number) => `${Math.round(x * 100)}%`
 const words = (s: string) => s.replace(/_/g, ' ')
@@ -33,7 +35,7 @@ export function twin(rec: RunRecord) {
   const b = [...(rec.baseline ?? [])].sort((x, y) => x.tick - y.tick)
   const landed = b.find(x => x.moonProgress >= 1)
   const last = b[b.length - 1]
-  return { moonBy: landed ? yearOf(landed.tick) : null, people: last ? last.regions.reduce((a, r) => a + r.population, 0) : 0 }
+  return { moonBy: landed ? yearOf(landed.tick) : null, people: last ? populationOf(last) : 0 }
 }
 // the region that went hungriest, and when
 function hungriest(rec: RunRecord): { name: string; kcal: number; year: number } | null {
@@ -157,8 +159,16 @@ export function deathStory(rec: RunRecord | null, s: RunSummary, ctx: DeathFacts
     lines.push(`${name} studied ${ctx.lessonsKnown ?? 'every'} lessons from dead worlds so it would never repeat their mistakes. in ${year} it died of one of them anyway.`)
     lines.push(`the lesson said: "${lc(ctx.repeat.rule)}." it did not.`)
   } else {
-    lines.push(`${name} is dead, ${year}. ${lc(clean(s.causeOfDeath ?? 'it collapsed.'))}`)
+    lines.push(`${name} is dead, ${year}.`)
   }
+  // the autopsy replaces the one-line cause: the chain from the record, the core's call, what was lost, the cost
+  const a = rec ? autopsy(rec) : null
+  if (a) {
+    lines.push(...autopsyLines(a, 3))
+    if (ctx.added[0] && !ctx.repeat) lines.push(`the next governors have been told: "${lc(ctx.added[0].rule)}."`)
+    return lines.join('\n')
+  }
+  if (!ctx.repeat) lines[0] = `${name} is dead, ${year}. ${lc(clean(s.causeOfDeath ?? 'it collapsed.'))}`
   const tp = rec ? turningPoint(rec) : null
   if (tp) lines.push(`it went wrong in ${tp.year}, when it ${tp.what}.${tp.quote ? ` its reasoning: "${tp.quote}."` : ''} the next ten years killed ${people(tp.deaths)} people.`)
   else if (rec) { const w = worldStory(rec, name); if (w) lines.push(w.lines[0]) }
