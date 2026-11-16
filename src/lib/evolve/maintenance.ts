@@ -9,17 +9,16 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { RunSummary } from '../types'
 import { readAgents } from './agents'
 import { readLessons } from './lessons'
-import { readJson, readRunIndex, readRunRecord, writeJson } from './store'
+import { readJson, readRunIndex, readRunRecord, writeJson, type IndexedRun } from './store'
 import { worldStory } from '../notify/story'
-import { codeRoot, currentVersion } from './version'
+import { codeRoot, readVersion } from './version'
 import { diskLine } from './retention'
 import { ollamaUp } from './ollama'
 import { paceStats } from './usage'
 
-type State = { lastBackup?: string; backupSha?: string; lastStable?: string; stableSha?: string; stableNote?: string; lastMorning?: string; morningLessons?: number; lastQuality?: string }
+type State = { lastBackup?: string; backupSha?: string; lastStable?: string; stableSha?: string; stableNote?: string; lastMorning?: string; morningLessons?: number; lastQuality?: string; lastQualityRun?: string }
 const stateFile = () => path.join(process.cwd(), 'data', 'maintenance.json')
 export const readState = (): State => readJson<State>(stateFile()) ?? {}
 const saveState = (patch: Partial<State>) => writeJson(stateFile(), { ...readState(), ...patch })
@@ -111,14 +110,17 @@ export function promoteStable(log: (l: string) => void = console.log): { promote
 }
 
 // ---------- morning digest ----------
-export async function morningDigest(): Promise<string> {
-  const since = Date.now() - 12 * 3600e3
+// dry: build the text without marking the digest sent (npm run morning -- --dry)
+export async function morningDigest(opts: { dry?: boolean } = {}): Promise<string> {
+  // everything since the last digest (at most a day back), so evening worlds count in the next morning
+  const st0 = readState()
+  const since = Math.max(Date.now() - 24 * 3600e3, st0.lastMorning ? Date.parse(st0.lastMorning) : 0)
   const day = (offset: number) => { const d = new Date(Date.now() - offset * 864e5); return d.toISOString().slice(0, 10) }
   const usage = [day(0), day(1)].flatMap(d => readJson<{ worlds: { runId: string; outcome: string; at: string; wallMs: number }[] }>(path.join(process.cwd(), 'data', 'reports', `usage-${d}.json`))?.worlds ?? [])
   const index = new Map(readRunIndex().map(r => [r.runId, r]))
   // worlds still in the run index (discarded or archived worlds do not count)
   const night = [...new Map(usage.filter(w => w.outcome === 'finished' && Date.parse(w.at) >= since && index.has(w.runId)).map(w => [w.runId, w])).values()]
-  const runs = night.map(w => index.get(w.runId)).filter((r): r is RunSummary & { seed: number } => !!r)
+  const runs = night.map(w => index.get(w.runId)).filter((r): r is IndexedRun => !!r)
   const best = [...runs].sort((a, b) => b.score - a.score)[0]
   const deaths = runs.filter(r => r.status === 'destroyed')
   const lessons = readLessons()
@@ -132,11 +134,16 @@ export async function morningDigest(): Promise<string> {
     .map(r => { const rec = readRunRecord(r.runId); return rec ? worldStory(rec, names.get(r.agentId) ?? r.agentId) : null })
     .filter((x): x is NonNullable<typeof x> => !!x).sort((a, b) => b.score - a.score)
   const lead = stories[0]?.lines.slice(0, 2) ?? [night.length ? `${night.length} worlds overnight and nothing worth waking you for.` : 'no worlds finished overnight.']
-  const tally = night.length ? `${night.length} worlds overnight${deaths.length ? `, ${deaths.length} died` : ', nobody died'}${newLessons.length ? `, ${newLessons.length} new lesson${newLessons.length > 1 ? 's' : ''}` : ''}${best && stories[0] ? `. best was ${names.get(best.agentId) ?? best.agentId}` : ''}.` : ''
+  const byVersion = [...runs.reduce((m, r) => m.set(r.simVersion ?? '?', (m.get(r.simVersion ?? '?') ?? 0) + 1), new Map<string, number>())]
+  const versions = byVersion.length > 1 ? ` (${byVersion.map(([v, n]) => `${n} on ${v}`).join(', ')})` : ''
+  const tally = night.length ? `${night.length} worlds overnight${versions}${deaths.length ? `, ${deaths.length} died` : ', nobody died'}${newLessons.length ? `, ${newLessons.length} new lesson${newLessons.length > 1 ? 's' : ''}` : ''}${best && stories[0] ? `. best was ${names.get(best.agentId) ?? best.agentId}` : ''}.` : ''
   const lifeLine = lifeStories(since)[0]
   const health = `${up ? 'ollama up' : 'ollama is DOWN'}${pace ? `, ${Math.round(pace.avgMinutesPerWorld)} min a world` : ''}, ${diskLine().replace(/^disk: /, '')}.`
-  const lines = [...lead, tally, ...(lifeLine ? [lifeLine] : []), health].filter(Boolean).slice(0, 4)
-  saveState({ lastMorning: new Date().toISOString(), morningLessons: lessons.length })
+  // a sim switch overnight resets the leaderboard, worth one line
+  const switched = (readVersion()?.history ?? []).filter(h => Date.parse(h.until) >= since).pop()
+  const switchLine = switched ? `the sim changed overnight (${switched.version} to ${readVersion()!.current}), so the leaderboard started over.` : ''
+  const lines = [...lead, tally, ...(switchLine ? [switchLine] : []), ...(lifeLine ? [lifeLine] : []), health].filter(Boolean).slice(0, 5)
+  if (!opts.dry) saveState({ lastMorning: new Date().toISOString(), morningLessons: lessons.length })
   return lines.filter(Boolean).join('\n')
 }
 
@@ -157,5 +164,6 @@ const hoursSince = (iso?: string) => (iso ? (Date.now() - Date.parse(iso)) / 360
 export const backupDue = () => hoursSince(readState().lastBackup) >= 24
 export const stableDue = () => { const h = new Date().getHours(); return hoursSince(readState().lastStable) >= 20 && h >= 3 && h < 6 }
 export const morningDue = () => new Date().getHours() >= 8 && (readState().lastMorning ? today(new Date(readState().lastMorning!)) !== today() : true)
-export const qualityDue = () => hoursSince(readState().lastQuality) >= 7 * 24
-export const markQuality = () => saveState({ lastQuality: new Date().toISOString() })
+// lastQualityRun: set only when a replay actually ran (older code also wrote lastQuality on a skip, so it is ignored)
+export const qualityDue = () => hoursSince(readState().lastQualityRun) >= 7 * 24
+export const markQuality = () => saveState({ lastQualityRun: new Date().toISOString() })
