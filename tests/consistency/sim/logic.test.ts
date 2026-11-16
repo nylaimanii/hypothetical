@@ -146,7 +146,7 @@ test('an assumption override changes the world, a value out of range is clamped 
   assert.ok(hot.climate.anomalyC > base.climate.anomalyC, `tcre 0.6 should warm faster: ${hot.climate.anomalyC.toFixed(2)} vs ${base.climate.anomalyC.toFixed(2)}`)
 })
 
-test('freedom falls when compliance is forced, speech censored or movement limited, and rises with referendums', async () => {
+test('freedom falls when compliance is forced, speech censored or movement limited, and rises with referendums above the 2026 level', async () => {
   const { worldFreedom } = await import('../../../src/lib/sim/tradeoffs')
   const { BASELINE_BUDGET } = await import('../../../src/lib/sim/constants')
   const run = (laws: Decision['laws'], security: number) => {
@@ -159,7 +159,8 @@ test('freedom falls when compliance is forced, speech censored or movement limit
   const harsh = run([law('Collective Farms Act', 'Collectivization of all farms into state farms.'), law('Internet Shutdown Powers', 'Censor social media and allow internet shutdowns during unrest.')], 0.4)
   const voice = run([law('Citizens Assembly', 'A citizens assembly chosen by sortition reviews every law.'), law('Referendums', 'Binding referendums on major laws.')], 0.12)
   assert.ok(harsh < free - 0.1, `forced collectivization and censorship should cut freedom: ${harsh.toFixed(2)} vs ${free.toFixed(2)}`)
-  assert.ok(voice >= free, `assemblies and referendums should not cut freedom: ${voice.toFixed(2)} vs ${free.toFixed(2)}`)
+  assert.ok(voice > free + 0.01, `assemblies and referendums should raise freedom, not be clipped away: ${voice.toFixed(2)} vs ${free.toFixed(2)}`)
+  assert.ok(free < 1, `a world with 2026 policy should leave room above it for a voice: ${free.toFixed(2)}`)
 })
 
 test('when a world dies, its autopsy walks back in date order from the death to the decision that started it', async () => {
@@ -248,4 +249,15 @@ test('a relocated person takes their partner along, to the same city', async () 
   assert.ok(partnered(to) > 0, 'nobody with a partner was relocated')
   const by = new Map(w.citizens.map(c => [c.id, c as C]))
   for (const c of w.citizens as C[]) { const q = c.family.partnerId ? by.get(c.family.partnerId) : undefined; if (q) assert.equal(place(q), place(c), `${c.name} (${place(c)}) and partner ${q.name} (${place(q)}) live apart after relocation`) }
+})
+
+test('a broken population count stops the run as a sim bug instead of ending the world in a famine', async () => {
+  const { checkEnd } = await import('../../../src/lib/sim/end')
+  const w = initWorld(42, false)
+  checkEnd(w)
+  const c = w.countries.find(k => k.id === 'SGP')!
+  c.bands[0] = NaN
+  for (const rs of w.regions) rs.bands[0] = NaN
+  assert.throws(() => { for (let i = 0; i < 13; i++) { w.tick++; checkEnd(w) } }, /sim bug: world population/)
+  assert.equal(w.status, 'alive', `a NaN count ended the world: ${w.causeOfDeath}`)
 })

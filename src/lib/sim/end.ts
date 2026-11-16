@@ -19,7 +19,7 @@ import { worldFreedom } from './tradeoffs'
 import { A } from './assumptions'
 import { MAX_TICKS, SURVIVAL_KCAL } from './constants'
 import { FRONTIERS, has } from './frontier'
-import { clamp, popWeighted, worldPop, type World } from './state'
+import { clamp, popWeighted, regionPop, worldPop, type World } from './state'
 
 export const START_PLE = 73
 
@@ -41,6 +41,12 @@ export function popTrend(w: World): number {
 
 export function checkEnd(w: World) {
   const pop = worldPop(w)
+  // a broken count is a sim bug, never a death: in 5.10.7 a NaN population made the world's average food 0 kcal, and a
+  // year later the world "starved" with 3,793 kcal per person everywhere. stop the run loudly instead
+  if (!Number.isFinite(pop)) {
+    const bad = w.regions.filter(r => !Number.isFinite(regionPop(r))).map(r => r.r.id)
+    throw new Error(`sim bug: world population is ${pop} at tick ${w.tick} (regions ${bad.join(', ') || 'none'}). no death recorded`)
+  }
   w.peakPop = Math.max(w.peakPop, pop)
   w.peakPLE = Math.max(w.peakPLE, globalPLE(w))
   if (w.tick % 12 === 0) w.popHistory.push(pop)
