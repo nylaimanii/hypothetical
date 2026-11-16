@@ -56,7 +56,16 @@ export function temperamentWords(t: Temperament): string {
 }
 
 // ---------- ollama priority ----------
+// C's evolve opens a gap between worlds for lives (data/.ollama.gap, {until, pid}) whenever data/lives/now.json lists
+// a running life: while it is open, nothing is waiting as far as a life is concerned
+function evolveGapOpen(): boolean {
+  try {
+    const g = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'data', '.ollama.gap'), 'utf8')) as { until?: string }
+    return Date.parse(g.until ?? '') > Date.now()
+  } catch { return false }
+}
 function evolveHasWorldWaiting(): boolean {
+  if (evolveGapOpen()) return false
   try {
     const now = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'data', 'evolve-now.json'), 'utf8')) as { pid?: number; queue?: unknown[]; updatedAt?: string; lastHeartbeat?: string; running?: boolean }
     if (now.running === false) return false
@@ -74,13 +83,21 @@ export async function politeLlm<T>(fn: () => Promise<T>): Promise<T> {
   if (provider() === 'ollama') {
     while (evolveHasWorldWaiting()) {
       if (!waitedNote) { console.error('[life] evolve has a world waiting, yielding ollama'); waitedNote = true }
-      await sleep(15_000)
+      await sleep(3_000) // short, so a gap evolve opens between worlds (up to 60s) is never missed
     }
     waitedNote = false
   }
-  const release = await acquireOllamaLock('life-milestone')
-  try { return await fn() } finally { release() }
+  // at most one ollama ticket per life process: calls queue here, one in flight at a time
+  const prev = inFlight
+  let done!: () => void
+  inFlight = new Promise<void>(r => { done = r })
+  await prev
+  try {
+    const release = await acquireOllamaLock('life-milestone')
+    try { return await fn() } finally { release() }
+  } finally { done() }
 }
+let inFlight: Promise<void> = Promise.resolve()
 
 // ---------- the llm call ----------
 const clean = (s: string) => s.replace(/[\u2014\u2013]/g, ',').replace(/\s+/g, ' ').trim()
