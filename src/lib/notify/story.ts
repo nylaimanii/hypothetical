@@ -13,7 +13,7 @@ export const people = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(1)} billion
 const pct = (x: number) => `${Math.round(x * 100)}%`
 const words = (s: string) => s.replace(/_/g, ' ')
 const lc = (s: string) => s.replace(/^./, c => c.toLowerCase())
-const clean = (s: string) => s.replace(/[—–]/g, ', ').replace(/\s+/g, ' ').trim()
+const clean = (s: string) => s.replace(/[\u2014\u2013]/g, ', ').replace(/\s+/g, ' ').trim()
 
 type Decided = { tick: number; year: number; d: NonNullable<Frame['decision']>; frame: Frame }
 const decisions = (rec: RunRecord): Decided[] =>
