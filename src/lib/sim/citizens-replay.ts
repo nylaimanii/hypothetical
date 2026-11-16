@@ -110,7 +110,8 @@ export function dayPlanOf(c: Citizen, tick: number, nightlife = 0.3, day?: DayCo
   const u = (salt: string) => { let h = 2166136261; const s = salt; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); let a = (c.personalitySeed ^ h) >>> 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
   const plan: { hour: number; activity: Activity }[] = []
   const at = (hour: number, activity: Activity) => { if (!plan.length || plan[plan.length - 1].activity !== activity) plan.push({ hour, activity }) }
-  const wp = c.workplace ?? 'none', employed = !!c.employed
+  // age guards the copied flags: only working-age adults (18-67, as localLife sets them) get a workday
+  const employed = !!c.employed && c.age >= 18 && c.age < 67, wp = employed ? (c.workplace ?? 'none') : 'none'
   const crisis: Activity = c.behavior === 'striking' ? 'striking' : c.behavior === 'protesting' || c.behavior === 'rioting' ? 'protesting' : c.behavior === 'migrating' || c.behavior === 'moving_to_new_city' ? 'moving' : 'working'
   const night = (wp === 'clinic' || wp === 'power_plant' || wp === 'factory') && u('night') < 0.3
   const prays = c.belief === 'religious' && (c.behavior === 'praying' || u('devout') < 0.4)
