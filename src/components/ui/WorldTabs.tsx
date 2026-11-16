@@ -36,7 +36,8 @@ export const WORLD_COLORS = ['#1D1B19', '#3E7CB1', '#C27C2C', '#5E8C4A', '#8A5FB
 
 // ---- the mini globe: a tiny orthographic render on a 2d canvas, refreshed every few seconds ----
 const BIOME_RGB = [0x79, 0xa8, 0x5e]
-function Thumb({ frame, dead }: { frame: Frame | undefined; dead: boolean }) {
+// also used by the report pages for snapshots at key moments (size in css px)
+export function Thumb({ frame, dead, size = 24 }: { frame: Frame | undefined; dead: boolean; size?: number }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const [spin, setSpin] = useState(0)
   useEffect(() => { const id = setInterval(() => setSpin((s) => s + 1), 3000); return () => clearInterval(id) }, [])
@@ -91,8 +92,9 @@ function Thumb({ frame, dead }: { frame: Frame | undefined; dead: boolean }) {
     }
     g.putImageData(img, 0, 0)
   }, [frame, tiles, spin, dead])
-  if (!frame) return <span className="skel inline-block h-6 w-6 rounded-full" />
-  return <canvas ref={ref} width={48} height={48} className="h-6 w-6 shrink-0 rounded-full" aria-hidden />
+  if (!frame) return <span className="skel inline-block shrink-0 rounded-full" style={{ width: size, height: size }} />
+  const px = Math.min(256, Math.round(size * 2))
+  return <canvas ref={ref} width={px} height={px} className="shrink-0 rounded-full" style={{ width: size, height: size }} aria-hidden />
 }
 
 // load every tab's record so tabs, graphs and the daily can compare them

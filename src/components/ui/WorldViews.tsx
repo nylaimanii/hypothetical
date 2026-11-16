@@ -171,6 +171,7 @@ export function EpitaphCard() {
       {ep && <p className="mt-2 font-display text-[16px] italic leading-snug text-ink/85">{ep.line}</p>}
       {record.summary.causeOfDeath && <p className="mt-2 text-[12.5px] text-ink/65">cause of death: <span className="text-ember">{record.summary.causeOfDeath}</span></p>}
       <button onClick={seeSteps} className="mt-3 rounded-full border border-ink/30 px-4 py-1.5 text-[12px] hover:bg-ink hover:text-bone">see the steps that killed it</button>
+      <a href={`/report/${encodeURIComponent(record.runId)}`} className="mt-2 block text-[12px] text-ink/60 underline decoration-ink/25 underline-offset-2 hover:text-ink">read its full report</a>
     </div>
   )
 }

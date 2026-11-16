@@ -1,6 +1,7 @@
 'use client'
 // v4: one small card for a country, state or city. one plain line by default; depth in the full report.
 import { useMemo } from 'react'
+import Link from 'next/link'
 import type { Frame, PlaceStats, RunRecord } from '@/lib/types'
 import { useCurrentFrame, useStore } from '../state/store'
 import { Num, Sparkline, fmt } from './bits'
@@ -139,6 +140,7 @@ export function PlaceReport({ kind, id }: { kind: Place['kind']; id: string }) {
           </div>
         ))}
       </div>
+      <Link href={`/report/${encodeURIComponent(record.runId)}`} className="mt-4 inline-block text-[12px] underline decoration-ink/25 underline-offset-2">this world&apos;s full report</Link>
       {country && (
         <p className="mt-4 text-[11px] leading-snug text-ink/45">
           population: {country.provenance.population?.kind === 'SOURCED' ? <a href={country.provenance.population.url} target="_blank" rel="noreferrer" className="underline">un world population prospects</a> : 'estimate'}. every other number here is an estimate from the sim.

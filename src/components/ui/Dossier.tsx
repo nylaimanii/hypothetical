@@ -2,6 +2,7 @@
 import { rosterAt } from '../state/store'
 import { ReasoningLines, layerSentence, useLinks, whyDoing } from './chains'
 import { todayOf } from '../world/city/day'
+import { lifeHref, lifeNear, useLives } from '../state/useLives'
 import { localHour, utcHourOf, worldDate } from '../world/time'
 import { useState } from 'react'
 import type { Budget, Citizen, Emotion, Frame, Law, Layer, Migration, Precedent, Region, RunRecord, Why } from '@/lib/types'
@@ -128,10 +129,13 @@ function PipDossier({ c, frame, record }: { c: Citizen; frame: Frame; record: Ru
   const playing = useStore((s) => s.playing)
   const playhead = useStore((s) => s.playhead)
   const home = frame.cities.find((x) => x.id === c.cityId) ?? frame.regions.find((r) => r.id === c.regionId)
+  const lives = useLives(record.runId)
+  const pipLife = home ? lifeNear(lives, home.lat, home.lon) : undefined
   const today = c.dayPlan && home ? todayOf(c, localHour(utcHourOf(worldDate(playhead, hour, playing)), home.lon)) : null
   return (
     <Drawer kicker={`${region?.name ?? 'citizen'} · ${words(c.archetype)}`} title={c.name}>
       {why && <p className="mb-1 text-[12.5px] leading-snug text-ink/80">{why}</p>}
+      {pipLife && lives && <a href={lifeHref(lives, pipLife)} target="_blank" rel="noreferrer" className="mb-1 block text-[12px] underline decoration-ink/25 underline-offset-2">watch this life: {pipLife.name}</a>}
       {today && <p className="mb-2 text-[12px] leading-snug text-ink/65"><span className="text-ink/45">today</span> {today.place}, until {today.until}. {today.why}</p>}
       <Tabs tabs={['who', 'feelings', 'life', 'laws']} value={tab} onChange={setTab} />
       {tab === 'who' && (
@@ -479,6 +483,7 @@ function CoreDossier({ record, idx, frame }: { record: RunRecord; idx: number; f
       {tab === 'mandate' && (
         <>
           <Section title="constitution"><p className="font-display text-[15px] italic leading-snug">{record.constitution}</p></Section>
+          <a href={`/report/${encodeURIComponent(record.runId)}`} className="mt-2 inline-block text-[12px] text-ink/60 underline decoration-ink/25 underline-offset-2 hover:text-ink">this world&apos;s full report</a>
           {dead > 0 && <Section title="lineage"><p className="text-[13px]">learned from <Num>{dead}</Num> dead world{dead === 1 ? '' : 's'} · knows <Num>{frame.lessonsKnown || lessons.length}</Num> lessons</p></Section>}
           {decisions.some(({ d }) => d.publicStatement) && (
             <Section title="what it told the public">

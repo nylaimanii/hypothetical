@@ -20,6 +20,7 @@ import { agentOf, prettyAgent, worldNumber } from './WorldTabs'
 import { openRun } from './worlds'
 import { PlaceCard, PlaceReport, SeaCard } from './PlaceCard'
 import { usePhone } from './usePhone'
+import { lifeHref, lifeNear, useLives } from '../state/useLives'
 import { StoryLine, useLinks } from './chains'
 
 const DEV = process.env.NODE_ENV === 'development'
@@ -94,6 +95,7 @@ export function SideMenu({ onLive }: { onLive: () => void }) {
           <Item label="worlds" hint="leaderboard, learning" onClick={() => s.setSheet('worlds')} />
           <Item label="agents" onClick={() => s.setPanel('agents')} />
           <Item label="hall of history" onClick={() => s.setPanel('hall')} />
+          <Item label="the story so far" hint="every world, every lesson" href="/story" />
           <Item label="mission control" href="/mission" />
           <Item label={liveRunId ? 'live: on' : 'play live'} onClick={() => { s.setMenu(false); onLive() }} />
         </Group>
@@ -374,9 +376,11 @@ export function CityBar() {
   const hour = useStore((s) => s.hour)
   const playing = useStore((s) => s.playing)
   const pinned = useStore((s) => s.hourPinned)
-  const { frame } = useCurrentFrame()
+  const { frame, record } = useCurrentFrame()
+  const lives = useLives(cityView ? record.runId : undefined)
   const city = frame.cities.find((c) => c.id === cityView)
   if (!city) return null
+  const life = lifeNear(lives, city.lat, city.lon)
   const local = localHour(utcHourOf(worldDate(playhead, hour, playing)), city.lon)
   const country = city.countryId ? frame.countries?.find((c) => c.id === city.countryId) : undefined
   // set a local hour: convert back to utc
@@ -391,6 +395,7 @@ export function CityBar() {
       </div>
       <input type="range" min={0} max={23.9} step={0.1} value={local} onChange={(e) => setLocal(Number(e.target.value))} className="w-28 accent-[var(--ink)]" aria-label="time of day" />
       {pinned && <button onClick={() => useStore.getState().setHour(useStore.getState().hour, false)} className="text-[11px] text-ink/50 underline decoration-ink/20 underline-offset-2">let the day run</button>}
+      {life && lives && <a href={lifeHref(lives, life)} target="_blank" rel="noreferrer" className="text-[11.5px] underline decoration-ink/25 underline-offset-2">watch this life: {life.name}</a>}
     </div>
   )
 }
