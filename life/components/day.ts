@@ -104,6 +104,11 @@ export function householdAt(r: LifeRecord, tick: number): Present[] {
   }).map(k => ({ ...k, age: (tick - k.bornTick) / 12 }))
 }
 
+// everyone in her family alive at this tick, wherever they live (parents, siblings, partner, kids, grandkids)
+export function kinAliveAt(r: LifeRecord, tick: number): Present[] {
+  return r.kin.filter(k => k.bornTick <= tick && (k.diedTick === undefined || k.diedTick > tick) && (k.relation !== 'partner' || ((k.sinceTick ?? 0) <= tick && (k.untilTick === undefined || k.untilTick > tick)))).map(k => ({ ...k, age: (tick - k.bornTick) / 12 }))
+}
+
 // growth: rough share of adult height by age (who growth standards medians, https://www.who.int/tools/child-growth-standards ;
 // after 5, cdc 2000 charts). ESTIMATE as a smooth curve
 export function heightShare(age: number): number {

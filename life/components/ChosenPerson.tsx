@@ -6,7 +6,8 @@
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
-import { P, buildW, shoulderX, partGeometries, hairGeometries } from '@/components/world/pipShared'
+import { P, buildW, shoulderX, partGeometries } from '@/components/world/pipShared'
+import { hairGeometry } from './hair'
 import { C, HAIR_HEX, MONK, toonGradient } from '@/components/world/lib'
 import type { Look } from '@/lib/life/types'
 import { FLINCH, moodToAUs, zeroAUs, AUS, type AUs } from './facs'
@@ -15,7 +16,7 @@ import type { Emotion } from '@/lib/types'
 
 // what the scene tells the rig every frame (a mutable object, so react never re-renders per frame)
 export type LiveState = {
-  pos: THREE.Vector3; heading: number; walking: boolean; act: string
+  pos: THREE.Vector3; heading: number; walking: boolean; act: string; pose: string
   mood: Record<string, number>; fatigue: number; age: number; heat: number
   flinch: { emotion: Emotion; at: number } | null
   gaze: THREE.Vector3 | null // world point to look at (someone talking, a kid), or null
@@ -24,14 +25,15 @@ export type LiveState = {
   head: THREE.Vector3; forward: THREE.Vector3
 }
 
-export const PERSON_SCALE = 1.45 // pip units (adult ~1.1) to diorama units, so an adult stands ~1.6 like the city pips
+// pip units (adult ~1.1) to diorama units: an adult stands ~1.0, so a bed, a doorway and a bus seat fit her
+export const PERSON_SCALE = 0.9
 
 const toon = (color: THREE.ColorRepresentation, extra: THREE.MeshToonMaterialParameters = {}) => new THREE.MeshToonMaterial({ color, gradientMap: toonGradient(), ...extra })
 const damp = (cur: number, target: number, rate: number, dt: number) => cur + (target - cur) * (1 - Math.exp(-rate * dt))
 
 export default function ChosenPerson({ look, live, cloth }: { look: Look; live: React.RefObject<LiveState>; cloth: string }) {
   const parts = useMemo(() => partGeometries(), [])
-  const hair = useMemo(() => hairGeometries()[look.hair], [look.hair])
+  const hair = useMemo(() => hairGeometry(look.hair), [look.hair])
   const g = useMemo(() => ({
     lid: new THREE.BoxGeometry(0.07, 0.06, 0.016),
     lowLid: new THREE.BoxGeometry(0.066, 0.03, 0.014),
@@ -40,7 +42,6 @@ export default function ChosenPerson({ look, live, cloth }: { look: Look; live: 
     mouthInner: new THREE.BoxGeometry(0.06, 0.04, 0.01),
     tear: new THREE.SphereGeometry(0.012, 8, 6),
     blush: new THREE.CircleGeometry(0.03, 16),
-    sweat: (() => { const s = new THREE.SphereGeometry(0.016, 8, 6); s.scale(1, 1.5, 1); return s })(),
     bag: new THREE.BoxGeometry(0.06, 0.012, 0.01),
     line: new THREE.BoxGeometry(0.07, 0.006, 0.006),
   }), [])
@@ -51,7 +52,6 @@ export default function ChosenPerson({ look, live, cloth }: { look: Look; live: 
     lid: toon(new THREE.Color(skinHex).multiplyScalar(0.94)), mouth: toon('#3b2724'), inner: toon('#5a2f2c'),
     tear: new THREE.MeshBasicMaterial({ color: '#9fd3ee', transparent: true, opacity: 0 }),
     blush: new THREE.MeshBasicMaterial({ color: '#e88a86', transparent: true, opacity: 0, depthWrite: false }),
-    sweat: new THREE.MeshBasicMaterial({ color: '#bfe6f5', transparent: true, opacity: 0 }),
     bag: new THREE.MeshBasicMaterial({ color: new THREE.Color(skinHex).multiplyScalar(0.7), transparent: true, opacity: 0 }),
     line: new THREE.MeshBasicMaterial({ color: new THREE.Color(skinHex).multiplyScalar(0.72), transparent: true, opacity: 0 }),
   }), [skinHex, cloth, look.hairColor])
@@ -64,7 +64,7 @@ export default function ChosenPerson({ look, live, cloth }: { look: Look; live: 
     eyeL: useRef<THREE.Mesh>(null), eyeR: useRef<THREE.Mesh>(null), lidL: useRef<THREE.Mesh>(null), lidR: useRef<THREE.Mesh>(null),
     lowL: useRef<THREE.Mesh>(null), lowR: useRef<THREE.Mesh>(null), browL: useRef<THREE.Mesh>(null), browR: useRef<THREE.Mesh>(null),
     mMid: useRef<THREE.Mesh>(null), mL: useRef<THREE.Mesh>(null), mR: useRef<THREE.Mesh>(null), mIn: useRef<THREE.Mesh>(null),
-    tearL: useRef<THREE.Mesh>(null), tearR: useRef<THREE.Mesh>(null), sweat: useRef<THREE.Mesh>(null),
+    tearL: useRef<THREE.Mesh>(null), tearR: useRef<THREE.Mesh>(null),
   }
   const st = useRef({ aus: zeroAUs(), gazeX: 0, gazeY: 0, headYaw: 0, headPitch: 0, blinkAt: 2, blinkPhase: 0, tear: 0, walk: 0, lastX: 0, lastZ: 0, speed: 0 })
   const tmp = useMemo(() => ({ v: new THREE.Vector3(), q: new THREE.Quaternion(), m: new THREE.Matrix4() }), [])
@@ -78,11 +78,15 @@ export default function ChosenPerson({ look, live, cloth }: { look: Look; live: 
 
     // ---- body: size by age, walk cycle, idle sway ----
     const share = heightShare(L.age)
-    const kid = L.age < 14
     const scale = PERSON_SCALE * (look.adultHeightCm / 170) * share
     const root = R.root.current
+    const lying = L.pose === 'lie'
+    const seated = L.pose === 'sit' || L.pose === 'ride'
+    const busy = L.pose === 'busy'
     root.position.copy(L.pos)
-    root.rotation.y = L.heading
+    // in bed: lie along the bed, on top of the mattress
+    root.rotation.set(lying ? -Math.PI / 2 : 0, L.heading, 0, 'YXZ')
+    if (lying) { root.position.y = 0.3; root.position.z += 0.5 * scale }
     root.scale.setScalar(scale)
     const moved = Math.hypot(L.pos.x - s.lastX, L.pos.z - s.lastZ) / Math.max(dt, 1e-3)
     s.lastX = L.pos.x; s.lastZ = L.pos.z
@@ -91,18 +95,23 @@ export default function ChosenPerson({ look, live, cloth }: { look: Look; live: 
     s.walk += dt * (walking ? 9 : 0)
     const sw = walking ? Math.sin(s.walk) : 0
     const bw = buildW(look.build)
-    const sitting = L.act === 'sit' || L.act === 'rest'
-    const sleeping = L.act === 'sleep'
+    const sitting = seated
+    const sleeping = lying
     const age = L.age
     const stoop = age > 70 ? Math.min(0.25, (age - 70) * 0.01) : 0
     const sad = L.mood.grief ?? 0
     R.hip.current!.position.y = sitting ? P.hipY * 0.55 : P.hipY + (walking ? Math.abs(Math.cos(s.walk)) * 0.02 : Math.sin(t * 1.6) * 0.004)
-    R.hip.current!.rotation.x = sleeping ? -1.45 : stoop + sad * 0.12 + (walking ? 0.05 : 0)
+    R.hip.current!.rotation.x = sleeping ? 0 : stoop + sad * 0.12 + (walking ? 0.05 : 0) + (busy ? 0.12 : 0)
     R.legL.current!.rotation.x = sitting ? -1.4 : sw * 0.55
     R.legR.current!.rotation.x = sitting ? -1.4 : -sw * 0.55
+    // children: shorter legs and a bigger head, so an 8 year old reads as a child at any zoom
+    const legK = L.age < 16 ? 0.72 + 0.28 * Math.min(1, L.age / 16) : 1
+    R.legL.current!.scale.y = legK; R.legR.current!.scale.y = legK
+    R.hip.current!.position.y -= P.hipY * (1 - legK)
     const hug = L.hug
-    R.armL.current!.rotation.x = -sw * 0.5 - hug * 1.3 + (sitting ? -0.4 : 0)
-    R.armR.current!.rotation.x = sw * 0.5 - hug * 1.3 + (sitting ? -0.4 : 0)
+    const work = busy ? Math.sin(t * 5) * 0.35 : 0
+    R.armL.current!.rotation.x = -sw * 0.5 - hug * 1.3 + (sitting ? -0.5 : 0) + (busy ? -1.0 + work : 0)
+    R.armR.current!.rotation.x = sw * 0.5 - hug * 1.3 + (sitting ? -0.5 : 0) + (busy ? -1.0 - work : 0)
     R.armL.current!.rotation.z = 0.08 + hug * 0.35
     R.armR.current!.rotation.z = -0.08 - hug * 0.35
     R.armL.current!.position.x = shoulderX(bw)
@@ -141,7 +150,7 @@ export default function ChosenPerson({ look, live, cloth }: { look: Look; live: 
     s.gazeX = damp(s.gazeX, gx, 10, dt)
     s.gazeY = damp(s.gazeY, gy, 10, dt)
     R.neck.current!.rotation.set(s.headPitch, s.headYaw, Math.sin(t * 0.7) * 0.02)
-    R.headScale.current!.scale.setScalar(kid ? 1.3 - Math.max(0, age - 6) * 0.02 : 1)
+    R.headScale.current!.scale.setScalar(age < 16 ? 1.45 - Math.min(1, age / 16) * 0.45 : 1)
 
     // blinks: ~15-20 a minute (bentivoglio et al. 1997, https://doi.org/10.1002/mds.870120629), longer in old age
     if (t > s.blinkAt) { s.blinkPhase = 1; s.blinkAt = t + 2.2 + ((Math.sin(t * 12.9898) * 43758.5453) % 1 + 1) % 1 * 3.5 }
@@ -196,8 +205,6 @@ export default function ChosenPerson({ look, live, cloth }: { look: Look; live: 
     // blushing shows less on darker skin, so it fades with the monk tone instead of turning muddy
     const blushK = 1 - (look.skinTone - 1) / 12
     m.blush.opacity = damp(m.blush.opacity, blushK * Math.min(0.5, 0.45 * Math.max(0, (L.mood.joy ?? 0) - 0.55) * 2 + 0.3 * (L.mood.pride ?? 0) + 0.2 * L.heat), 2, dt)
-    m.sweat.opacity = damp(m.sweat.opacity, Math.max(L.heat > 0.5 ? 0.8 : 0, (L.mood.fear ?? 0) > 0.6 ? 0.8 : 0), 2, dt)
-    R.sweat.current!.position.set(0.13, 0.075 - ((t * 0.25) % 1) * 0.06, 0.07)
     m.bag.opacity = damp(m.bag.opacity, Math.min(0.75, L.fatigue * 0.9), 1.5, dt)
     m.line.opacity = Math.min(0.8, Math.max(0, (age - 42) / 30))
     m.hair.color.copy(baseHair).lerp(gray, grayShare(age))
@@ -245,13 +252,12 @@ export default function ChosenPerson({ look, live, cloth }: { look: Look; live: 
               <mesh ref={R.tearR} geometry={g.tear} material={m.tear} />
               <mesh geometry={g.blush} material={m.blush} position={[0.085, -0.035, 0.1305]} />
               <mesh geometry={g.blush} material={m.blush} position={[-0.085, -0.035, 0.1305]} />
-              <mesh ref={R.sweat} geometry={g.sweat} material={m.sweat} />
               <mesh geometry={g.bag} material={m.bag} position={[0.06, -0.026, 0.1315]} />
               <mesh geometry={g.bag} material={m.bag} position={[-0.06, -0.026, 0.1315]} />
               {lineAt(0, 0.112)}{lineAt(0, 0.124, 0, 0.8)}
               {lineAt(0.112, 0.03, 0.5, 0.3)}{lineAt(-0.112, 0.03, -0.5, 0.3)}
+              {hair && <mesh geometry={hair} material={m.hair} castShadow />}
             </group>
-            {hair && <mesh geometry={hair} material={m.hair} castShadow />}
           </group>
         </group>
       </group>

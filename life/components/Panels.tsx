@@ -6,7 +6,7 @@ import { DAYS_PER_TICK, snapAt, yearOf } from './day'
 
 export type PanelKind = 'journal' | 'family' | 'health'
 
-export default function Panel({ kind, record, tick, onSeek, onClose }: { kind: PanelKind; record: LifeRecord; tick: number; onSeek: (days: number) => void; onClose: () => void }) {
+export default function Panel({ kind, record, tick, onSeek, onClose, onFocusKin }: { kind: PanelKind; record: LifeRecord; tick: number; onSeek: (days: number) => void; onClose: () => void; onFocusKin: (id: string) => void }) {
   return (
     <aside className="chip panel-in" role="dialog" aria-label={kind} style={{ position: 'absolute', top: 16, right: 16, bottom: 96, width: 'min(360px, calc(100% - 32px))', borderRadius: 20, padding: '18px 18px 14px', display: 'flex', flexDirection: 'column', gap: 10, overflow: 'hidden' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -15,7 +15,7 @@ export default function Panel({ kind, record, tick, onSeek, onClose }: { kind: P
       </div>
       <div className="scroll-thin" style={{ overflowY: 'auto', flex: 1, paddingRight: 4 }}>
         {kind === 'journal' && <Journal record={record} tick={tick} onSeek={onSeek} />}
-        {kind === 'family' && <Family record={record} tick={tick} />}
+        {kind === 'family' && <Family record={record} tick={tick} onFocus={onFocusKin} />}
         {kind === 'health' && <Health record={record} tick={tick} />}
       </div>
     </aside>
@@ -53,36 +53,40 @@ function Journal({ record, tick, onSeek }: { record: LifeRecord; tick: number; o
 type Item = { k: Kin; label: string }
 const isGone = (k: Kin, tick: number) => k.diedTick !== undefined && k.diedTick <= tick
 const ageOf = (k: Kin, tick: number) => Math.floor(((isGone(k, tick) ? k.diedTick! : tick) - k.bornTick) / 12)
-function FamilyPerson({ k, label, tick }: Item & { tick: number }) {
+// a living person: click swings the camera to where they are right now. someone who died: when and where
+function FamilyPerson({ k, label, tick, where, onFocus }: Item & { tick: number; where: string; onFocus: (id: string) => void }) {
+  const gone = isGone(k, tick)
   return (
-    <div style={{ padding: '8px 10px', borderRadius: 12, border: '1px solid var(--line)', opacity: isGone(k, tick) ? 0.5 : 1, minWidth: 0 }}>
+    <button disabled={gone} onClick={() => onFocus(k.id)} title={gone ? undefined : `show where ${k.name} is right now`} style={{ textAlign: 'left', padding: '8px 10px', borderRadius: 12, border: '1px solid var(--line)', opacity: gone ? 0.5 : 1, minWidth: 0, cursor: gone ? 'default' : 'pointer' }}>
       <div style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{k.name}</div>
-      <div style={{ fontSize: 12, opacity: 0.6 }}>{label}, {isGone(k, tick) ? <>died at <span className="mono">{ageOf(k, tick)}</span></> : <span className="mono">{ageOf(k, tick)}</span>}</div>
-    </div>
+      <div style={{ fontSize: 12, opacity: 0.6 }}>{label}, {gone ? <>died <span className="mono">{2026 + Math.floor((k.diedTick! + 10) / 12)}</span> in {where}, at <span className="mono">{ageOf(k, tick)}</span></> : <span className="mono">{ageOf(k, tick)}</span>}</div>
+    </button>
   )
 }
-function Row({ title, items, tick }: { title: string; items: Item[]; tick: number }) {
+function Row({ title, items, tick, whereAt, onFocus }: { title: string; items: Item[]; tick: number; whereAt: (t: number) => string; onFocus: (id: string) => void }) {
   if (!items.length) return null
   return (
     <section style={{ marginBottom: 14 }}>
       <div style={{ fontSize: 12, opacity: 0.5, marginBottom: 6 }}>{title}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>{items.map(i => <FamilyPerson key={i.k.id} {...i} tick={tick} />)}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>{items.map(i => <FamilyPerson key={i.k.id} {...i} tick={tick} where={whereAt(i.k.diedTick ?? tick)} onFocus={onFocus} />)}</div>
     </section>
   )
 }
 
-function Family({ record, tick }: { record: LifeRecord; tick: number }) {
+function Family({ record, tick, onFocus }: { record: LifeRecord; tick: number; onFocus: (id: string) => void }) {
+  // the city the family lived in at that time (they live with or near the chosen person)
+  const whereAt = (t: number) => ([...record.places].reverse().find(p => p.fromTick <= t) ?? record.birthplace).city.toLowerCase()
   const born = (k: Kin) => k.bornTick <= tick
   const by = (rel: Kin['relation']) => record.kin.filter(k => k.relation === rel && born(k))
   const kids = by('child')
   const partners = by('partner').filter(k => (k.sinceTick ?? 0) <= tick)
   return (
     <div>
-      <Row tick={tick} title="parents" items={[...by('mother').map(k => ({ k, label: 'mother' })), ...by('father').map(k => ({ k, label: 'father' }))]} />
-      <Row tick={tick} title="siblings" items={by('sibling').map(k => ({ k, label: k.sex === 'female' ? 'sister' : 'brother' }))} />
-      <Row tick={tick} title="partner" items={partners.map(k => ({ k, label: k.untilTick !== undefined && k.untilTick <= tick ? 'separated' : 'partner' }))} />
-      <Row tick={tick} title="children" items={kids.map(k => ({ k, label: k.sex === 'female' ? 'daughter' : 'son' }))} />
-      <Row tick={tick} title="grandchildren" items={by('grandchild').map(k => ({ k, label: `${record.kin.find(c => c.id === k.parentId)?.name ?? 'a child'}'s` }))} />
+      <Row tick={tick} whereAt={whereAt} onFocus={onFocus} title="parents" items={[...by('mother').map(k => ({ k, label: 'mother' })), ...by('father').map(k => ({ k, label: 'father' }))]} />
+      <Row tick={tick} whereAt={whereAt} onFocus={onFocus} title="siblings" items={by('sibling').map(k => ({ k, label: k.sex === 'female' ? 'sister' : 'brother' }))} />
+      <Row tick={tick} whereAt={whereAt} onFocus={onFocus} title="partner" items={partners.map(k => ({ k, label: k.untilTick !== undefined && k.untilTick <= tick ? 'separated' : 'partner' }))} />
+      <Row tick={tick} whereAt={whereAt} onFocus={onFocus} title="children" items={kids.map(k => ({ k, label: k.sex === 'female' ? 'daughter' : 'son' }))} />
+      <Row tick={tick} whereAt={whereAt} onFocus={onFocus} title="grandchildren" items={by('grandchild').map(k => ({ k, label: `${record.kin.find(c => c.id === k.parentId)?.name ?? 'a child'}'s` }))} />
       {!partners.length && !kids.length && tick / 12 > 30 && <p style={{ fontSize: 13, opacity: 0.6 }}>no partner or children so far.</p>}
     </div>
   )
