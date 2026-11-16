@@ -27,3 +27,8 @@ export function people(n: number): string {
   if (a >= 1e3) return `${Math.round(a / 1e3).toLocaleString('en-US')},000`
   return String(Math.round(a))
 }
+
+// a world's score for ranking: a record broken by a sim bug can carry NaN (null once saved), which must rank last,
+// never first, and never turn a "best" into NaN (gen 3's "best 100-year world NaN", sim 5.10.7's housing bug)
+export const rankScore = (r: { score?: number | null }) => (typeof r.score === 'number' && Number.isFinite(r.score) ? r.score : -Infinity)
+export const byScore = (a: { score?: number | null }, b: { score?: number | null }) => rankScore(b) - rankScore(a) || 0

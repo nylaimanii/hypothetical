@@ -10,6 +10,7 @@ import zlib from 'node:zlib'
 import type { RunRecord, SlimRun } from '../types'
 import { dirs, listShowcase, readJson, readRunIndex, readRunRecord, SAFE_ID } from './store'
 import { slimRun } from './slim'
+import { byScore } from './facts'
 
 const DAY = 864e5
 export const DELETE_AFTER_MS = 3 * DAY
@@ -70,7 +71,7 @@ function topPerVersion(n = 20): Set<string> {
     groups.set(key, [...(groups.get(key) ?? []), { runId: r.runId, score: r.score }])
   }
   const out = new Set<string>()
-  for (const g of groups.values()) for (const r of g.sort((a, b) => b.score - a.score).slice(0, n)) out.add(r.runId)
+  for (const g of groups.values()) for (const r of g.sort(byScore).slice(0, n)) out.add(r.runId)
   return out
 }
 

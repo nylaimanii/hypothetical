@@ -4,6 +4,7 @@ import type { RunRecord } from '../types'
 import { readAgents } from './agents'
 import { readHall } from './hall'
 import { listShowcase, removeShowcase, writeShowcase } from './store'
+import { byScore } from './facts'
 
 export const SHOWCASE_MAX = 20
 const NON_LLM = /^(offline governor|fallback:)/
@@ -29,7 +30,7 @@ export function considerShowcase(record: RunRecord, inHall: boolean): boolean {
   if (!isRealLlmRun(record)) return false
   const parents = new Map(readAgents().map(a => [a.id, a.parentIds[0]]))
   const root = lineageRoot(record.agentId, parents)
-  const lineageBest = listShowcase().filter(s => lineageRoot(s.agentId, parents) === root).sort((a, b) => b.score - a.score)[0]
+  const lineageBest = listShowcase().filter(s => lineageRoot(s.agentId, parents) === root).sort(byScore)[0]
   const wanted = inHall || record.summary.status === 'goal_achieved' || !lineageBest || record.summary.score > lineageBest.score
   if (wanted) writeShowcase(record)
   curate()

@@ -40,7 +40,7 @@ import { realityCheckDue, runRealityCheck } from './reality'
 import { agentRanges, EXTRA_SEEDS, markUncertaintyDone, milestoneYears, readUncertainty, versionTopAgents } from './uncertainty'
 import { checkHall } from './hall'
 import { sendDigest, sendGoalReport } from '../notify/email'
-import { populationOf } from './facts'
+import { byScore, populationOf, rankScore } from './facts'
 
 export type EvolveOptions = {
   // generations to run; default keeps going until a world achieves the goal
@@ -308,7 +308,7 @@ function publishNow(g: GenerationFile, current: { runId: string; agentId: string
 }
 
 const hhmm = (t: number) => new Date(t).toTimeString().slice(0, 5)
-const bestRunOf = (c: Candidate) => c.full ?? [...(c.runs ?? [])].sort((a, b) => b.score - a.score)[0]
+const bestRunOf = (c: Candidate) => c.full ?? [...(c.runs ?? [])].sort(byScore)[0]
 
 // one explain-gaps job at a time; its last line goes to the log
 let gapsRunning = false
@@ -337,7 +337,7 @@ function updateLeaderboard(g: GenerationFile): LeaderboardEntry[] {
     const prev = byText.get(e.constitution)
     if (!prev || e.score > prev.score) byText.set(e.constitution, e)
   }
-  const top = [...byText.values()].sort((a, b) => b.score - a.score).slice(0, 20)
+  const top = [...byText.values()].sort(byScore).slice(0, 20)
   // the evidence: each entry against the one ranked below it, and its best world against UN projections
   const recs = new Map(top.map(e => [e.best.runId, readRunRecord(e.best.runId)]))
   top.forEach((e, i) => {
@@ -352,7 +352,7 @@ function updateLeaderboard(g: GenerationFile): LeaderboardEntry[] {
 // the champion is the active agent with the best full 100-year world ever run
 function championFromFullRuns(activeIds: string[]): string | undefined {
   const active = new Set(activeIds)
-  const full = readRunIndex().filter(r => isFullRun(r.runId)).sort((a, b) => b.score - a.score)
+  const full = readRunIndex().filter(r => isFullRun(r.runId)).sort(byScore)
   return (full.find(r => active.has(r.agentId)) ?? full[0])?.agentId
 }
 
@@ -392,7 +392,7 @@ const QUALITY_MODEL = process.env.QUALITY_MODEL || 'qwen2.5:14b'
 async function qualityCheck(deps: Deps) {
   if (!qualityDue()) return
   const champ = readAgents().find(a => a.champion)
-  const best = champ && readRunIndex().filter(r => r.agentId === champ.id && isFullRun(r.runId) && (!r.simVersion || r.simVersion === control.simVersion)).sort((a, b) => b.score - a.score)[0]
+  const best = champ && readRunIndex().filter(r => r.agentId === champ.id && isFullRun(r.runId) && (!r.simVersion || r.simVersion === control.simVersion)).sort(byScore)[0]
   // nothing to replay yet: try again between the next worlds instead of waiting a week
   if (!champ || !best) return
   markQuality()
@@ -492,7 +492,7 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
   const everyone = [...g.population, ...(g.guests ?? [])]
   const allRuns = everyone.flatMap(c => [...(c.runs ?? []), ...(c.full ? [c.full] : []), ...(c.extra ?? [])])
   const fullRuns = everyone.flatMap(c => [...(c.full ? [c.full] : []), ...(c.extra ?? [])])
-  const bestRun = [...(fullRuns.length ? fullRuns : allRuns)].sort((a, b) => b.score - a.score)[0]
+  const bestRun = [...(fullRuns.length ? fullRuns : allRuns)].sort(byScore)[0]
   const stats = g.stats ?? { deaths: 0, repeatDeaths: 0, newLessons: [] }
   const lessonsKnown = readLessons().length
   const repeatRate = stats.deaths ? stats.repeatDeaths / stats.deaths : 0
@@ -515,7 +515,7 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
   for (const c of g.population) for (const r of c.runs ?? []) byLineage.set(roots(c.id), [...(byLineage.get(roots(c.id)) ?? []), r])
   for (const [lineage, runs] of byLineage) {
     learning.rows.push({
-      simVersion: control.simVersion, generation: g.generation, lineage, bestScore: Math.max(...runs.map(r => r.score)), lessonsKnown, repeatMistakeRate: Math.round(repeatRate * 1000) / 1000,
+      simVersion: control.simVersion, generation: g.generation, lineage, bestScore: Math.max(0, ...runs.map(rankScore)), lessonsKnown, repeatMistakeRate: Math.round(repeatRate * 1000) / 1000,
       worlds: runs.length, deaths: runs.filter(r => r.status === 'destroyed').length, repeatDeaths: 0, goalAchieved: runs.filter(isWin).length, at,
     })
   }
@@ -541,7 +541,7 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
   ].filter(Boolean)
   const champRange = champion ? agentRanges(champion.id) : null
   if (champRange) stepLines.unshift(`champion across ${champRange.runs} full runs: ${champRange.lines.slice(0, 2).join('; ')}`)
-  const line = `gen ${g.generation} done: champion ${champion?.name ?? best.name} | best screening ${best.name} avg ${best.score} | best 100-year world ${round4(bestRun?.score ?? 0)} | lessons known ${lessonsKnown} | repeat-mistake rate ${Math.round(repeatRate * 100)}% (${stats.repeatDeaths}/${stats.deaths} deaths)${goals ? ` | ${goals} goal achieved` : ''}`
+  const line = `gen ${g.generation} done: champion ${champion?.name ?? best.name} | best screening ${best.name} avg ${best.score} | best 100-year world ${bestRun && Number.isFinite(bestRun.score) ? round4(bestRun.score) : 'none scored'} | lessons known ${lessonsKnown} | repeat-mistake rate ${Math.round(repeatRate * 100)}% (${stats.repeatDeaths}/${stats.deaths} deaths)${goals ? ` | ${goals} goal achieved` : ''}`
   log(line)
   for (const l of stepLines) log(`  ${l}`)
   if (g.stats?.newHall?.length) await notifyHallBatch(g.generation, g.stats.newHall)

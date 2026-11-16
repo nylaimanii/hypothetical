@@ -25,7 +25,7 @@ import { writeTradeoffs } from './tradeoffs'
 import { readEvidence, realBaseline } from './evidence'
 import { failureText, runSuite } from './consistency'
 import { freshSteps } from './steps'
-import { populationOf, yearOfTick } from './facts'
+import { byScore, populationOf, yearOfTick } from './facts'
 
 type State = { lastBackup?: string; backupSha?: string; lastStable?: string; stableSha?: string; stableNote?: string; lastMorning?: string; morningLessons?: number; lastQuality?: string; lastQualityRun?: string; lastConsistency?: string; consistencyNote?: string; consistencyWarned?: string }
 const stateFile = () => path.join(process.cwd(), 'data', 'maintenance.json')
@@ -195,7 +195,7 @@ export async function morningDigest(opts: { dry?: boolean } = {}): Promise<strin
   // worlds still in the run index (discarded or archived worlds do not count)
   const night = [...new Map(usage.filter(w => w.outcome === 'finished' && Date.parse(w.at) >= since && index.has(w.runId)).map(w => [w.runId, w])).values()]
   const runs = night.map(w => index.get(w.runId)).filter((r): r is IndexedRun => !!r)
-  const best = [...runs].sort((a, b) => b.score - a.score)[0]
+  const best = [...runs].sort(byScore)[0]
   const deaths = runs.filter(r => r.status === 'destroyed')
   const lessons = readLessons()
   const st = readState()
@@ -206,7 +206,7 @@ export async function morningDigest(opts: { dry?: boolean } = {}): Promise<strin
   // lead with the most interesting true thing that happened overnight (the narrator picks it)
   const stories = [...deaths, ...[...runs].sort((a, b) => (b.humanCost?.famineDeaths ?? 0) - (a.humanCost?.famineDeaths ?? 0)).slice(0, 3), ...(best ? [best] : [])]
     .map(r => { const rec = readRunRecord(r.runId); return rec ? worldStory(rec, names.get(r.agentId) ?? r.agentId) : null })
-    .filter((x): x is NonNullable<typeof x> => !!x).sort((a, b) => b.score - a.score)
+    .filter((x): x is NonNullable<typeof x> => !!x).sort(byScore)
   const lead = stories[0]?.lines.slice(0, 2) ?? [night.length ? `${night.length} worlds overnight and nothing worth waking you for.` : 'no worlds finished overnight.']
   // every score next to the real baseline: the best world against UN projections at the same year
   const bestBase = best ? (readEvidence()[best.runId]?.realBaseline ?? (() => { const r = readRunRecord(best.runId); return r ? realBaseline(r) : null })()) : null
