@@ -4,6 +4,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { loadLives, loadWorld, worldIds } from './load'
+import fs from 'node:fs'
+import path from 'node:path'
 import { ageAt, monthOfTick, populationAt, pyramidAt } from '../../../src/lib/sim/truth'
 import { citizensAt } from '../../../src/lib/sim/citizens-replay'
 
@@ -74,6 +76,16 @@ for (const id of worldIds()) {
 
   test(`${id}: a technology is called proven only when it is deployed at scale`, () => {
     for (const f of r.frames) for (const q of f.requirements as ({ tier?: string; progress: number; tier2026?: string })[]) if (q.tier2026 !== undefined && q.tier === 'proven') assert.ok(q.progress >= 0.9, `${(q as { name?: string }).name ?? ''} is proven at ${Math.round(q.progress * 100)}% in ${f.date}`)
+  })
+
+  test(`${id}: its no-ai twin shares the seed, the regions and the calendar`, () => {
+    const f = path.join(process.cwd(), 'data', 'runs', `${id}.twin.json`)
+    if (!fs.existsSync(f)) return
+    const t = JSON.parse(fs.readFileSync(f, 'utf8'))
+    assert.equal(t.seed, r.seed, 'twin seed')
+    assert.equal(t.twinOf, id)
+    assert.deepEqual(t.frames[0].regions.map((x: { id: string }) => x.id), r.frames[0].regions.map(x => x.id), 'twin regions')
+    for (const fr of t.frames) for (const e of fr.newEvents) assert.ok(e.tick <= fr.tick, `twin event "${e.text.slice(0, 50)}" dated after its frame`)
   })
 
   test(`${id}: each region's age pyramid adds up to its population`, () => {

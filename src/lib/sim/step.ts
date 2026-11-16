@@ -268,6 +268,8 @@ export function publicRegions(w: World): Region[] {
     // the region's full age pyramid (17 five-year bands, people): pyramids and child shares come from here, never from pips
     // population is the sum of those bands, so pyramid, region and world totals can never disagree
     ...({ ageBands: rs.bands.map(b => Math.round(b)) } as object), population: rs.bands.reduce((a, b) => a + Math.round(b), 0),
+    // food price index (2026 = 1), the same number the sim prices food with
+    ...({ foodPrice: r4(rs.priceIdx) } as object),
     gdpUsd: Math.round(rs.r.gdpUsd), energyTWh: Math.round(rs.r.energyTWh * 10) / 10, foodKcalPerCapita: Math.round(rs.r.foodKcalPerCapita),
     share65plus: r4(rs.r.share65plus), education: r4(rs.r.education), faith: r4(rs.r.faith), unrest: r4(rs.r.unrest),
     techLevel: r4(rs.r.techLevel), compliance: r4(rs.r.compliance), approval: r4(rs.r.approval), fertility: Math.round(rs.r.fertility * 1000) / 1000,

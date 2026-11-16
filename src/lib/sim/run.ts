@@ -102,6 +102,11 @@ export async function runWorld(opts: RunOpts): Promise<RunSummary> {
   return summary
 }
 
+// the no-ai twin of a run, in RunRecord shape (frames yearly, no pips); null for runs made before sim 5.8.0
+export function loadTwin(runId: string): (RunRecord & { twinOf: string }) | null {
+  try { return JSON.parse(fs.readFileSync(path.join(process.cwd(), 'data', 'runs', `${runId}.twin.json`), 'utf8')) } catch { return null }
+}
+
 export function loadRun(runId: string): RunRecord | null {
   for (const d of ['runs', 'showcase', 'live']) {
     try { return JSON.parse(fs.readFileSync(path.join(process.cwd(), 'data', d, `${runId}.json`), 'utf8')) as RunRecord } catch { /* next */ }
@@ -260,10 +265,14 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   const twin = initWorld(opts.seed, true)
   const baseline: BaselineFrame[] = [baselineFrame(twin)]
   applyDecision(twin, BASELINE_DECISION(0))
+  // the twin as a full yearly record (same frame shape as the world, no pips): the twin LIFE is lived in it
+  const twinFrames: Frame[] = []
+  const twinFrame = () => { const fresh = twin.events.slice(twin.frameCursor); twin.frameCursor = twin.events.length; const f = snapshot(twin, fresh); f.citizens = []; twinFrames.push(f) }
+  twinFrame()
   const stepTwin = () => {
     if (twin.status !== 'alive') return
     stepWorld(twin)
-    if (twin.tick % 12 === 0 || twin.status !== 'alive') baseline.push(baselineFrame(twin))
+    if (twin.tick % 12 === 0 || twin.status !== 'alive') { baseline.push(baselineFrame(twin)); twinFrame() }
   }
   while (twin.tick < w.tick && twin.status === 'alive') stepTwin()
 
@@ -341,6 +350,8 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   // yearly stats, stories and trends for every country, state and real city, loaded lazily by the ui
   writePlaces(path.join(process.cwd(), 'data', 'runs', `${opts.runId}.places`), opts.runId, places, w)
   // full life histories of every pip that ever lived in this world, loaded lazily by the ui
+  // the no-ai twin as its own record: same seed, same regions, countries and real cities, 2026 policy frozen
+  writeJsonAtomic(path.join(process.cwd(), 'data', 'runs', `${opts.runId}.twin.json`), { runId: `${opts.runId}.twin`, twinOf: opts.runId, seed: opts.seed, simVersion: SIM_VERSION, generation: opts.generation, constitution: 'no ai: 2026 policies frozen', frames: twinFrames, baseline: [], summary: { runId: `${opts.runId}.twin`, status: twin.status, endDate: dateOf(twin.tick), ticks: twin.tick, finalPopulation: Math.round(worldPop(twin)), frontier: twin.frontier }, snapshots: [], precedents: [], lessons: [] })
   writeJsonAtomic(path.join(process.cwd(), 'data', 'runs', `${opts.runId}.lives.json`), { runId: opts.runId, lives: w.lifeArchive })
   if (live) writeJsonAtomic(path.join(process.cwd(), 'data', 'live', `${opts.runId}.json`), final)
   return final.summary
