@@ -59,6 +59,8 @@ export function stepWorld(w: World) {
   stepSociety(w, fx, research * (1 - TREE_SHARE) * (1 + 0.3 * sectors.computing), outrage)
   stepCountries(w)
   stepClimate(w)
+  // research progress per year (the brief flags a stall)
+  if (w.tick % 12 === 11) { w.reqHist = [...(w.reqHist ?? []), w.requirements.reduce((a, q) => a + q.progress, 0)].slice(-3) }
   if (w.tick % 12 === 11) { stepCountryInfra(w); stepRealCities(w); stepHousing(w); stepPower(w); stepDaily(w, fx); stepPhysicalYear(w); stepPeopleYear(w) }
   if (w.tick === 0) for (const rs of w.regions) rs.valence0 = valence(rs.mood)
   if (w.tick % 12 === 11) updateCountryStats(w, rs => valence(rs.mood))

@@ -84,3 +84,40 @@ test('young children are never alone outside, children are home at night, newbor
     }
   }
 })
+
+test('when security outspends research while people starve, the brief says what it costs in lives and years of progress', () => {
+  const w = initWorld(42, false); initCitizens(w)
+  const heavy = { food: 0.01, energy: 0.06, education: 0.15, space: 0.1, security: 0.35, welfare: 0.3, research: 0.03 }
+  for (let t = 0; t < 24; t++) {
+    if (t % 12 === 0) applyDecision(w, decision(t, heavy))
+    if (t === 12) for (const [rid, cid] of [['ssa', 'NGA'], ['ssa', 'ETH'], ['sasia', 'IND'], ['sasia', 'PAK']]) applyEvent(w, w.regions.find(r => r.r.id === rid)!, 'famine', 1, `drought across ${cid} cuts harvests`, true, cid)
+    stepWorld(w)
+  }
+  const second = briefText(w, buildBrief(w, [], undefined)).split('\n')[1]
+  assert.match(second, /security gets \d+% of the budget, research \d+%/)
+  assert.match(second, /\d+(\.\d)?x faster/)
+  assert.match(second, /could save ~\d+(\.\d)?M/)
+})
+
+test('the no-ai twin follows the UN projection: life expectancy within 1.5 years, population within 3%, gains of 0.1-0.3 years a year with ups and downs', async () => {
+  const { wppAt } = await import('../../../src/lib/sim/baselines')
+  const { worldPop } = await import('../../../src/lib/sim/state')
+  const { BASELINE_BUDGET } = await import('../../../src/lib/sim/constants')
+  const w = initWorld(42, true)
+  applyDecision(w, decision(0, { ...BASELINE_BUDGET }))
+  const le = () => w.regions.reduce((a, r) => a + r.periodLE * r.r.population, 0) / worldPop(w)
+  const yearly: number[] = []
+  for (let t = 0; t <= 888; t++) {
+    if ((10 + t) % 12 === 0) {
+      const y = 2026 + Math.floor((10 + t) / 12), u = wppAt(y)!
+      yearly.push(le())
+      assert.ok(Math.abs(le() - u.lifeExpectancy!) <= 1.5, `${y}: life expectancy ${le().toFixed(1)}, UN ${u.lifeExpectancy}`)
+      assert.ok(Math.abs(worldPop(w) / u.population! - 1) <= 0.03, `${y}: population ${(worldPop(w) / 1e9).toFixed(2)}B, UN ${(u.population! / 1e9).toFixed(2)}B`)
+    }
+    stepWorld(w)
+  }
+  const gains = yearly.slice(1).map((x, i) => x - yearly[i])
+  const mean = gains.reduce((a, b) => a + b, 0) / gains.length
+  assert.ok(mean >= 0.05 && mean <= 0.3, `average gain ${mean.toFixed(3)} years a year`)
+  assert.ok(gains.some(g => g < 0), 'life expectancy never dips (a straight line, not real dynamics)')
+})

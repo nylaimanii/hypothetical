@@ -2,6 +2,7 @@
 // crude death rate, split by cause (WHO GHE shares) so medicine can cut specific causes. births come from
 // fertility x women 15-49, with fertility driven by income, education, housing, child costs and optimism.
 // period life expectancy is computed from the age-specific mortality every month with a standard life table.
+import { hashString } from './rng'
 import { MAX_MORTALITY_DECLINE_YEAR, SURVIVAL_KCAL, TFR_DECLINE, TFR_FLOOR } from './constants'
 import { reqProgress } from './requirements'
 import { BAND_MID, CAUSE_SHARE, NBANDS, clamp, incomeIdx, regionPop, sum, why, type Cause, type RegionState, type World } from './state'
@@ -115,7 +116,15 @@ export function stepDemography(w: World, fx: Record<string, LawEffects>): { birt
     const misinfo = rs.people ? Math.max(0, rs.people.misinfo - rs.people.misinfo0) : 0
     const healthTarget = 0.8 * Math.sqrt(fx[rs.r.id]?.health ?? 0) * (1 - 1.5 * misinfo) * clamp((85 - (rs.periodLE || 70)) / 30)
     rs.healthLaw += (healthTarget - rs.healthLaw) / 36
-    const lawMult = (1 - 0.02 * (fx[rs.r.id]?.redistributive ?? 0)) * (1 - rs.healthLaw)
+    // year-to-year mortality noise: flu seasons, heat waves, cold winters. ESTIMATE ~1.5% a year with half of it carrying
+    // into the next year, and a ~5% chance of a bad year (+3%): the swings seen in excess-mortality series
+    // (https://ourworldindata.org/excess-mortality-covid). drawn from a hash, so no other random stream moves
+    if (w.tick % 12 === 0) {
+      const u = (s: string) => ((hashString(`${w.seed}:${s}`) % 1000003) + 1) / 1000004
+      const z = Math.sqrt(-2 * Math.log(u(`mn1:${rs.r.id}:${w.tick}`))) * Math.cos(2 * Math.PI * u(`mn2:${rs.r.id}:${w.tick}`))
+      rs.mortNoise = 0.5 * (rs.mortNoise ?? 0) + 0.015 * z + (u(`mn3:${rs.r.id}:${w.tick}`) < 0.05 ? 0.03 : 0)
+    }
+    const lawMult = (1 - 0.02 * (fx[rs.r.id]?.redistributive ?? 0)) * (1 - rs.healthLaw) * (1 + clamp(rs.mortNoise ?? 0, -0.05, 0.08))
     const pandemic = w.tick < rs.pandemicUntil ? rs.pandemicMort * (1 - 0.5 * reqProgress(w, 'pandemic_preparedness')) : 0
     // ---------- region-wide fertility drivers ----------
     const eduPull = 1 + 1.5 * Math.max(0, rs.r.education - rs.base.education)

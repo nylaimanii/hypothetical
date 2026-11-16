@@ -176,5 +176,21 @@ export function deathAlert(w: World): string {
   if (w.welfareDeathsYear > 1e5) parts.push(`cutting health and social spending to ${Math.round(b.welfare * 100)}% of the budget (2026: 61%) caused ~${(w.welfareDeathsYear / 1e6).toFixed(1)}M extra deaths${welfareCut > 0.02 ? `, ~${(w.welfareDeathsYear / (welfareCut * 10) / 1e6).toFixed(2)}M a year per 10 points cut` : ''}`)
   const starving = w.regions.filter(r => !r.seceded && r.r.foodKcalPerCapita < 2100).sort((x, y) => x.r.foodKcalPerCapita - y.r.foodKcalPerCapita)
   if (w.famineDeathsYear > 1e5 || starving.length) parts.push(`hunger killed ~${(w.famineDeathsYear / 1e6).toFixed(1)}M${starving.length ? `; under 2,100 kcal: ${starving.slice(0, 4).map(r => `${r.r.name} ${Math.round(r.r.foodKcalPerCapita)}`).join(', ')}` : ''}; food is ${Math.round(b.food * 100)}% of the budget, space ${Math.round(b.space * 100)}%`)
+  // security over research while people starve or research stalls: the cost in lives and in years of progress.
+  // ESTIMATE: research speed grows with the square root of research money (diminishing returns), so moving the gap
+  // multiplies speed by sqrt(1 + gap/research); 10 points of budget moved to food covers the hungriest regions' gap
+  const h = w.reqHist ?? []
+  const gainYear = h.length >= 2 ? h[h.length - 1] - h[h.length - 2] : undefined
+  const stalled = gainYear !== undefined && gainYear < 0.02 * w.requirements.length / 10
+  const hungry = starving.length > 0 || w.famineDeathsYear > 1e5
+  if (b.security > b.research && (hungry || stalled)) {
+    const gap = b.security - b.research
+    const speed = Math.sqrt(1 + gap / Math.max(b.research, 0.005))
+    const left = w.requirements.filter(q => q.progress < 1).reduce((a, q) => a + (1 - q.progress), 0)
+    const yearsNow = gainYear && gainYear > 0 ? left / gainYear : undefined
+    const lost = yearsNow !== undefined ? yearsNow * (1 - 1 / speed) : undefined
+    const lives = hungry ? w.famineDeathsYear * Math.min(1, gap * 10) : 0
+    parts.push(`security gets ${Math.round(b.security * 100)}% of the budget, research ${Math.round(b.research * 100)}%${stalled ? ' and research has stalled' : ''}: moving the ${Math.round(gap * 100)} points to research makes it ~${speed.toFixed(1)}x faster${lost !== undefined && isFinite(lost) ? `, ~${Math.round(lost)} years sooner to finish what is left` : ''}${lives > 1e5 ? `; to food, it could save ~${(lives / 1e6).toFixed(1)}M of last year's hunger deaths` : ''}`)
+  }
   return parts.length ? `PEOPLE DYING FROM YOUR BUDGET LAST YEAR: ${parts.join('. ')}. More food and health money saves these lives this year; space money saves none of them this decade. Change the budget numbers themselves (2026 shares: food 3.5%, health and social 61%, space 0.1%).` : ''
 }

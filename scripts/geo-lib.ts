@@ -48,12 +48,13 @@ export type Country = { iso3: string; name: string; region: RegionId }
 export type Obs = Map<string, { value: number; date: string }>
 
 export async function wbIndicator(ind: string, source?: number): Promise<Obs> {
-  const url = `${WB}/country/all/indicator/${ind}?format=json&mrnev=1&per_page=1000${source ? `&source=${source}` : ''}`
+  // per_page 20000: some indicators (life expectancy) ignore mrnev and return every year; the newest per country wins
+  const url = `${WB}/country/all/indicator/${ind}?format=json&mrnev=1&per_page=20000${source ? `&source=${source}` : ''}`
   const json = await getJson(url) as [unknown, Array<{ countryiso3code: string; value: number | null; date: string }> | null]
   const out: Obs = new Map()
   console.log(`  ${ind}: ${(json[1] ?? []).length} rows`)
   for (const row of json[1] ?? []) {
-    if (row.countryiso3code && row.value !== null && row.value !== undefined) out.set(row.countryiso3code, { value: row.value, date: row.date })
+    if (row.countryiso3code && row.value !== null && row.value !== undefined && !(out.get(row.countryiso3code)?.date > row.date)) out.set(row.countryiso3code, { value: row.value, date: row.date })
   }
   return out
 }

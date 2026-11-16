@@ -13,7 +13,7 @@ const PEW_ZIP = 'https://www.pewresearch.org/wp-content/uploads/sites/20/2025/06
 const IND = {
   undernourished: ['SN.ITK.DEFC.ZS', 100], doctorsPer1000: ['SH.MED.PHYS.ZS', 1], primaryEnroll: ['SE.PRM.NENR', 100], eduSpendGdp: ['SE.XPD.TOTL.GD.ZS', 100],
   remittancesGdp: ['BX.TRF.PWKR.DT.GD.ZS', 100], safeWater: ['SH.H2O.SMDW.ZS', 100], waterStress: ['ER.H2O.FWST.ZS', 100], poverty: ['SI.POV.DDAY', 100],
-  internet: ['IT.NET.USER.ZS', 100], protectedLand: ['ER.LND.PTLD.ZS', 100], airDeathsPer100k: ['SH.STA.AIRP.P5', 1], washDeathsPer100k: ['SH.STA.WASH.P5', 1],
+  internet: ['IT.NET.USER.ZS', 100], lifeExpectancy: ['SP.DYN.LE00.IN', 1], protectedLand: ['ER.LND.PTLD.ZS', 100], airDeathsPer100k: ['SH.STA.AIRP.P5', 1], washDeathsPer100k: ['SH.STA.WASH.P5', 1],
 } as const
 // workweek: Friday-Saturday weekends across much of the muslim world and Israel, Friday only in Iran, Saturday only
 // in Nepal, Saturday-Sunday elsewhere (https://en.wikipedia.org/wiki/Workweek_and_weekend). 0 = Sunday

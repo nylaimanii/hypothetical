@@ -10,7 +10,7 @@ import type { LawEffects } from './society'
 
 export type Faith = 'christian' | 'muslim' | 'hindu' | 'buddhist' | 'jewish' | 'other' | 'unaffiliated'
 type DailySeed = {
-  id: string; undernourished: number; doctorsPer1000: number; primaryEnroll: number; eduSpendGdp: number; remittancesGdp: number
+  id: string; undernourished: number; lifeExpectancy?: number; doctorsPer1000: number; primaryEnroll: number; eduSpendGdp: number; remittancesGdp: number
   safeWater: number; waterStress: number; poverty: number; internet: number; protectedLand: number; airDeathsPer100k: number; washDeathsPer100k: number
   faiths: Record<Faith, number>; weekend: number[]
 }

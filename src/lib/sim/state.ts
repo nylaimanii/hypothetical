@@ -3,7 +3,8 @@ import type { Behavior, Budget, Citizen, City, Company, CrowdState, Faction, Flo
 import { LAND, initMix, initRail } from './visuals'
 import { onEvent, type CauseInput, type CauseLink, type Story, type Trend } from './causes'
 import { initCountries, type CountryState } from './places'
-import { initDaily } from './daily'
+import { initDaily, DAILY } from './daily'
+import { periodLifeExpectancy } from './biology'
 import { initPower, type CoreBody } from './power'
 import { initPhysical, type Physical } from './physical'
 import { initPeople, type People, type RegionPeople } from './people'
@@ -124,6 +125,7 @@ export type RegionState = {
   people: RegionPeople; peopleMult: number // people.ts // power.ts: corruption, administration, automation, capital flight
   collectiveMult: number // harvest multiplier from collectivization
   healthLaw: number // mortality cut from health laws (phased)
+  mortNoise?: number // year-to-year mortality shock (biology.ts)
   collC: number // collectivization enforcement this month
   // cause chains
   yearAcc: Record<string, Record<string, number>> // why-drivers summed over the current year
@@ -188,7 +190,8 @@ export type World = {
   lawsRepeated: number
   lawsAmended: number
   lawsConverted: number
-  lawsBudget: number; lastBudgetLaws: string[] // laws that were budget changes
+  lawsBudget: number; lastBudgetLaws: string[]
+  reqHist?: number[] // total research progress at the end of each of the last 3 years // laws that were budget changes
   lastConverted: string[]
   lastRepeated: string[] // titles the governor re-passed at its last decision (they did nothing)
   frameCursor: number
@@ -305,6 +308,24 @@ export function initWorld(seed: number, twin: boolean): World {
   world.climate = initClimate(world)
   initCountryMix(world)
   initCities(world)
+  // each country's mortality level fits its sourced life expectancy (World Bank SP.DYN.LE00.IN, 2024), so the world
+  // starts where UN WPP does; the region's period life expectancy is set from the start (no 0 on the first frame)
+  for (const rs of world.regions) {
+    const cs = world.countries.filter(c => c.regionId === rs.r.id)
+    for (const c of cs) {
+      const target = DAILY.get(c.id)?.lifeExpectancy
+      const params = (a: number) => ({ gompertzA: a, infantMort: c.infantMort, agingSlope: rs.agingSlope, causeMult: rs.causeMult, oldAgeFloor: rs.oldAgeFloor })
+      if (target && target > 30) {
+        let lo = 1e-5, hi = 0.2
+        for (let k = 0; k < 50; k++) { const m = Math.sqrt(lo * hi); if (periodLifeExpectancy(params(m), 1, 0) > target) lo = m; else hi = m }
+        c.gompertzA = Math.sqrt(lo * hi)
+      }
+      c.ple = periodLifeExpectancy(params(c.gompertzA), 1, 0)
+    }
+    const P = cs.reduce((a, c) => a + c.bands.reduce((x, y) => x + y, 0), 0)
+    if (P > 0) rs.periodLE = cs.reduce((a, c) => a + c.ple * c.bands.reduce((x, y) => x + y, 0), 0) / P
+    if (P > 0) rs.gompertzA = cs.reduce((a, c) => a + c.gompertzA * c.bands.reduce((x, y) => x + y, 0), 0) / P
+  }
   for (const c of world.countries) c.daily = initDaily(world, c, world.regions.find(r => r.r.id === c.regionId)!)
   initPower(world)
   world.nuclear0 = world.regions.reduce((a, r) => a + r.mixCap.nuclear, 0)
