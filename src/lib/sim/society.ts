@@ -58,7 +58,7 @@ export function lawSupport(f: LawFeatures, rs: RegionState): number {
   return clamp(s, 0.02, 0.98)
 }
 
-export type LawEffects = { science: number; energy: number; food: number; education: number; family: number; redistributive: number; security: number; tax: number; backlash: number }
+export type LawEffects = { science: number; energy: number; food: number; education: number; family: number; redistributive: number; security: number; tax: number; backlash: number; health: number }
 
 // recompute support and compliance for every active law, and the per-region effect strength.
 // each effect channel takes the strongest single law, not the sum, so spamming laws does nothing.
@@ -67,7 +67,7 @@ export function stepLaws(w: World): Record<string, LawEffects> {
   const active = w.laws.filter(l => !l.vetoed)
   const feats = new Map(active.map(l => [l.id, classifyLaw(l)]))
   for (const rs of w.regions) {
-    const e: LawEffects = { science: 0, energy: 0, food: 0, education: 0, family: 0, redistributive: 0, security: 0, tax: 0, backlash: 0 }
+    const e: LawEffects = { science: 0, energy: 0, food: 0, education: 0, family: 0, redistributive: 0, security: 0, tax: 0, backlash: 0, health: 0 }
     for (const l of active) {
       const f = feats.get(l.id)!
       // social identity: support shifts with how much of the region sits in the groups that win or lose
@@ -78,7 +78,12 @@ export function stepLaws(w: World): Record<string, LawEffects> {
       // compliance with this law = region's general compliance x support (people ignore laws they reject);
       // a pending lawsuit pauses most enforcement
       const sued = (w.lawsuits[l.id] ?? -1) > w.tick ? 0.4 : 1
-      const c = rs.seceded ? 0 : rs.r.compliance * (0.25 + 0.75 * s) * sued
+      // coercive policies can be enforced by force: a large security budget makes people comply whether or not they
+      // agree (collectivization, birth limits, religious bans, conscription were all enforced this way). ESTIMATE
+      const enforceable = f.coercive || ['collectivization', 'birth_limit', 'religion_suppression', 'conscription', 'assembly_limit', 'relocation', 'lockdown'].includes(meta?.policyKind ?? '')
+      const secRatio = Math.max(rs.spend.security * 12 / Math.max(rs.r.population, 1), 1) / Math.max(rs.pc0.security, 1)
+      const forced = enforceable ? rs.r.compliance * clamp((secRatio - 1) / 2) : 0
+      const c = rs.seceded ? 0 : Math.max(rs.r.compliance * (0.25 + 0.75 * s), forced) * sued
       rs.lawSupport[l.id] = s
       rs.lawCompliance[l.id] = c
       e.science = Math.max(e.science, f.science * c)
@@ -91,6 +96,7 @@ export function stepLaws(w: World): Record<string, LawEffects> {
       e.redistributive = Math.max(e.redistributive, f.redistributive * c)
       e.security = Math.max(e.security, f.security * c)
       e.tax = Math.max(e.tax, f.tax * c)
+      if (meta && (meta.policyKind === 'healthcare_expansion' || meta.policyKind === 'vaccination')) e.health = Math.max(e.health, c)
       // ESTIMATE: every law with under 50% support adds unrest in proportion to how disliked it is
       e.backlash += Math.max(0, 0.5 - s) * 0.08 * (1 + f.coercive)
     }

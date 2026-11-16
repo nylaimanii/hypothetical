@@ -113,6 +113,9 @@ export type RegionState = {
   excessDeathsTick: number
   pop0: number
   valence0: number // mood valence at tick 0 (happiness moves relative to it)
+  investAvg: number // slow average of investment spending above 2026
+  collectiveMult: number // harvest multiplier from collectivization
+  healthLaw: number // mortality cut from health laws (phased)
   // cause chains
   yearAcc: Record<string, Record<string, number>> // why-drivers summed over the current year
   yearStart: Record<string, number> // stat values at the start of the year
@@ -244,7 +247,7 @@ export function initWorld(seed: number, twin: boolean): World {
       crowds: [], privateApproval: 0.5, falsificationGap: 0.1, flipped: false, lastWellbeing: 0,
       periodLE: 0, cohortLE: 0, leTrend: 0.2, diseaseBurden: 0, travelHours: TRAVEL_HOURS[r.id] ?? 6,
       causeMult: { cardio: 1, cancer: 1, neuro: 1, metabolic: 1, infectious: 1, injury: 1, other: 1 },
-      agingSlope: GOMPERTZ_B, oldAgeFloor: 1 / 20, pronatal: 0, strikeBoost: 0, newCityPop: 0, whyAcc: {}, famineDeaths: 0, excessDeathsTick: 0, pop0: r.population, valence0: 0.5, yearAcc: {}, yearStart: {}, trends: [], priceIdx: 1,
+      agingSlope: GOMPERTZ_B, oldAgeFloor: 1 / 20, pronatal: 0, strikeBoost: 0, newCityPop: 0, whyAcc: {}, famineDeaths: 0, excessDeathsTick: 0, pop0: r.population, valence0: 0.5, investAvg: 0, collectiveMult: 1, healthLaw: 0, yearAcc: {}, yearStart: {}, trends: [], priceIdx: 1,
       mixCap: initMix(r.id, r.energyTWh * START_RESERVE), farmland: LAND[r.id].farmland, forest: LAND[r.id].forest, railLinks: [], landmarks: [],
     }
   })

@@ -41,7 +41,10 @@ export function stepEnergy(w: World, fx: Record<string, LawEffects>, sectors: Re
     // retirement and maintenance
     rs.capacityTWh *= 1 - RETIRE_PER_YEAR / 12
     const om = rs.capacityTWh * OM_USD_PER_TWH / 12
-    let capex = rs.spend.energy - om
+    // most power investment is private: ~$1.4T/yr worldwide, ~1.2% of GDP (IEA World Energy Investment 2024,
+    // https://www.iea.org/reports/world-energy-investment-2024). it shrinks with unrest; government money adds on top
+    const privateCapex = 0.012 * rs.r.gdpUsd / 12 * clamp(1 - rs.r.unrest)
+    let capex = rs.spend.energy + privateCapex - om
     if (capex < 0) {
       // unfunded maintenance: plants fall out of service
       const unfunded = -capex / om
@@ -77,6 +80,10 @@ export function stepFood(w: World, fx: Record<string, LawEffects>, sectors: Reco
     // ESTIMATE: annual yield growth = base + spending (diminishing, ~$80/person/yr half-saturation)
     //   + tech + closing the yield gap where supply is low, minus unrest disruption
     const kcalNow = rs.r.foodKcalPerCapita
+    // collectivization: output falls as it is enforced (Great Leap Forward grain output fell ~30%, 200 to 143 Mt,
+    // 1958-1961; https://en.wikipedia.org/wiki/Great_Leap_Forward). target harvest x(1 - 0.3 x compliance), over ~2 years
+    const coll = Math.max(0, ...w.laws.filter(l => !l.vetoed && l.policyKind === 'collectivization').map(l => rs.lawCompliance[l.id] ?? 0))
+    rs.collectiveMult += ((1 - 0.3 * coll) - rs.collectiveMult) / 24
     const gy = YIELD_BASE_GROWTH + 0.01 * (1 - Math.exp(-spendPC / 80)) + 0.003 * rs.r.techLevel
       + 0.012 * Math.max(0, (2900 - kcalNow) / 1000) * rs.r.compliance
       + 0.003 * (fx[rs.r.id]?.food ?? 0) - 0.01 * Math.max(0, rs.r.unrest - 0.5)
@@ -85,7 +92,7 @@ export function stepFood(w: World, fx: Record<string, LawEffects>, sectors: Reco
     const drought = (w.tick < rs.droughtUntil ? rs.droughtSev : 0) * (1 - 0.4 * reqProgress(w, 'drought_crops'))
     // ESTIMATE: farm output scales with energy availability^0.25 (fertilizer, irrigation, transport)
     // climate: staple yields fall ~5% per C of warming above 2026 (Zhao et al. 2017)
-    const p = rs.foodBase * rs.yieldIdx * Math.pow(rs.energyRatio, 0.25) * (1 - drought) * (rs.inRevolt ? 0.92 : 1) * climateYield(w)
+    const p = rs.foodBase * rs.yieldIdx * Math.pow(rs.energyRatio, 0.25) * (1 - drought) * (rs.inRevolt ? 0.92 : 1) * climateYield(w) * rs.collectiveMult
     prod.push(Math.min(p, KCAL_CAP * pop))
   }
   // the world government pools part of every surplus above 2,700 kcal and ships it to regions under 2,400.
@@ -134,7 +141,17 @@ export function stepEconomy(w: World, popBefore: number[]) {
     const inc = incomeIdx(gdppc)
     const kcal = rs.r.foodKcalPerCapita
     // ESTIMATE: catch-up growth (poorer regions grow faster when institutions work) + tech, minus stress
-    let g = 0.006 + 0.03 * (1 - inc) * rs.r.compliance + 0.012 * rs.r.techLevel
+    // investment lever: education + energy + research spending above the 2026 share (23.3%), averaged over ~5 years
+    // (it takes years to show), pays most in poor, well-governed economies. calibrated so a sustained, near-total
+    // push in a poor region with strong institutions reaches ~4%/yr per capita, the order of the asian tigers:
+    // south korea grew ~6%/yr per capita 1960-1990 (Maddison Project, https://www.rug.nl/ggdc/historicaldevelopment/maddison/)
+    const b = effectiveBudget(w)
+    const invest = clamp((b.education + b.energy + b.research - 0.233) / 0.25, -1, 1)
+    rs.investAvg += (invest - rs.investAvg) / 60
+    const boost = 0.05 * rs.investAvg * (1 - inc) * Math.sqrt(rs.r.compliance)
+    // ESTIMATE baseline: ~0.6% + catch-up for poorer regions with working institutions + tech (rich regions ~1.2%/yr)
+    let g = 0.006 + 0.03 * (1 - inc) * rs.r.compliance + 0.008 * rs.r.techLevel + boost
+    why(rs, 'gdpUsd', 'investment in schools, power and research', boost * rs.r.gdpUsd / 12)
     g -= 0.1 * Math.max(0, rs.r.unrest - 0.4)
     g -= 0.5 * (1 - rs.energyRatio)
     g -= 0.6 * Math.max(0, (2100 - kcal) / 2100)

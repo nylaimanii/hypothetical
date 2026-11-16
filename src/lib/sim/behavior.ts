@@ -256,9 +256,11 @@ export function stepRegionBehavior(w: World, rs: RegionState, lawBacklash: numbe
 }
 
 // economic drag from behavior: strikes, protests and riots cut output (ESTIMATE, as annual growth points)
+// ordinary background levels (0.1% striking, 0.2% protesting, 0.03% rioting) are already in normal growth;
+// only the excess costs output
 export function behaviorDrag(rs: RegionState): number {
   const b = rs.behavior
-  return 6 * (b.striking + 0.3 * b.protesting + 2 * b.rioting)
+  return 6 * (Math.max(0, b.striking - 0.001) + 0.3 * Math.max(0, b.protesting - 0.002) + 2 * Math.max(0, b.rioting - 0.0003))
 }
 // hoarding and panic buying make food scarce for everyone else (ESTIMATE)
 export function hoardingFactor(rs: RegionState): number {

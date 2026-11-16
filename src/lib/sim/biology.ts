@@ -38,8 +38,9 @@ const SPECULATIVE_LONGEVITY = ['senescence', 'immune_aging', 'reprogramming', 'o
 // historical cap: mortality may fall at most 2.5%/yr (+2%/yr per finished speculative longevity node).
 export function stepMedicine(w: World, medicineStrength: number) {
   const specDone = SPECULATIVE_LONGEVITY.filter(id => reqProgress(w, id) >= 1).length
-  const maxDecline = (MAX_MORTALITY_DECLINE_YEAR + 0.02 * specDone) / 12
   for (const rs of w.regions) {
+    // catch-up: up to +3%/yr extra for regions far below an 80 year life expectancy
+    const maxDecline = (MAX_MORTALITY_DECLINE_YEAR + 0.03 * clamp((80 - (rs.periodLE || 70)) / 25) + 0.02 * specDone) / 12
     const pop = Math.max(regionPop(rs), 1)
     const delivery = clamp(0.3 + 0.6 * fWelfare(rs.spend.welfare * 12 / pop) + 0.2 * medicineStrength)
     for (const c of Object.keys(CAUSE_NODES) as Cause[]) {
@@ -104,7 +105,13 @@ export function stepDemography(w: World, fx: Record<string, LawEffects>): { birt
     const welfarePC = rs.spend.welfare * 12 / pop
     // ESTIMATE: health and social spending cut mortality up to 15% at saturation, relative to 2026 levels
     const welfareMult = (1 - 0.15 * fWelfare(welfarePC)) / (1 - 0.15 * fWelfare(rs.pc0.welfare))
-    const lawMult = 1 - 0.02 * (fx[rs.r.id]?.redistributive ?? 0)
+    // health laws: primary care and vaccination drives cut mortality as they are followed, most where health is poorest.
+    // ESTIMATE up to -60% at full compliance in a region at 55 years of life expectancy, phased in over ~5 years;
+    // china's rural health campaigns are the reference (life expectancy ~44 in 1960 to ~68 by 1985)
+    // https://en.wikipedia.org/wiki/Barefoot_doctor
+    const healthTarget = 0.6 * Math.sqrt(fx[rs.r.id]?.health ?? 0) * clamp((85 - (rs.periodLE || 70)) / 30)
+    rs.healthLaw += (healthTarget - rs.healthLaw) / 60
+    const lawMult = (1 - 0.02 * (fx[rs.r.id]?.redistributive ?? 0)) * (1 - rs.healthLaw)
     const pandemic = w.tick < rs.pandemicUntil ? rs.pandemicMort * (1 - 0.5 * reqProgress(w, 'pandemic_preparedness')) : 0
     // ---------- region-wide fertility drivers ----------
     const eduPull = 1 + 1.5 * Math.max(0, rs.r.education - rs.base.education)
