@@ -127,6 +127,7 @@ export type RegionState = {
   collectiveMult: number // harvest multiplier from collectivization
   healthLaw: number // mortality cut from health laws (phased)
   mortNoise?: number // year-to-year mortality shock (biology.ts)
+  forced?: number // compliance explained only by force this month (society.ts)
   collC: number // collectivization enforcement this month
   // cause chains
   yearAcc: Record<string, Record<string, number>> // why-drivers summed over the current year
@@ -212,6 +213,7 @@ export type World = {
   skilledMigrants: number
   core: CoreBody
   phys: Physical
+  freedomSum?: number // sum of monthly world freedom (tradeoffs.ts)
   assumptions: Record<string, number> // this world's rules (data/assumptions.json + overrides), read through A(w, id)
   people: People
   diary: { tick: number; date: string; kind: 'entry' | 'lookback'; text: string }[] // the core's own notes

@@ -69,6 +69,7 @@ export function stepLaws(w: World): Record<string, LawEffects> {
   const feats = new Map(active.map(l => [l.id, classifyLaw(l)]))
   for (const rs of w.regions) {
     const e: LawEffects = { science: 0, energy: 0, food: 0, education: 0, family: 0, redistributive: 0, security: 0, tax: 0, backlash: 0, health: 0 }
+    rs.forced = 0
     for (const l of active) {
       const f = feats.get(l.id)!
       // social identity: support shifts with how much of the region sits in the groups that win or lose
@@ -89,6 +90,8 @@ export function stepLaws(w: World): Record<string, LawEffects> {
       // the core administers every law: its compute, legitimacy and resistance scale compliance (power.ts)
       const c = rs.seceded ? 0 : clamp(Math.max(rs.r.compliance * (0.25 + 0.75 * s), forced) * sued * (rs.powerMult ?? 1) * (rs.peopleMult ?? 1))
       rs.lawSupport[l.id] = s
+      // the part of compliance that only force explains (freedom index, tradeoffs.ts)
+      if (enforceable) rs.forced = Math.max(rs.forced ?? 0, Math.max(0, c - rs.r.compliance * (0.25 + 0.75 * s)))
       rs.lawCompliance[l.id] = c
       e.science = Math.max(e.science, f.science * c)
       e.energy = Math.max(e.energy, f.energy * c)

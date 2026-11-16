@@ -86,6 +86,13 @@ for (const id of worldIds()) {
     for (const f of r.frames) assert.ok(FRONTIER_LABELS[f.frontier] !== undefined, `frontier "${f.frontier}" has no shared label`)
   })
 
+  test(`${id}: the run ends with its tradeoffs: lifespan, population, freedom and off-world progress`, { skip: atLeast(version, '5.10.1') ? false : 'made by a sim older than 5.10.1' }, () => {
+    const t = (r.summary as unknown as { tradeoffs?: Record<string, number> }).tradeoffs
+    assert.ok(t, 'no tradeoffs on the summary')
+    for (const k of ['freedom', 'freedomAverage', 'offWorld']) assert.ok(t[k] >= 0 && t[k] <= 1, `${k} ${t[k]} outside 0-1`)
+    assert.equal(t.population, Math.round(r.frames.at(-1)!.globalPopulation), 'tradeoff population vs the last frame')
+  })
+
   test(`${id}: its no-ai twin shares the seed, the regions and the calendar`, () => {
     const f = path.join(process.cwd(), 'data', 'runs', `${id}.twin.json`)
     if (!fs.existsSync(f)) return

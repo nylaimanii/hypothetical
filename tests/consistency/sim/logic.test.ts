@@ -144,3 +144,19 @@ test('an assumption override changes the world, a value out of range is clamped 
   for (let t = 0; t < 120; t++) { stepWorld(base); stepWorld(hot) }
   assert.ok(hot.climate.anomalyC > base.climate.anomalyC, `tcre 0.6 should warm faster: ${hot.climate.anomalyC.toFixed(2)} vs ${base.climate.anomalyC.toFixed(2)}`)
 })
+
+test('freedom falls when compliance is forced, speech censored or movement limited, and rises with referendums', async () => {
+  const { worldFreedom } = await import('../../../src/lib/sim/tradeoffs')
+  const { BASELINE_BUDGET } = await import('../../../src/lib/sim/constants')
+  const run = (laws: Decision['laws'], security: number) => {
+    const w = initWorld(42, false)
+    const b = { ...BASELINE_BUDGET, security, welfare: BASELINE_BUDGET.welfare - (security - BASELINE_BUDGET.security) }
+    for (let t = 0; t < 36; t++) { if (t === 0) applyDecision(w, decision(0, b, laws)); stepWorld(w) }
+    return worldFreedom(w)
+  }
+  const free = run([], 0.12)
+  const harsh = run([law('Collective Farms Act', 'Collectivization of all farms into state farms.'), law('Internet Shutdown Powers', 'Censor social media and allow internet shutdowns during unrest.')], 0.4)
+  const voice = run([law('Citizens Assembly', 'A citizens assembly chosen by sortition reviews every law.'), law('Referendums', 'Binding referendums on major laws.')], 0.12)
+  assert.ok(harsh < free - 0.1, `forced collectivization and censorship should cut freedom: ${harsh.toFixed(2)} vs ${free.toFixed(2)}`)
+  assert.ok(voice >= free, `assemblies and referendums should not cut freedom: ${voice.toFixed(2)} vs ${free.toFixed(2)}`)
+})

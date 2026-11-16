@@ -15,6 +15,7 @@
 //   0.15 x population trend over the last 10 years (1 if not declining, falling to 0 at a 10% decline)
 //   0.15 x share of requirement nodes completed
 //   goal_achieved scores 1.
+import { worldFreedom } from './tradeoffs'
 import { A } from './assumptions'
 import { MAX_TICKS, SURVIVAL_KCAL } from './constants'
 import { FRONTIERS, has } from './frontier'
@@ -44,6 +45,7 @@ export function checkEnd(w: World) {
   w.peakPLE = Math.max(w.peakPLE, globalPLE(w))
   if (w.tick % 12 === 0) w.popHistory.push(pop)
   w.wellbeingSum += wellbeing(w)
+  w.freedomSum = (w.freedomSum ?? 0) + worldFreedom(w)
   w.wellbeingN++
   const food = popWeighted(w, r => r.r.foodKcalPerCapita)
   w.globalFoodMonthsUnder = food < A(w, 'survival_kcal') ? w.globalFoodMonthsUnder + 1 : 0

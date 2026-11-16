@@ -1,4 +1,5 @@
 // one month of the world, decision application, and public snapshots.
+import { offWorldProgress, worldFreedom } from './tradeoffs'
 import type { BaselineFrame, Decision, Frame, Law, Region, Why } from '../types'
 import { dateOf } from './constants'
 import { addCrowd, stepRegionBehavior, valence } from './behavior'
@@ -312,6 +313,8 @@ export function snapshot(w: World, newEvents: Frame['newEvents'], decision?: Dec
     humanCost: { deaths: Math.round(w.humanCost.deaths), famineDeaths: Math.round(w.humanCost.famineDeaths), unrestDeaths: Math.round(w.humanCost.unrestDeaths), displaced: Math.round(w.humanCost.displaced), approval: r4(w.humanCost.approval) },
     // cumulative deaths by cause (truth.ts deathsAt reads these)
     ...({ vital: Object.fromEntries(Object.entries(w.vital).map(([k, v]) => [k, Math.round(v)])), causeDeaths: { air: Math.round(w.causeDeaths.air), water: Math.round(w.causeDeaths.water), despair: Math.round(w.causeDeaths.despair ?? 0), housing: Math.round(w.housingDeaths) } } as object),
+    // tradeoffs: freedom (defined index) and off-world progress, per frame
+    ...({ freedom: Math.round(worldFreedom(w) * 1000) / 1000, offWorld: Math.round(offWorldProgress(w) * 1000) / 1000 } as object),
     globalPopulation: regions.reduce((a, r) => a + r.population, 0), globalPeriodLifeExpectancy: Math.round(globalPLE(w) * 10) / 10, lessonsKnown: w.lessonsKnown,
     ...(decision ? { decision } : {}),
     ...({ causes, infra, traffic: trafficFrame(w), climate: { anomalyC: Math.round(w.climate.anomalyC * 100) / 100, gtCo2PerYear: Math.round(w.climate.gtPerYear * 10) / 10 } } as object),
