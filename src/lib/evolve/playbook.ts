@@ -112,7 +112,7 @@ export function computePlaybook(lessons: Lesson[], features: RunFeatures[], vers
     const ns = tests.filter(x => x.supported).length, nc = tests.length - ns
     // the controlled test for this version (or the newest one there is)
     const ck = Object.keys(controlled).filter(k => k.startsWith(`${l.id}|${t.up.join('+')}>${t.down.join('+')}|`))
-    const ckey = version && controlled[controlledKey(l.id, t, version)] ? controlledKey(l.id, t, version) : ck.sort().pop()
+    const ckey = version && controlled[controlledKey(l.id, t, version)] ? controlledKey(l.id, t, version) : ck.sort((x, y) => cmpVersion(x.split('|').pop()!, y.split('|').pop()!)).pop()
     const ct = ckey ? controlled[ckey] : undefined
     const med = ct?.perSeed.length ? [...ct.perSeed.map(p => p.b - p.a)].sort((x, y) => x - y)[Math.floor(ct.perSeed.length / 2)] : 0
     const ctrl = ct ? { ...ct, text: `in the sim, ${ct.shift} left more people alive after ${ct.years} years in ${ct.wins} of ${ct.of} seeds, typically ${people(med)} ${med >= 0 ? 'more' : 'fewer'} (offline governor, sim ${ct.simVersion})` } : null
@@ -149,7 +149,7 @@ export function lessonLine(l: PlaybookLesson): string {
 // ---------- controlled a/b tests (the lesson's mechanism, in the sim) ----------
 // for each lesson with a budget test: per seed, world A runs under the offline governor (deterministic, no model);
 // world B is A from its first decision with 5 points of the budget moved the way the lesson says (from the "down"
-// lines to the "up" lines, or from/to the rest evenly), then A's own later decisions replayed, so that one year's
+// lines to the "up" lines, or from/to the rest in proportion to their shares), then A's own later decisions replayed, so that one year's
 // change is the only difference (b's flipDecision 'replay'). measured: people alive after 20 years (truth.ts). this
 // tests what the lesson does in the sim, not whether an agent would choose it. results: data/playbook-ab.json, per
 // sim version, folded into the lesson's evidence next to the natural same-seed pairs
@@ -158,6 +158,8 @@ export const controlledFile = () => path.join(process.cwd(), 'data', 'playbook-a
 export const readControlled = () => readJson<Record<string, Controlled>>(controlledFile()) ?? {}
 export const controlledKey = (lessonId: string, t: LessonTest, version: string) => `${lessonId}|${t.up.join('+')}>${t.down.join('+')}|${version}`
 const SHIFT = 0.05
+// '5.10.5' after '5.9.0' (a plain string sort puts 5.10 first)
+const cmpVersion = (a: string, b: string) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) - (y[i] ?? 0); return 0 }
 
 // the lesson's budget, 5 points moved, from a decision's own budget (shares stay >= 0 and sum to the same total)
 export function shiftedBudget(t: LessonTest, b: RunFeatures['budget']): RunFeatures['budget'] {
@@ -192,7 +194,7 @@ export async function controlledTest(lessonId: string, t: LessonTest, version: s
     } finally { deps.cleanup(aId); deps.cleanup(bId) }
   }
   const lbl = (ks: BudgetKey[]) => ks.join(' and ')
-  const shift = t.up.length && t.down.length ? `5 points of one year's budget moved from ${lbl(t.down)} to ${lbl(t.up)}` : t.up.length ? `5 more points of one year's budget on ${lbl(t.up)} (taken evenly from every other line)` : `5 fewer points of one year's budget on ${lbl(t.down)} (spread evenly over every other line)`
+  const shift = t.up.length && t.down.length ? `5 points of one year's budget moved from ${lbl(t.down)} to ${lbl(t.up)}` : t.up.length ? `5 more points of one year's budget on ${lbl(t.up)} (taken from every other line in proportion to its share)` : `5 fewer points of one year's budget on ${lbl(t.down)} (spread over every other line in proportion to its share)`
   return { simVersion: version, seeds, wins: perSeed.filter(p => p.b > p.a).length, losses: perSeed.filter(p => p.b < p.a).length, of: perSeed.length, years, shift, perSeed }
 }
 
