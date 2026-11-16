@@ -76,13 +76,51 @@ export const COUNTRIES: BirthCountry[] = [
   { id: 'DOM', name: 'Dominican Republic', regionId: 'carib_pac', births: 200, cities: [c('santo_domingo', 'Santo Domingo', 18.49, -69.93, 3.5), c('santiago_dr', 'Santiago de los Caballeros', 19.45, -70.7, 1)] },
 ]
 
-export function pickBirthplace(rng: Rng): { country: BirthCountry; city: BirthCity } {
-  const country = COUNTRIES[pickWeighted<number>(rng, COUNTRIES.map(c => c.births))]
+// countries added for the continent roster (so every continent has a real spread of births). kept out of the default
+// draw so lives drawn before they existed stay exactly the same. births ESTIMATE, rounded from un wpp 2024
+// (https://population.un.org/wpp/); cities natural earth, pop ESTIMATE metro millions
+export const ROSTER_COUNTRIES: BirthCountry[] = [
+  { id: 'CHL', name: 'Chile', regionId: 'latam', births: 175, cities: [c('santiago', 'Santiago', -33.45, -70.67, 7), c('valparaiso', 'Valparaíso', -33.05, -71.62, 1)] },
+  { id: 'ECU', name: 'Ecuador', regionId: 'latam', births: 260, cities: [c('guayaquil', 'Guayaquil', -2.17, -79.92, 3), c('quito', 'Quito', -0.18, -78.47, 2)] },
+  { id: 'BOL', name: 'Bolivia', regionId: 'latam', births: 240, cities: [c('la_paz', 'La Paz', -16.5, -68.15, 1.9), c('santa_cruz', 'Santa Cruz de la Sierra', -17.78, -63.18, 1.8)] },
+  { id: 'NZL', name: 'New Zealand', regionId: 'oceania', births: 58, cities: [c('auckland', 'Auckland', -36.85, 174.76, 1.7), c('wellington', 'Wellington', -41.29, 174.78, 0.4), c('christchurch', 'Christchurch', -43.53, 172.64, 0.4)] },
+]
+const ALL = [...COUNTRIES, ...ROSTER_COUNTRIES]
+
+// continents, for the roster (at least two lives per continent at a time). russia counts as europe (most of its
+// people live west of the urals); mexico and the caribbean as north america
+export type Continent = 'africa' | 'asia' | 'europe' | 'north_america' | 'south_america' | 'oceania'
+export const CONTINENTS: Continent[] = ['africa', 'asia', 'europe', 'north_america', 'south_america', 'oceania']
+export const CONTINENT_NAME: Record<Continent, string> = { africa: 'africa', asia: 'asia', europe: 'europe', north_america: 'north america', south_america: 'south america', oceania: 'oceania' }
+const NORTH_AMERICA = new Set(['USA', 'CAN', 'MEX', 'HTI', 'DOM'])
+const OCEANIA = new Set(['AUS', 'PNG', 'NZL'])
+export function continentOf(countryId: string): Continent | null {
+  if (NORTH_AMERICA.has(countryId)) return 'north_america'
+  if (OCEANIA.has(countryId)) return 'oceania'
+  if (countryId === 'RUS') return 'europe'
+  const k = ALL.find(x => x.id === countryId)
+  if (!k) return null
+  switch (k.regionId) {
+    case 'ssa': case 'nafrica': return 'africa'
+    case 'sasia': case 'easia': case 'seasia': case 'mideast': case 'rus_ca': return 'asia'
+    case 'europe': return 'europe'
+    case 'latam': return 'south_america'
+    case 'na': case 'carib_pac': return 'north_america'
+    case 'oceania': return 'oceania'
+  }
+  return null
+}
+
+// without a continent: exactly the original draw (every life recorded before the roster stays the same). with one:
+// weighted by births among that continent's countries, then by city size
+export function pickBirthplace(rng: Rng, continent?: Continent): { country: BirthCountry; city: BirthCity } {
+  const pool = continent ? ALL.filter(k => continentOf(k.id) === continent) : COUNTRIES
+  const country = pool[pickWeighted<number>(rng, pool.map(c => c.births))]
   const city = country.cities[pickWeighted<number>(rng, country.cities.map(c => c.pop))]
   return { country, city }
 }
 
-export const countryById = (id: string) => COUNTRIES.find(c => c.id === id)
+export const countryById = (id: string) => ALL.find(c => c.id === id)
 
 // the biggest city in the country: where people move to when they leave a smaller place
 export const biggestCity = (country: BirthCountry) => country.cities.reduce((a, b) => (b.pop > a.pop ? b : a))

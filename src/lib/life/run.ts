@@ -5,7 +5,7 @@ import path from 'node:path'
 import { normal, pickWeighted, stream } from '../sim/rng'
 import { provider, withUsage } from '../agent/llm'
 import { WorldEnv } from './env'
-import { pickBirthplace, nameFor } from './births'
+import { pickBirthplace, nameFor, type Continent } from './births'
 import { RESEARCH as R, PROVENANCE } from './research'
 import { SCHEDULE, TRIGGERS, lateChildCheck, type MilestoneDef, type Option } from './milestones'
 import { addEvent, ageOf, kidsOf, livingKids, luck, medianIncome, parentsAlive, partnerOf, stepMonth, type Person } from './person'
@@ -30,9 +30,9 @@ const MOTHER_AGE: Record<string, number> = { ssa: 28, sasia: 26, nafrica: 29, mi
 // births skew poorer: poorer families have more children (ESTIMATE weights for the five income fifths at birth)
 const QUINTILE_AT_BIRTH = [0.26, 0.22, 0.2, 0.17, 0.15]
 
-export function createPerson(world: WorldEnv, seed: number): Person {
+export function createPerson(world: WorldEnv, seed: number, continent?: Continent): Person {
   const r = stream(seed, 'birth')
-  const { country, city } = pickBirthplace(r)
+  const { country, city } = pickBirthplace(r, continent)
   const regionId = country.regionId
   // sex ratio at birth ~105 boys per 100 girls (un wpp). SOURCED
   const sex: Sex = r() < 105 / 205 ? 'male' : 'female'
@@ -102,11 +102,11 @@ const familyStory = (p: Person) => {
 
 // ---------- the life loop ----------
 // twinDeath: when and how the usual-choices twin died, so a life outliving it on a lesson can be told (once)
-type Mode = { kind: 'self' | 'twin'; lessons: LifeLesson[]; telegram: boolean; lifeId: string; twinDeath?: { tick: number; cause: string }; onYear?: (p: Person, snap: MonthSnap) => void }
+type Mode = { kind: 'self' | 'twin'; continent?: Continent; lessons: LifeLesson[]; telegram: boolean; lifeId: string; twinDeath?: { tick: number; cause: string }; onYear?: (p: Person, snap: MonthSnap) => void }
 type SimOut = { p: Person; snaps: MonthSnap[]; milestones: Milestone[]; journal: JournalLine[]; env: EnvYear[]; lessonsGiven: Set<string>; ruleFallbacks: number }
 
 async function simulate(world: WorldEnv, seed: number, mode: Mode): Promise<SimOut> {
-  const p = createPerson(world, seed)
+  const p = createPerson(world, seed, mode.continent)
   const snaps: MonthSnap[] = [], milestones: Milestone[] = [], journal: JournalLine[] = [], env: EnvYear[] = []
   const lessonsGiven = new Set<string>()
   const done = new Set<string>()
@@ -338,7 +338,7 @@ function journalLine(p: Person, ys: MonthSnap[], ms: Milestone[], t: number): Jo
 }
 
 // ---------- the whole thing ----------
-export type RunLifeOpts = { world: WorldEnv; worldVersion: string; lifeNo: number; telegram?: boolean; log?: (l: string) => void }
+export type RunLifeOpts = { world: WorldEnv; worldVersion: string; lifeNo: number; telegram?: boolean; log?: (l: string) => void; continent?: Continent }
 
 export async function runLife(o: RunLifeOpts): Promise<LifeRecord> {
   const { world, lifeNo } = o
@@ -348,13 +348,13 @@ export async function runLife(o: RunLifeOpts): Promise<LifeRecord> {
   const lessons = readLessons().map(l => (l.simVersion === o.worldVersion ? l : { ...l, verified: l.verified && l.simVersion === o.worldVersion }))
 
   // the twin first: no llm, no lessons, the usual choices. same birth and same monthly luck
-  const twin = await simulate(world, seed, { kind: 'twin', lessons: [], telegram: false, lifeId })
+  const twin = await simulate(world, seed, { kind: 'twin', continent: o.continent, lessons: [], telegram: false, lifeId })
   const twinScore = scoreLife(twin.p)
   log(`twin: ${twin.p.name}, died at ${Math.floor(ageOf(twin.p))} (${twin.p.deathCause}), score ${twinScore.total.toFixed(3)}`)
 
   const usage = { llmCalls: 0, tokens: 0 }
   const self = await withUsage(usage, () => simulate(world, seed, {
-    kind: 'self', lessons, telegram: !!o.telegram, lifeId, twinDeath: { tick: twin.p.tick, cause: twin.p.deathCause ?? 'an illness' },
+    kind: 'self', continent: o.continent, lessons, telegram: !!o.telegram, lifeId, twinDeath: { tick: twin.p.tick, cause: twin.p.deathCause ?? 'an illness' },
     onYear: (p, snap) => writeNow({ lifeId, name: p.name, age: snap.age, city: p.place.city, tick: p.tick, pid: process.pid, updatedAt: new Date().toISOString(), job: snap.job, partner: snap.partner, kids: snap.kids, savings: snap.savings, income: snap.income, health: snap.health, mood: Object.keys(snap.mood).slice(0, 2).join(', ') }, lifeId),
   }))
   const p = self.p
@@ -371,7 +371,7 @@ export async function runLife(o: RunLifeOpts): Promise<LifeRecord> {
     lifeNo, seed, simVersion: LIFE_SIM_VERSION,
     name: p.name, sex: p.sex, look: p.look, temperament: p.temperament, childhood: p.marks,
     birthTick: 0, deathTick: p.tick, deathAge, deathCause: p.deathCause,
-    birthplace: p.places[0], places: p.places, family: { quintile: p.quintile, story: familyStory(createPerson(world, seed)) },
+    birthplace: p.places[0], places: p.places, family: { quintile: p.quintile, story: familyStory(createPerson(world, seed, o.continent)) },
     kin: p.kin, snaps: self.snaps, milestones: self.milestones, events: p.events, journal: self.journal, env: self.env,
     laws: world.allLaws().filter(l => l.enactedTick <= p.tick).map(l => ({ tick: l.enactedTick, title: l.title, text: l.text })),
     score, twin: { score: twinScore, deathAge: Math.round(ageOf(twin.p) * 10) / 10, deathCause: twin.p.deathCause ?? '' },
