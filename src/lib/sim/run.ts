@@ -153,12 +153,14 @@ async function tickBody(w: World, ctx: Ctx, decideFn: (w: World) => Promise<Deci
     const d = await decideFn(w)
     if (d) {
       const prev = ctx.mem.last
-      const { migrations, amended } = applyDecision(w, d)
+      const { migrations, amended, repealed } = applyDecision(w, d)
       // record the enacted laws (real ids, metadata, support) and the migrations as ordered; how many really
       // moved is logged as an event. keeping the order (not the outcome) lets a branch replay this exactly.
       // amendments are recorded as applied (real ids, converted ones included) so a replay does exactly the same
       decision = { ...d, laws: w.laws.filter(l => l.enactedTick === w.tick).map(l => ({ ...l })) }
-      Object.assign(decision, { amend: amended })
+      // laws/amend/repeal show what happened; input keeps exactly what the governor sent, so a replay runs the same code path
+      const dx = d as Decision & { amend?: unknown[] }
+      Object.assign(decision, { amend: amended, repeal: repealed, input: { laws: d.laws.map(l => ({ ...l })), amend: dx.amend ?? [], repeal: [...d.repeal] } })
       const expected = ((d as Decision & { expectedResult?: string }).expectedResult || d.rationale.split(/(?<=[.!?])\s/)[0] || '').slice(0, 300)
       const reasoning: Reasoning = { saw, chose: choseOf(prev, d, decision.laws), expected }
       Object.assign(decision, { reasoning })
@@ -206,7 +208,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
     // replay on the source's own cadence (it decided wherever it has a recorded decision)
     ctx.due = t => srcDecisions.has(t)
     while (w.tick < target && w.status === 'alive') {
-      await tickBody(w, ctx, async x => srcDecisions.get(x.tick), { llmThoughts: false })
+      await tickBody(w, ctx, async x => { const sd = srcDecisions.get(x.tick) as (Decision & { input?: object }) | undefined; return sd?.input ? { ...sd, ...sd.input } : sd }, { llmThoughts: false })
       if (srcFrameTicks.has(w.tick)) { for (const rs of w.regions) rs.whyAcc = {}; w.frameCursor = w.events.length; w.flowAcc = []; w.infraAcc = []; w.lastFrameTick = w.tick }
       stepWorld(w)
       updateMoods(w)

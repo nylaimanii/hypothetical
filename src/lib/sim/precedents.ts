@@ -97,7 +97,7 @@ const RULES: [string, RegExp][] = [
   ['school_reform', /school|curricul|education|literacy|universit|teacher/],
   ['relocation', /relocat|resettl|evacuat|move .{0,20}(people|population|residents)/],
   ['collectivization', /collectiv|nationaliz.{0,20}(farm|land)|state farm/],
-  ['rationing', /ration/],
+  ['rationing', /\bration(s|ing|ed)?\b/],
   ['food_reserve', /(food|grain) (reserve|aid|bank|security)|famine relief/],
   ['agriculture_push', /agricultur|farm|crop|irrigat|fertili[sz]er|yield|seed/],
   ['vaccination', /vaccin|immuniz|eradicat/],
@@ -108,8 +108,8 @@ const RULES: [string, RegExp][] = [
   ['basic_income', /basic income|cash transfer|dividend|guaranteed income/],
   ['prohibition', /(ban|prohibit).{0,20}(alcohol|drug|tobacco|meat|car)/],
   ['grid_integration', /grid|transmission|power line|interconnect/],
-  ['electrification', /electrif|solar|wind|nuclear|power plant|fusion|energy/],
-  ['big_project', /space|lunar|moon|mars|rocket|launch|orbit|dam|megaproject|rail|canal|city/],
+  ['electrification', /electrif|solar|\bwind\b|nuclear|power plant|\bfusion|energy/],
+  ['big_project', /space|lunar|moon|\bmars\b|rocket|launch|orbit|\bdams?\b|megaproject|\brail|canal|\bcit(y|ies)\b|settlement|habitat|exploration/],
   ['research_push', /research|science|laborator|technolog|innovation/],
 ]
 
