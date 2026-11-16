@@ -136,9 +136,20 @@ export function twinVerdict(recs: RunRecord[], version?: string): string | null 
   const leads = rows.map(r => r.moonLead).filter((x): x is number => x !== null && x > 0).sort((a, b) => a - b)
   const moon = leads.length ? `, though it reached the moon ${leads[0] === leads[leads.length - 1] ? leads[0] : `${leads[0]} to ${leads[leads.length - 1]}`} years sooner` : ''
   const on = version ? ` on ${version}` : ''
-  if (won === rows.length) return `is the ai beating "do nothing" yet? yes: in all ${rows.length} worlds${on} it kept more people alive than the no-ai twin${ahead.length ? `, by ${range(ahead)}` : ''}.`
-  if (won === 0) return `is the ai beating "do nothing" yet? no: in 0 of ${rows.length} worlds${on} did it keep more people alive than the no-ai twin (it trailed by ${range(behind.map(Math.abs).sort((a, b) => a - b))})${moon}.`
-  return `is the ai beating "do nothing" yet? sometimes: in ${won} of ${rows.length} worlds${on} it kept more people alive than the no-ai twin${moon}.`
+  if (won === rows.length) return `is the ai beating "do nothing" yet? yes: in ${rows.length === 1 ? 'the 1 world' : `all ${rows.length} worlds`}${on} it kept more people alive than the no-ai twin${ahead.length ? `, by ${range(ahead)}` : ''}.`
+  if (won === 0) return `is the ai beating "do nothing" yet? no: in 0 of ${rows.length} world${rows.length === 1 ? '' : 's'}${on} did it keep more people alive than the no-ai twin (it trailed by ${range(behind.map(Math.abs).sort((a, b) => a - b))})${moon}.`
+  return `is the ai beating "do nothing" yet? sometimes: in ${won} of ${rows.length} world${rows.length === 1 ? '' : 's'}${on} it kept more people alive than the no-ai twin${moon}.`
+}
+
+// the digest's first line: the verdict on the current sim version's worlds only. right after a switch, before the
+// new version has a finished world, say so (and what the older version showed) instead of dropping the line
+export function verdictLine(runs: IndexedRun[], current: string | undefined, read: (id: string) => RunRecord | null = readRunRecord): string | null {
+  const recs = (v: string | undefined) => runs.filter(r => r.simVersion === v).map(r => read(r.runId)).filter((x): x is RunRecord => !!x)
+  const now = twinVerdict(recs(current), current)
+  if (now || !current) return now
+  const older = [...new Set(runs.map(r => r.simVersion).filter((v): v is string => !!v && v !== current))].pop()
+  const before = older ? twinVerdict(recs(older), older) : null
+  return `is the ai beating "do nothing" yet? no ${current} worlds have finished yet, so no answer on the new sim${before ? ` (${before.replace(/^is the ai beating "do nothing" yet\? /, 'before the switch, ').replace(/\.$/, '')}).` : '.'}`
 }
 
 // dry: build the text without marking the digest sent (npm run morning -- --dry)
@@ -174,7 +185,7 @@ export async function morningDigest(opts: { dry?: boolean } = {}): Promise<strin
   // a sim switch overnight resets the leaderboard, worth one line
   const switched = (readVersion()?.history ?? []).filter(h => Date.parse(h.until) >= since).pop()
   const switchLine = switched ? `the sim changed overnight (${switched.version} to ${readVersion()!.current}), so the leaderboard started over.` : ''
-  const verdict = twinVerdict(runs.filter(r => r.simVersion === readVersion()?.current).map(r => readRunRecord(r.runId)).filter((x): x is RunRecord => !!x), readVersion()?.current)
+  const verdict = verdictLine(runs, readVersion()?.current)
   const lines = [...(verdict ? [verdict] : []), ...lead, tally, ...(switchLine ? [switchLine] : []), ...lives, health].filter(Boolean)
   if (!opts.dry) saveState({ lastMorning: new Date().toISOString(), morningLessons: lessons.length })
   return lines.filter(Boolean).join('\n')

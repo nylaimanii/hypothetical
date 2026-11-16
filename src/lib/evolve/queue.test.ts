@@ -383,3 +383,17 @@ test("startup cleanup keeps fresh tickets in b's <prio>-<ms>-<pid> format and re
   assert.equal(q.waiting[0].label, 'life-milestone')
   assert.ok(Math.abs(Date.parse(q.waiting[0].since) - now) < 1000, 'the time is read from the middle field')
 }))
+
+test('digest verdict uses only the current sim version, and says so when it has no worlds yet', async () => {
+  const { verdictLine } = await import('./maintenance')
+  const pop = (n: number) => [{ population: n }]
+  const rec = (ai: number, tw: number) => ({ frames: [{ tick: 100, status: 'alive', regions: pop(ai) }], baseline: [{ tick: 100, status: 'alive', regions: pop(tw), moonProgress: 0 }] })
+  const recs: Record<string, unknown> = { a: rec(5e9, 6e9), b: rec(5e9, 5.5e9), c: rec(7e9, 6e9) }
+  const read = (id: string) => (recs[id] ?? null) as never
+  const runs = [{ runId: 'a', simVersion: '5.1.0' }, { runId: 'b', simVersion: '5.1.0' }] as never[]
+  const before = verdictLine(runs, '5.7.0', read)!
+  assert.match(before, /no 5\.7\.0 worlds have finished yet/)
+  assert.match(before, /before the switch, no: in 0 of 2 worlds on 5\.1\.0/)
+  const after = verdictLine([...runs, { runId: 'c', simVersion: '5.7.0' }] as never[], '5.7.0', read)!
+  assert.equal(after, 'is the ai beating "do nothing" yet? yes: in the 1 world on 5.7.0 it kept more people alive than the no-ai twin, by 1000 million.')
+})
