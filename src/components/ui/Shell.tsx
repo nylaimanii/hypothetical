@@ -101,6 +101,7 @@ export function SideMenu({ onLive }: { onLive: () => void }) {
           <Item label="hall of history" onClick={() => s.setPanel('hall')} />
           <Item label="the story so far" hint="every world, every lesson" href="/story" />
           <Item label="assumptions" hint="the rules, with sources" href="/assumptions" />
+          <Item label="tradeoffs" hint="what each world gave up" href="/tradeoffs" />
           {caps.evolveNow && <Item label="mission control" href="/mission" />}
           {caps.playLive && <Item label={liveRunId ? 'live: on' : 'play live'} onClick={() => { s.setMenu(false); onLive() }} />}
         </Group>
