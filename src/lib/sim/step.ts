@@ -1,4 +1,5 @@
 // one month of the world, decision application, and public snapshots.
+import { link } from './causes'
 import { offWorldProgress, worldFreedom } from './tradeoffs'
 import type { BaselineFrame, Decision, Frame, Law, Region, Why } from '../types'
 import { dateOf } from './constants'
@@ -218,7 +219,10 @@ export function applyDecision(w: World, d: Decision): { migrations: ScheduledMig
   })
   w.laws.push(...fresh)
   while (w.laws.length > MAX_ACTIVE_LAWS) w.laws.shift()
-  w.budget = normalizeBudget(budget)
+  // budget moves of 5 points or more are decisions in the cause record (an autopsy can start from a cut)
+  const nb = normalizeBudget(budget)
+  for (const k of Object.keys(nb) as BudgetKey[]) { const d0 = w.budget[k], d1 = nb[k]; if (Math.abs(d1 - d0) >= 0.05) link(w, { placeId: 'world', what: `the core ${d1 < d0 ? 'cut' : 'raised'} ${k === 'welfare' ? 'health and social spending' : k} from ${Math.round(d0 * 100)}% to ${Math.round(d1 * 100)}% of the budget`, value: Math.min(1, 0.4 + Math.abs(d1 - d0) * 2), because: (d.rationale ?? '').split(/(?<=[.!?])\s/)[0].slice(0, 200), byWhom: 'core', sig: Math.min(1, 0.4 + Math.abs(d1 - d0) * 2) }) }
+  w.budget = nb
   w.forcedBudget = undefined
   if (d.religionPolicy !== w.religionPolicy) event(w, { kind: 'law', text: `religion policy changed from ${w.religionPolicy} to ${d.religionPolicy}`, severity: 0.3 })
   w.religionPolicy = d.religionPolicy

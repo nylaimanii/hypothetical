@@ -4,6 +4,7 @@
 // 2026 policies frozen and no llm calls. full state snapshots every 60 ticks allow exact branching.
 import { SIM_VERSION } from './version'
 import { assumptionsFor } from './assumptions'
+import { autopsyOf, type Autopsy } from './autopsy'
 import { offWorldProgress, worldFreedom } from './tradeoffs'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -224,6 +225,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   let branchedFrom: RunRecord['branchedFrom']
   let w: World
   let srcRun: RunRecord | undefined
+  let autopsy: Autopsy | undefined
   const rules = assumptionsFor(opts.assumptions ?? {})
   let srcDec = new Map<number, Decision>()
   const flip = opts.flipDecision
@@ -293,6 +295,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   if (flip) ctx.due = t => t === flip.tick || ((flip.after ?? 'replay') === 'replay' ? srcDec.has(t) : decisionDue(t, live))
   const rec = (done: boolean) => {
     const r = record(opts, w, twin, frames, baseline, !done, usage, lessonsLearned, knownLessons, ctx.snapshots, branchedFrom)
+    if (autopsy) Object.assign(r, { autopsy })
     Object.assign(r, { diary: w.diary, assumptions: { overridden: rules.overridden, clamped: rules.clamped } })
     // what this world traded for what, at the end (tradeoffs.ts defines freedom and off-world progress)
     Object.assign(r.summary, { tradeoffs: { lifespan: Math.round(globalPLE(w) * 10) / 10, population: Math.round(worldPop(w)), freedom: Math.round(worldFreedom(w) * 1000) / 1000, freedomAverage: Math.round((w.freedomSum ?? 0) / Math.max(w.wellbeingN || w.tick, 1) * 1000) / 1000, offWorld: Math.round(offWorldProgress(w) * 1000) / 1000, frontier: w.frontier } })
@@ -347,7 +350,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
     if (w.tick % 12 === 0) recordPlacesYear(w, places)
     stepTwin()
     updateMoods(w)
-    if (w.status !== 'alive') { ctx.snapshots.push(snapshotWorld(w)); emit() }
+    if (w.status !== 'alive') { autopsy = autopsyOf(w); ctx.snapshots.push(snapshotWorld(w)); emit() }
     else if (live) await sleep(opts.live!.msPerTick)
   }
   while (twin.status === 'alive' && (opts.untilTick === undefined || twin.tick < opts.untilTick)) stepTwin()

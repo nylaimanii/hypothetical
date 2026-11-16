@@ -160,3 +160,17 @@ test('freedom falls when compliance is forced, speech censored or movement limit
   assert.ok(harsh < free - 0.1, `forced collectivization and censorship should cut freedom: ${harsh.toFixed(2)} vs ${free.toFixed(2)}`)
   assert.ok(voice >= free, `assemblies and referendums should not cut freedom: ${voice.toFixed(2)} vs ${free.toFixed(2)}`)
 })
+
+test('when a world dies, its autopsy walks back in date order from the death to the decision that started it', async () => {
+  const { autopsyOf } = await import('../../../src/lib/sim/autopsy')
+  const { updateMoods } = await import('../../../src/lib/sim/citizens')
+  const w = initWorld(42, false); initCitizens(w)
+  const harsh = { food: 0.03, energy: 0.05, education: 0.1, space: 0.05, security: 0.4, welfare: 0.17, research: 0.2 }
+  for (let t = 0; t < 600 && w.status === 'alive'; t++) { if (t % 24 === 0) applyDecision(w, { ...decision(t, harsh, t === 0 ? [law('Wealth Tax', 'Wealth tax of 5% on the rich.'), law('State Media', 'Propaganda through state media.')] : []), religionPolicy: 'discouraged' }); stepWorld(w); updateMoods(w) }
+  assert.equal(w.status, 'destroyed', 'the hard-line world should collapse')
+  const a = autopsyOf(w)!
+  assert.ok(a && a.chain.length >= 2, 'an autopsy with at least a decision and the death')
+  assert.equal(a.chain.at(-1)!.what, w.causeOfDeath)
+  assert.equal(a.chain[0].byWhom, 'core', `the chain starts at "${a.chain[0].what}", not a decision`)
+  for (let i = 1; i < a.chain.length; i++) assert.ok(a.chain[i].tick >= a.chain[i - 1].tick, `step ${i} comes before the step it follows`)
+})
