@@ -36,7 +36,8 @@ export function bootTime(): number | null {
   try { const m = /sec = (\d+)/.exec(execFileSync('sysctl', ['-n', 'kern.boottime'], { encoding: 'utf8' })); return m ? Number(m[1]) * 1000 : null } catch { return null }
 }
 
-// after a restart, the ollama lock, queue tickets and lives gap from before the boot are stale, but a pid in them
+// after a restart, the ollama lock, queue tickets and lives gap from before the boot are stale (b's lock also checks
+// this since cdb3dee; this stays for the gap and evolve locks), but a pid in them
 // may now belong to an unrelated process (pids are reused), which would make the lock look held forever.
 // anything written before the boot is removed. returns what was cleared
 export function clearPreBootLocks(boot = bootTime()): string[] {
@@ -45,7 +46,8 @@ export function clearPreBootLocks(boot = bootTime()): string[] {
   const cleared: string[] = []
   const old = (f: string) => { try { return fs.statSync(f).mtimeMs < boot } catch { return false } }
   for (const f of ['.ollama.lock', '.ollama.gap', '.evolve.lock']) { const p = path.join(data, f); if (old(p)) { fs.rmSync(p, { force: true }); cleared.push(f) } }
+  // queue tickets: b's lock treats tickets older than the boot as stale itself (cdb3dee), by file time
   const q = path.join(data, '.ollama.queue')
-  try { for (const t of fs.readdirSync(q)) if (Number(t.split('-')[0]) < boot) { fs.rmSync(path.join(q, t), { force: true }); cleared.push(`.ollama.queue/${t}`) } } catch { /* no queue */ }
+  try { for (const t of fs.readdirSync(q)) if (old(path.join(q, t))) { fs.rmSync(path.join(q, t), { force: true }); cleared.push(`.ollama.queue/${t}`) } } catch { /* no queue */ }
   return cleared
 }

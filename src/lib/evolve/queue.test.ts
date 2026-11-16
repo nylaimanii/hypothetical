@@ -364,3 +364,22 @@ test('evolve lock: a stale lock (dead pid, or a pid that is not evolve) is taken
   fs.writeFileSync('data/.evolve.lock', JSON.stringify({ pid: process.ppid }))
   const b = acquireEvolveLock(); assert.ok(b.ok, 'a live pid that is not an evolve (a reused pid after a restart)')
 }))
+
+test("startup cleanup keeps fresh tickets in b's <prio>-<ms>-<pid> format and reads them right", inTempDir(async () => {
+  const { clearPreBootLocks } = await import('./instance')
+  const { ollamaQueue } = await import('./lifegap')
+  fs.mkdirSync('data/.ollama.queue', { recursive: true })
+  const now = Date.now()
+  const fresh = `9-${String(now).padStart(15, '0')}-${process.pid}`
+  fs.writeFileSync(path.join('data/.ollama.queue', fresh), 'life-milestone')
+  const stale = path.join('data/.ollama.queue', `0-${String(now - 864e5).padStart(15, '0')}-${process.pid}`)
+  fs.writeFileSync(stale, 'g9-old')
+  fs.utimesSync(stale, new Date(now - 864e5), new Date(now - 864e5))
+  const cleared = clearPreBootLocks(now - 3600e3)
+  assert.deepEqual(cleared, [`.ollama.queue/${path.basename(stale)}`], 'only the ticket written before the boot goes')
+  const q = ollamaQueue()
+  assert.equal(q.waiting.length, 1)
+  assert.equal(q.waiting[0].priority, 9)
+  assert.equal(q.waiting[0].label, 'life-milestone')
+  assert.ok(Math.abs(Date.parse(q.waiting[0].since) - now) < 1000, 'the time is read from the middle field')
+}))

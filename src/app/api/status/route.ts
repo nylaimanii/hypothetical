@@ -76,7 +76,7 @@ function html(s: Awaited<ReturnType<typeof status>>): string {
   const pace = e.stats?.avgMinutesPerWorld ? row('pace', `<span class=n>${esc(e.stats.avgMinutesPerWorld)}</span> min a world, best score <span class=n>${esc(e.stats.bestScore)}</span>, ${esc(e.stats.worldsLost)} worlds lost`) : ''
   const o = s.ollama
   const ollama = row('ollama', `${o.up ? 'up' : '<span class=bad>DOWN</span>'}${o.holder ? `, held by <span class=n>${esc(o.holder.label)}</span> (pid ${esc(o.holder.pid)}) since ${esc(ago(o.holder.since))}` : ', free'}${o.gap ? `, lives gap open until ${esc(new Date(o.gap.until).toLocaleTimeString())}` : ''}`)
-    + (o.waiting.length ? row('waiting', o.waiting.map(w => `<span class=n>${esc(w.label)}</span> (pid ${esc(w.pid)}, ${esc(ago(w.since))})`).join('<br>')) : '')
+    + (o.waiting.length ? row('waiting', o.waiting.map(w => `<span class=n>${esc(w.label)}</span> (priority ${esc(w.priority)}, pid ${esc(w.pid)}, ${esc(ago(w.since))})`).join('<br>')) : '')
   const lives = s.lives.running ? row('lives', s.lives.byContinent.map(g => `${esc(g.continent)}: ${g.people.map(p => `${esc(p.name)} <span class=n>${esc(p.age)}</span> ${esc(p.city)}`).join(', ')}`).join('<br>')) : ''
   const disk = row('disk', `data <span class=n>${esc(s.disk.dataGB)}</span> GB, <span class="n${s.disk.low ? ' bad' : ''}">${esc(s.disk.freeGB)}</span> GB free`)
   const recent = e.recent.length ? row('last worlds', e.recent.map(r => `<span class=n>${esc(r.runId)}</span> ${r.status === 'destroyed' ? '<span class=bad>died</span>' : esc(r.status)} <span class=n>${esc(r.endDate)}</span> score <span class=n>${esc(r.score)}</span>`).join('<br>')) : ''

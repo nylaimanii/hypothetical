@@ -25,17 +25,19 @@ export function livesRunning(): number {
 }
 
 // what other jobs want ollama: live tickets in B's fair queue (file content is the label) and the lock holder
-export type QueueTicket = { pid: number; label: string; since: string }
+export type QueueTicket = { pid: number; label: string; since: string; priority: number }
 export function ollamaQueue(): { holder: { pid: number; label: string; since: string } | null; waiting: QueueTicket[] } {
   let holder: { pid: number; label: string; since: string } | null = null
   try { const h = JSON.parse(fs.readFileSync(lockFile(), 'utf8')) as { pid: number; label: string; since: string }; if (alive(h.pid)) holder = h } catch { /* free */ }
   let waiting: QueueTicket[] = []
   try {
     waiting = fs.readdirSync(queueDir()).sort().map(t => {
-      const [ts, pid] = t.split('-')
+      // b's ticket names: <prio>-<ms>-<pid>, or the older <ms>-<pid>
+      const parts = t.split('-')
+      const [ts, pid] = parts.length >= 3 ? [parts[1], parts[2]] : [parts[0], parts[1]]
       let label = ''
       try { label = fs.readFileSync(path.join(queueDir(), t), 'utf8') } catch { /* raced */ }
-      return { pid: Number(pid), label, since: new Date(Number(ts)).toISOString() }
+      return { pid: Number(pid), label, since: new Date(Number(ts)).toISOString(), priority: parts.length >= 3 ? Number(parts[0]) : 5 }
     }).filter(t => alive(t.pid))
   } catch { /* no queue */ }
   return { holder, waiting }
