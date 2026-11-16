@@ -5,7 +5,8 @@
 #                             evolve is already running, the new one sees it and exits, so installing is safe anytime
 #   com.hypothetical.morning  sends the morning digest at 8:05 if evolve has not (and on wake, if the mac slept
 #                             through it; macOS runs a missed calendar job when it wakes). 9:05, 10:05 and 12:05
-#                             retry, e.g. when the network was not up yet. it runs from the runner worktree
+#                             retry, e.g. when the network was not up yet. it runs from the runner worktree, and only once
+#                             that code knows --if-due (an older runner would send a second digest)
 # undo: scripts/launchd/install.sh --uninstall
 # note: launchd jobs start after you log in. with filevault on, a restarted mac waits at the login screen
 set -eu

@@ -6,7 +6,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/zsh</string><string>-c</string>
-    <string>cd "__ROOT__" &amp;&amp; HYP_CODE_ROOT="__RUNNER__" exec node "__RUNNER__/node_modules/tsx/dist/cli.mjs" --tsconfig "__RUNNER__/tsconfig.json" "__RUNNER__/scripts/morning.ts" --if-due &gt;&gt; data/morning.log 2&gt;&amp;1</string>
+    <string>cd "__ROOT__" &amp;&amp; grep -q -- --if-due "__RUNNER__/scripts/morning.ts" &amp;&amp; HYP_CODE_ROOT="__RUNNER__" exec node "__RUNNER__/node_modules/tsx/dist/cli.mjs" --tsconfig "__RUNNER__/tsconfig.json" "__RUNNER__/scripts/morning.ts" --if-due &gt;&gt; data/morning.log 2&gt;&amp;1</string>
   </array>
   <key>EnvironmentVariables</key><dict><key>PATH</key><string>__PATH__</string></dict>
   <key>StartCalendarInterval</key>
