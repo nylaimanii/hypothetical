@@ -93,7 +93,7 @@ export async function politeLlm<T>(fn: () => Promise<T>): Promise<T> {
   inFlight = new Promise<void>(r => { done = r })
   await prev
   try {
-    const release = await acquireOllamaLock('life-milestone')
+    const release = await acquireOllamaLock('life-milestone', { priority: 9 }) // the lowest class: lives never jump ahead of evolve
     try { return await fn() } finally { release() }
   } finally { done() }
 }
