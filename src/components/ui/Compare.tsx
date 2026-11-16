@@ -112,7 +112,7 @@ function AbHeader({ ab, seed }: { ab: AB; seed: number }) {
       {ab.firstDiff
         ? <button onClick={() => setPlayhead(ab.firstDiff!.tick)} className="text-left text-ink/60 underline decoration-ink/20 underline-offset-2 hover:text-ink">{ab.firstDiff.text}</button>
         : <div className="text-ink/50">no recorded difference yet</div>}
-      {ab.sims && <div className="text-[11px] text-ink/60">A ran on {ab.sims.a ? <>sim <Num>{ab.sims.a}</Num></> : 'an older sim (its version is not recorded)'}, B on {ab.sims.b ? <>sim <Num>{ab.sims.b}</Num></> : 'an older sim (its version is not recorded)'}, so part of the difference comes from the sim itself, not only from the change</div>}
+      {ab.simText ? <div className="text-[11px] text-ink/60">{ab.simText}</div> : ab.sims && <div className="text-[11px] text-ink/60">A ran on {ab.sims.a ? <>sim <Num>{ab.sims.a}</Num></> : 'an older sim (its version is not recorded)'}, B on {ab.sims.b ? <>sim <Num>{ab.sims.b}</Num></> : 'an older sim (its version is not recorded)'}, so part of the difference comes from the sim itself, not only from the change</div>}
       {ab.exact === false && <div className="text-[11px] text-ink/50">after the change the governor decides again, so later choices can also differ for that reason</div>}
     </div>
   )

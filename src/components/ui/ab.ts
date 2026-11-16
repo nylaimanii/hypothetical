@@ -10,7 +10,7 @@ export type ABKind = 'whatif' | 'rerun'
 // assumptions). exact false: after the change the governor decides again, so later choices can differ for that
 // reason too
 // sims: set when the two worlds were run by different sim versions, so not only the change differs
-export type AB = { a: string; b: string; kind: ABKind; splitTick: number; change: string; exact?: boolean; firstDiff?: { tick: number; text: string }; sims?: { a?: string; b?: string } }
+export type AB = { a: string; b: string; kind: ABKind; splitTick: number; change: string; exact?: boolean; firstDiff?: { tick: number; text: string }; sims?: { a?: string; b?: string }; simText?: string }
 
 export const simVersionOf = (r: object) => (r as { simVersion?: string }).simVersion
 

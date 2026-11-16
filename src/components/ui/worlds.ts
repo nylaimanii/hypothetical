@@ -105,7 +105,7 @@ async function compareInner(agentIds: string[], tick: number) {
 }
 
 type WhatIfPair = { whatif: { original: string; tick: number; appliedAt: number; change: Parameters<typeof describeChange>[0]; exact: boolean }; divergences: Divergence[] }
-type RerunInfo = { changes: string[]; from?: string }
+type RerunInfo = { changes: string[]; from?: string; sim?: { text: string | null } }
 
 // what world `b` was made from and the one change: a what-if (data/whatif) or a rerun with other assumptions
 async function abLink(b: RunRecord): Promise<(Omit<AB, 'firstDiff'> & { divergences: Divergence[] }) | null> {
@@ -117,7 +117,7 @@ async function abLink(b: RunRecord): Promise<(Omit<AB, 'firstDiff'> & { divergen
   }
   const r = await get<RerunInfo>(`/api/assumptions?runId=${encodeURIComponent(b.runId)}`).catch(() => null)
   if (!r?.from) return null
-  return { a: r.from, b: b.runId, kind: 'rerun', splitTick: 0, change: r.changes.join('; ') || 'other assumptions', divergences: [] }
+  return { a: r.from, b: b.runId, kind: 'rerun', splitTick: 0, change: r.changes.join('; ') || 'other assumptions', simText: r.sim?.text ?? undefined, divergences: [] }
 }
 
 // a rerun or what-if still running (or kept local) lives in data/live: read it whole when the runs api has no such world
@@ -149,7 +149,7 @@ export async function startAB(bId: string, tick?: number) {
     const split = decisionSplit({ ...ma, runId: a.runId }, { ...mb, runId: b.runId }, link.splitTick)
     const divergences = link.divergences.length ? link.divergences : split ? [split] : []
     const sa = simVersionOf(a), sb = simVersionOf(b)
-    const ab: AB = { a: link.a, b: link.b, kind: link.kind, splitTick: link.splitTick, change: link.change, exact: link.exact, sims: sa !== sb ? { a: sa, b: sb } : undefined }
+    const ab: AB = { a: link.a, b: link.b, kind: link.kind, splitTick: link.splitTick, change: link.change, exact: link.exact, simText: link.simText, sims: sa !== sb ? { a: sa, b: sb } : undefined }
     s.setCompare({ agentIds: [a.agentId, b.agentId], records: [a, b], divergences, ab: { ...ab, firstDiff: firstDifference(ma, mb, link.splitTick) } })
     s.setPlayhead(at)
     return true
