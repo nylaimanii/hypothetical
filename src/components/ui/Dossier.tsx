@@ -16,7 +16,7 @@ import { useCurrentFrame, useStore, type Selection } from '../state/store'
 import { Bar, Num, Prov, Section, Sparkline, fmt } from './bits'
 import { api, Offline } from './api'
 import { sendOverride } from './actions'
-import { dateOfTick, eventDate, eventsBetween } from './truth'
+import { dateOfTick, eventDate, eventsBetween, recorded } from './truth'
 
 // ---------- shared bits ----------
 
@@ -214,12 +214,12 @@ function RegionDossier({ r, frame, record, idx }: { r: Region; frame: Frame; rec
       {tab === 'stats' && (
         <Section title="every number, with its why">
           <StatRow label="population" value={fmt.people(r.population)} prov={p.population} why={w('population')} />
-          <StatRow label="period life expectancy" value={`${r.periodLifeExpectancy.toFixed(1)}y`} prov={p.periodLifeExpectancy} why={w('periodLifeExpectancy')}  raw={r.periodLifeExpectancy} />
-          <StatRow label="cohort life expectancy" value={`${r.lifeExpectancy.toFixed(1)}y`} prov={p.lifeExpectancy}  raw={r.lifeExpectancy} />
+          <StatRow label="period life expectancy" value={recorded(r.periodLifeExpectancy) ? `${r.periodLifeExpectancy.toFixed(1)}y` : 'not computed yet'} prov={p.periodLifeExpectancy} why={w('periodLifeExpectancy')}  raw={r.periodLifeExpectancy} />
+          <StatRow label="cohort life expectancy" value={recorded(r.lifeExpectancy) ? `${r.lifeExpectancy.toFixed(1)}y` : 'not computed yet'} prov={p.lifeExpectancy}  raw={r.lifeExpectancy} />
           <StatRow label="approval of the core" value={fmt.pct(r.approval)} why={w('approval')}  raw={r.approval} />
           <StatRow label="unrest" value={fmt.pct(r.unrest)} prov={p.unrest} why={w('unrest')} />
           <StatRow label="kcal / person" value={fmt.kcal(r.foodKcalPerCapita)} prov={p.foodKcalPerCapita} why={w('foodKcalPerCapita')} />
-          <StatRow label="fertility" value={r.fertility.toFixed(2)} prov={p.fertility}  raw={r.fertility} />
+          <StatRow label="fertility" value={recorded(r.fertility) ? r.fertility.toFixed(2) : 'not computed yet'} prov={p.fertility}  raw={r.fertility} />
           <StatRow label="disease burden" value={fmt.pct(r.diseaseBurden)} prov={p.diseaseBurden}  raw={r.diseaseBurden} />
           <StatRow label="aged 65+" value={fmt.pct(r.share65plus)} prov={p.share65plus} />
           <StatRow label="education" value={fmt.pct(r.education)} prov={p.education} why={w('education')} />

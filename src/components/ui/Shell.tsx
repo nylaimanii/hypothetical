@@ -2,7 +2,7 @@
 // minimal shell: the globe gets the screen. default chrome is the world name + date, the tabs strip,
 // one stats line and the timeline. one panel at a time, esc closes it, depth lives in "full report".
 import { useEffect, useMemo, useState } from 'react'
-import { populationOf } from './truth'
+import { populationOf, recorded } from './truth'
 import Link from 'next/link'
 import type { Frame, Region, WorldEvent } from '@/lib/types'
 import { useCurrentFrame, useStore, type Overlay, type View } from '../state/store'
@@ -189,7 +189,7 @@ function regionStats(r: Region): Stats {
   const economy = clamp(Math.log10(Math.max(500, gdpPc)) / 5 - 0.35 - (r.visual?.damage.level ?? 0) * 0.4)
   const food = clamp((r.foodKcalPerCapita - 1700) / 1500)
   const safety = clamp(1 - r.unrest * 1.1)
-  const health = clamp((r.periodLifeExpectancy - 50) / 40)
+  const health = recorded(r.periodLifeExpectancy) ? clamp((r.periodLifeExpectancy - 50) / 40) : 0.5 // not computed yet: neutral
   const air = clamp(1 - (r.visual?.pollution ?? 0.3))
   const happiness = clamp(r.approval * 0.6 + safety * 0.2 + food * 0.2)
   return { happiness, economy, livability: clamp((happiness + economy + safety + health + air + food) / 6) }
