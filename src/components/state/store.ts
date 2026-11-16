@@ -5,7 +5,7 @@ import type { Agent, BaselineFrame, DecisionRow, Divergence, Frame, Override, Ru
 import { mockRuns, stageFor } from '@/lib/mock/run'
 import { moodFrom } from '@/lib/mock/mood'
 import { normalizeRecord } from './normalize'
-import { citizensAt, requirementsAt } from './roster'
+import { citizensAt, requirementsAt } from '@/lib/sim/replay-pure'
 import { useCountriesYear } from './usePlaces'
 
 export type Selection =
