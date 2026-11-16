@@ -9,6 +9,8 @@ import { slimFromRecord } from '../state/frames'
 import { Num, fmt } from './bits'
 import Emblem from './Emblem'
 import { frontierLabel } from './Chrome'
+import { dateOfTick, recorded } from './truth'
+import { abName, type AB } from './ab'
 
 const CompareGlobe = dynamic(() => import('../world/CompareGlobe'), { ssr: false })
 
@@ -21,7 +23,9 @@ type Rows = { runId: string; years: YearRow[]; decisions: DecisionRow[] }
 const at = <T extends { tick: number }>(rows: T[], tick: number): T | undefined => { let best: T | undefined; for (const r of rows) { if (r.tick <= tick + 1e-6) best = r; else break } return best ?? rows[0] }
 
 // stat races read the slim yearly rows, so they cover the whole run even when frames are lazy
-function Race({ title, runs, value, format, playhead }: { title: string; runs: Rows[]; value: (y: YearRow) => number; format: (n: number) => string; playhead: number }) {
+// skip: rows that hold no value yet (life expectancy is 0 in the first frame of older records)
+function Race({ title, runs: all0, value, format, playhead, skip }: { title: string; runs: Rows[]; value: (y: YearRow) => number; format: (n: number) => string; playhead: number; skip?: (v: number) => boolean }) {
+  const runs = skip ? all0.map((r) => ({ ...r, years: r.years.filter((y) => !skip(value(y))) })) : all0
   const W = 196, H = 48
   const t1 = Math.max(1, ...runs.map((r) => r.years.at(-1)?.tick ?? 0))
   const all = runs.flatMap((r) => r.years.map(value))
@@ -56,7 +60,7 @@ const BUDGET_KEYS = ['food', 'energy', 'education', 'space', 'security', 'welfar
 const BUDGET_COLORS = ['#6FAE7E', '#E0B97E', '#7F98D6', '#1D1B19', '#8D88A3', '#C27FA9', '#56AFA9']
 
 // the diff table reads the slim decision rows: the latest decision of each world at the scrubber
-function DiffTable({ runs, records, playhead }: { runs: Rows[]; records: RunRecord[]; playhead: number }) {
+function DiffTable({ runs, records, playhead, ab }: { runs: Rows[]; records: RunRecord[]; playhead: number; ab?: AB }) {
   const agents = useStore((s) => s.agents)
   const rows = runs.map((r) => ({ cur: at(r.decisions, playhead), cities: r.decisions.filter((d) => d.tick <= playhead + 1e-6).flatMap((d) => d.citiesFounded) }))
   const year = rows.find((r) => r.cur)?.cur?.date.slice(0, 4)
@@ -74,7 +78,7 @@ function DiffTable({ runs, records, playhead }: { runs: Rows[]; records: RunReco
         <thead>
           <tr>
             <th className="w-28" />
-            {records.map((r, i) => { const a = agents.find((x) => x.id === r.agentId); return <th key={r.runId} className="px-2 pb-1 text-left font-normal" style={{ color: AGENT_COLORS[i] }}>{a?.name ?? r.agentId}</th> })}
+            {records.map((r, i) => { const a = agents.find((x) => x.id === r.agentId); return <th key={r.runId} className="px-2 pb-1 text-left font-normal" style={{ color: AGENT_COLORS[i] }}>{ab ? abName(ab, r.runId) : a?.name ?? r.agentId}</th> })}
           </tr>
         </thead>
         <tbody>
@@ -92,6 +96,24 @@ function DiffTable({ runs, records, playhead }: { runs: Rows[]; records: RunReco
           {cell('cities founded', (r) => (r.cities.length ? r.cities.join(', ') : <span className="text-ink/40">none yet</span>))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// what the pair is: same seed, the one change and when it applies, and the first recorded difference
+function AbHeader({ ab, seed }: { ab: AB; seed: number }) {
+  const setPlayhead = useStore((s) => s.setPlayhead)
+  return (
+    <div className="min-w-0 text-[12px] leading-snug">
+      <div className="text-[11px] uppercase tracking-[0.14em] text-ink/45">a/b on seed <Num>{seed}</Num>, one change</div>
+      <div>
+        <span className="text-ink/60">{ab.kind === 'rerun' ? 'from the start: ' : <>from <button onClick={() => setPlayhead(ab.splitTick)} className="underline decoration-ink/25 underline-offset-2"><Num>{dateOfTick(ab.splitTick)}</Num></button>: </>}</span>{ab.change}
+      </div>
+      {ab.firstDiff
+        ? <button onClick={() => setPlayhead(ab.firstDiff!.tick)} className="text-left text-ink/60 underline decoration-ink/20 underline-offset-2 hover:text-ink">{ab.firstDiff.text}</button>
+        : <div className="text-ink/50">no recorded difference yet</div>}
+      {ab.sims && <div className="text-[11px] text-ink/60">A ran on {ab.sims.a ? <>sim <Num>{ab.sims.a}</Num></> : 'an older sim (its version is not recorded)'}, B on {ab.sims.b ? <>sim <Num>{ab.sims.b}</Num></> : 'an older sim (its version is not recorded)'}, so part of the difference comes from the sim itself, not only from the change</div>}
+      {ab.exact === false && <div className="text-[11px] text-ink/50">after the change the governor decides again, so later choices can also differ for that reason</div>}
     </div>
   )
 }
@@ -119,11 +141,12 @@ export default function CompareView() {
               <CompareGlobe record={r} index={i} />
               <div className="pointer-events-none absolute left-2 top-2 flex items-center gap-2 rounded-full bg-bone/85 py-1 pl-1 pr-3 shadow-sm">
                 {a && <Emblem seed={a.emblemSeed} size={26} glow={a.champion} />}
-                <span className="text-[13px]" style={{ color: AGENT_COLORS[i] }}>{a?.name ?? r.agentId}</span>
+                <span className="text-[13px]" style={{ color: AGENT_COLORS[i] }}>{compare.ab ? abName(compare.ab, r.runId) : a?.name ?? r.agentId}</span>
+                {compare.ab && r.runId === compare.ab.b && playhead < compare.ab.splitTick && <span className="text-[10px] text-ink/50">same as A until the change</span>}
                 <span className={`text-[10px] ${f.status === 'destroyed' ? 'text-ember' : 'text-ink/50'}`}>{f.status}</span>
               </div>
               <div className="pointer-events-none absolute bottom-2 left-2 rounded-full bg-bone/80 px-2.5 py-0.5 text-[10.5px]">
-                <Num>{fmt.people(populationOf(f))}</Num> · <Num>{f.globalPeriodLifeExpectancy.toFixed(1)}y</Num> · {frontierLabel(f.frontier)}{f.humanCost.deaths > 0 && <> · <Num className="text-ember">{fmt.people(f.humanCost.deaths)}</Num> dead</>}
+                <Num>{fmt.people(populationOf(f))}</Num> · {recorded(f.globalPeriodLifeExpectancy) !== undefined ? <Num>{f.globalPeriodLifeExpectancy.toFixed(1)}y</Num> : <span className="text-ink/50">life exp. not computed yet</span>} · {frontierLabel(f.frontier)}{f.humanCost.deaths > 0 && <> · <Num className="text-ember">{fmt.people(f.humanCost.deaths)}</Num> dead</>}
               </div>
             </div>
           )
@@ -131,18 +154,18 @@ export default function CompareView() {
       </div>
       <div className="panel pointer-events-auto flex max-h-[16rem] shrink-0 flex-col overflow-hidden px-3 pb-2 pt-2">
         <div className="mb-1 flex items-center justify-between">
-          <span className="text-[11px] uppercase tracking-[0.14em] text-ink/45">comparing <Num>{n}</Num> agents{records.every((r) => r.seed === records[0].seed) ? <> on seed <Num>{records[0].seed}</Num></> : ''} · click a globe to inspect it</span>
+          {compare.ab ? <AbHeader ab={compare.ab} seed={records[0].seed} /> : <span className="text-[11px] uppercase tracking-[0.14em] text-ink/45">comparing <Num>{n}</Num> agents{records.every((r) => r.seed === records[0].seed) ? <> on seed <Num>{records[0].seed}</Num></> : ''} · click a globe to inspect it</span>}
           <button onClick={() => setCompare(null)} className="rounded-full border border-ink/25 px-3 py-0.5 text-[12px] hover:bg-ink hover:text-bone">exit compare</button>
         </div>
         <div className="scroll-thin flex min-h-0 gap-5 overflow-auto">
         <div className="grid shrink-0 grid-cols-3 gap-x-4 gap-y-2">
           <Race title="population" runs={runs} value={(y) => y.globalPopulation} format={fmt.people} playhead={playhead} />
-          <Race title="period life exp." runs={runs} value={(y) => y.globalPeriodLifeExpectancy} format={(v) => `${v.toFixed(1)}y`} playhead={playhead} />
+          <Race title="period life exp." runs={runs} value={(y) => y.globalPeriodLifeExpectancy} format={(v) => `${v.toFixed(1)}y`} playhead={playhead} skip={(v) => recorded(v) === undefined} />
           <Race title="frontier stage" runs={runs} value={(y) => frontierRank(y.frontier) + y.moonProgress * 0.9} format={(v) => `${v.toFixed(1)}`} playhead={playhead} />
           <Race title="approval" runs={runs} value={(y) => y.approval} format={fmt.pct} playhead={playhead} />
           <Race title="deaths" runs={runs} value={(y) => y.deaths} format={fmt.people} playhead={playhead} />
         </div>
-        <div className="min-w-[22rem] flex-1"><DiffTable runs={runs} records={records} playhead={playhead} /></div>
+        <div className="min-w-[22rem] flex-1"><DiffTable runs={runs} records={records} playhead={playhead} ab={compare.ab} /></div>
         </div>
       </div>
     </div>

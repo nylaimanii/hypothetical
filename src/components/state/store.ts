@@ -1,4 +1,5 @@
 'use client'
+import type { AB } from '../ui/ab'
 import { useMemo } from 'react'
 import { create } from 'zustand'
 import type { Agent, BaselineFrame, DecisionRow, Divergence, Frame, Override, RunRecord, RunSummary, WorldEvent, Layer, YearRow, Country } from '@/lib/types'
@@ -47,7 +48,8 @@ export type Tip = { title: string; text: string; x: number; y: number }
 // minimal shell: one panel at a time. sheets are the panels that live in the side menu's world
 export type Sheet = 'worlds' | 'chronicle' | 'live' | 'layers' | 'epitaph' | null
 export type Panel = 'offworld' | 'longevity' | 'agents' | 'hall' | null
-export type Compare = { agentIds: string[]; records: RunRecord[]; divergences: Divergence[] }
+// ab: set when the two worlds are an a/b pair (same seed, one change); see ui/ab.ts
+export type Compare = { agentIds: string[]; records: RunRecord[]; divergences: Divergence[]; ab?: AB }
 // a highlight reel: the top events by significance, played back to back
 export type Reel = { stops: { tick: number; regionId?: string; kind: WorldEvent['kind'] }[]; i: number; returnTo: number; wasPlaying: boolean }
 export type SentOverride = Override & { tick: number; responded?: boolean; local?: boolean }

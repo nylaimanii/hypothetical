@@ -3,6 +3,7 @@ import type { Agent, CompareResponse, Divergence, HallEntry, RunRecord, SlimRun 
 import { useStore } from '../state/store'
 import { Offline } from './api'
 import { normalizeRecord } from '../state/normalize'
+import { decisionSplit, describeChange, firstDifference, simVersionOf, type AB } from './ab'
 import { loadInitial, metaFromSlim, shellFromSlim, slimFromRecord } from '../state/frames'
 
 async function get<T>(url: string): Promise<T> {
@@ -101,4 +102,56 @@ async function compareInner(agentIds: string[], tick: number) {
   s.setPlayhead(tick)
   if (note) s.setNotice(note)
   return true
+}
+
+type WhatIfPair = { whatif: { original: string; tick: number; appliedAt: number; change: Parameters<typeof describeChange>[0]; exact: boolean }; divergences: Divergence[] }
+type RerunInfo = { changes: string[]; from?: string }
+
+// what world `b` was made from and the one change: a what-if (data/whatif) or a rerun with other assumptions
+async function abLink(b: RunRecord): Promise<(Omit<AB, 'firstDiff'> & { divergences: Divergence[] }) | null> {
+  const regionName = (id: string) => b.frames[0]?.regions.find((r) => r.id === id)?.name
+  if (b.branchedFrom) {
+    const w = await get<WhatIfPair>(`/api/whatif/${encodeURIComponent(b.runId)}`).catch(() => null)
+    if (!w?.whatif) return null
+    return { a: w.whatif.original, b: b.runId, kind: 'whatif', splitTick: w.whatif.appliedAt, change: describeChange(w.whatif.change, regionName), exact: w.whatif.exact, divergences: w.divergences ?? [] }
+  }
+  const r = await get<RerunInfo>(`/api/assumptions?runId=${encodeURIComponent(b.runId)}`).catch(() => null)
+  if (!r?.from) return null
+  return { a: r.from, b: b.runId, kind: 'rerun', splitTick: 0, change: r.changes.join('; ') || 'other assumptions', divergences: [] }
+}
+
+// a rerun or what-if still running (or kept local) lives in data/live: read it whole when the runs api has no such world
+async function fetchAny(runId: string, center: number): Promise<RunRecord | null> {
+  const got = await fetchRecord(runId, center)
+  if (got) return got.rec
+  const body = await get<RunRecord>(`/api/live/${encodeURIComponent(runId)}`).catch(() => null)
+  if (!body?.frames?.length) return null
+  const rec = normalizeRecord(body)
+  useStore.getState().setSlim(runId, slimFromRecord(rec))
+  return rec
+}
+
+// a/b view: world b and the world it was made from, side by side on one timeline, with the split marked
+export async function startAB(bId: string, tick?: number) {
+  const s = useStore.getState()
+  s.setLoading('loading the a/b pair')
+  try {
+    const first = await fetchAny(bId, tick ?? 0)
+    if (!first) { s.setNotice('could not open that world'); return false }
+    const link = await abLink(first)
+    if (!link) { s.setNotice('this world was not made from another by one change, so there is nothing to pair it with'); return false }
+    const at = tick ?? link.splitTick
+    const a = await fetchAny(link.a, at)
+    if (!a) { s.setNotice('the original world is not available'); return false }
+    const b = useStore.getState().slim[bId]?.lazy ? (await fetchAny(bId, at)) ?? first : first
+    const slim = useStore.getState().slim
+    const ma = slim[a.runId] ?? slimFromRecord(a), mb = slim[b.runId] ?? slimFromRecord(b)
+    const split = decisionSplit({ ...ma, runId: a.runId }, { ...mb, runId: b.runId }, link.splitTick)
+    const divergences = link.divergences.length ? link.divergences : split ? [split] : []
+    const sa = simVersionOf(a), sb = simVersionOf(b)
+    const ab: AB = { a: link.a, b: link.b, kind: link.kind, splitTick: link.splitTick, change: link.change, exact: link.exact, sims: sa !== sb ? { a: sa, b: sb } : undefined }
+    s.setCompare({ agentIds: [a.agentId, b.agentId], records: [a, b], divergences, ab: { ...ab, firstDiff: firstDifference(ma, mb, link.splitTick) } })
+    s.setPlayhead(at)
+    return true
+  } finally { useStore.getState().setLoading(null) }
 }

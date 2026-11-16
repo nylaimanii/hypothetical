@@ -18,7 +18,8 @@ import LivePanel from './LivePanel'
 import Dossier from './Dossier'
 import { EpitaphCard } from './WorldViews'
 import { agentOf, prettyAgent, worldNumber } from './WorldTabs'
-import { openRun } from './worlds'
+import { openRun, startAB } from './worlds'
+import { mayPair } from './ab'
 import { PlaceCard, PlaceReport, SeaCard } from './PlaceCard'
 import { usePhone } from './usePhone'
 import { lifeHref, lifeNear, useLives } from '../state/useLives'
@@ -48,6 +49,9 @@ export function WorldTitle() {
       <Num className="mt-0.5 block text-[12.5px] text-ink/65">{formatDay(d)} · {formatTime(d)}</Num>
       {!compare && record.branchedFrom && (
         <button onClick={() => openRun(record.branchedFrom!.runId, record.branchedFrom!.tick)} className="mt-0.5 block text-[11px] text-ink/50 underline decoration-ink/20 underline-offset-2 hover:text-ink">branched from world #<Num>{worldNumber(record.branchedFrom.runId, runs)}</Num></button>
+      )}
+      {!compare && mayPair(record.runId) && (
+        <button onClick={() => startAB(record.runId, playhead)} className="mt-0.5 block text-[11px] text-ink/50 underline decoration-ink/20 underline-offset-2 hover:text-ink">compare with the original, side by side</button>
       )}
     </div>
   )

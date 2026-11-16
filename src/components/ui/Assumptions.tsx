@@ -144,7 +144,7 @@ export default function Assumptions() {
                 {result.changes.map((c, i) => <p key={i} className="text-ink/70">{c}</p>)}
                 {result.clamped.map((c) => <p key={c.id} className="text-ink/70">{c.text}</p>)}
                 {result.waiting && <p className="text-ink/70">{result.waiting.text}</p>}
-                <p className="pt-1"><Link href={`/?live=${encodeURIComponent(result.runId)}`} className="underline decoration-ink/30 underline-offset-2">watch the rerun</Link> <span className="text-ink/50">(kept off the leaderboard)</span></p>
+                <p className="pt-1"><Link href={`/?live=${encodeURIComponent(result.runId)}`} className="underline decoration-ink/30 underline-offset-2">watch the rerun</Link> · <Link href={`/?ab=${encodeURIComponent(result.runId)}`} className="underline decoration-ink/30 underline-offset-2">compare it with the original</Link> <span className="text-ink/50">(kept off the leaderboard)</span></p>
               </div>
             ) : (
               <div className="flex flex-wrap items-center justify-between gap-2">

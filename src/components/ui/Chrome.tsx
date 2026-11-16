@@ -11,7 +11,8 @@ import { AGENT_COLORS } from './Compare'
 import { api, Offline } from './api'
 import { DirectorToggle, SoundControls, replayIntro } from './Extras'
 import { formatDay, formatTime, tickToDate } from '../world/time'
-import { openRun } from './worlds'
+import { openRun, startAB } from './worlds'
+import { mayPair } from './ab'
 
 export function StatusPill({ status }: { status: string }) {
   const danger = status === 'destroyed'
@@ -50,6 +51,9 @@ export function TopLeft() {
         <button onClick={() => openRun(record.branchedFrom!.runId, record.branchedFrom!.tick)} className="mt-1 block text-[11px] text-ink/60 underline decoration-ink/25 underline-offset-2 hover:text-ink">
           branched from <Num>{record.branchedFrom.runId}</Num> at <Num>{formatDay(tickToDate(record.branchedFrom.tick))}</Num>
         </button>
+      )}
+      {!compare && mayPair(record.runId) && (
+        <button onClick={() => startAB(record.runId, useStore.getState().playhead)} className="mt-1 block text-[11px] text-ink/60 underline decoration-ink/25 underline-offset-2 hover:text-ink">compare with the original, side by side</button>
       )}
     </div>
   )

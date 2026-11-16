@@ -1,4 +1,5 @@
 'use client'
+import { abName } from './ab'
 import { useRef, useState } from 'react'
 import { dateOfTick, eventsBetween } from './truth'
 import type { Divergence } from '@/lib/types'
@@ -98,7 +99,8 @@ export default function Timeline() {
   const [split, setSplit] = useState<Divergence | null>(null)
   const [branching, setBranching] = useState(false)
   const canBranch = useStore((s) => s.caps.branch)
-  const name = (runId: string) => { const r = compare?.records.find((x) => x.runId === runId); return agents.find((a) => a.id === r?.agentId)?.name ?? r?.agentId ?? runId }
+  const ab = compare?.ab
+  const name = (runId: string) => { if (ab) return abName(ab, runId); const r = compare?.records.find((x) => x.runId === runId); return agents.find((a) => a.id === r?.agentId)?.name ?? r?.agentId ?? runId }
   // marks on the track only up to the playhead (the timeline shouldn't give away what's coming)
   // danger marks where the event happened (its own tick), never past the playhead
   const dangers = eventsBetween(record, 0, playhead).map((x) => x.e).filter((e) => e.severity >= 0.7 && ['famine', 'revolt', 'war', 'disaster', 'pandemic'].includes(e.kind)).filter((e, i, all) => all.findIndex((o) => o.tick === e.tick) === i)
@@ -136,6 +138,16 @@ export default function Timeline() {
           <button key={`${d.runB}-${d.tick}`} onPointerDown={(e) => e.stopPropagation()} onClick={() => setSplit(split === d ? null : d)} title="where they split"
             className="absolute top-0 h-3 w-3 -translate-x-1/2 -translate-y-1 rotate-45 border-2 border-ink bg-dusk" style={{ left: `${x(d.tick)}%` }} />
         ))}
+        {ab && (
+          <div title={`the change: ${ab.change}`} className="pointer-events-none absolute -top-1 bottom-[-0.25rem] w-0.5 -translate-x-1/2 bg-ink" style={{ left: `${x(ab.splitTick)}%` }}>
+            <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap font-mono text-[9px] uppercase tracking-[0.12em] text-ink/70">change</span>
+          </div>
+        )}
+        {ab?.firstDiff && ab.firstDiff.tick !== ab.splitTick && (
+          <div title={ab.firstDiff.text} className="pointer-events-none absolute -top-1 bottom-[-0.25rem] w-px -translate-x-1/2 bg-ink/50" style={{ left: `${x(ab.firstDiff.tick)}%` }}>
+            <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap font-mono text-[9px] uppercase tracking-[0.12em] text-ink/50">differ</span>
+          </div>
+        )}
         {split && (
           <div onPointerDown={(e) => e.stopPropagation()} className="absolute bottom-full z-20 mb-3 w-80 -translate-x-1/2 rounded-xl bg-ink px-3 py-2 text-[12px] leading-snug text-bone shadow-lg" style={{ left: `${Math.max(14, Math.min(86, x(split.tick)))}%` }}>
             <div className="flex justify-between text-[10px] text-bone/60"><span>where {name(split.runA)} and {name(split.runB)} split</span><button onClick={() => setSplit(null)}>×</button></div>

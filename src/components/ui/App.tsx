@@ -7,7 +7,7 @@ import { TICKS_PER_SECOND, useStore, NO_CAPS } from '../state/store'
 import { api, Offline } from './api'
 import { Caption, Intro, useIntroGate, useSound } from './Extras'
 import { stopReel } from './Timeline'
-import { loadAgents, openRun, startCompare } from './worlds'
+import { loadAgents, openRun, startAB, startCompare } from './worlds'
 import { DailyPaper } from './Daily'
 import { ShortcutSheet, toggleGlobeOnly, useShortcuts } from './Shortcuts'
 import { ensureWindow, needsWindow } from '../state/frames'
@@ -142,8 +142,11 @@ function useUrlState() {
       const q = new URLSearchParams(window.location.search)
       const t = q.get('t') !== null ? Number(q.get('t')) : undefined
       const cmp = q.get('cmp')
+      const abId = q.get('ab')
       const s = useStore.getState()
-      if (cmp) {
+      if (abId && /^[\w.-]+$/.test(abId)) {
+        if (s.compare?.ab?.b !== abId) await startAB(abId, t)
+      } else if (cmp) {
         const ids = cmp.split(',').filter(Boolean)
         if (s.compare?.agentIds.join() !== ids.join()) await startCompare(ids, t ?? 0)
       } else {
@@ -180,7 +183,7 @@ function useUrlState() {
     const unsub = useStore.subscribe((s) => {
       // nothing real loaded yet (the waiting screen): don't put the placeholder in the url
       if (applying.current || (s.source === 'mock' && !s.compare)) return
-      const key = s.compare ? `cmp=${s.compare.agentIds.join(',')}` : `tabs=${(s.tabs.length ? s.tabs : [s.record.runId]).join(',')}&active=${s.record.runId}`
+      const key = s.compare?.ab ? `ab=${s.compare.ab.b}` : s.compare ? `cmp=${s.compare.agentIds.join(',')}` : `tabs=${(s.tabs.length ? s.tabs : [s.record.runId]).join(',')}&active=${s.record.runId}`
       const url = `?${key}&t=${Math.round(s.playhead)}`
       if (`${window.location.search}` === url) return
       if (key !== lastKey) { lastKey = key; window.history.pushState(null, '', url); return }
