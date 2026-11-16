@@ -7,13 +7,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { Decision, RunRecord } from '../types'
 import { loadRun, runWorld, type FlipChange, type RunOpts } from './run'
-import { dateOfTick } from './truth'
+import { dateOfTick, populationAt } from './truth'
 
 export type Outcome = { population: number; lifeExpectancy: number; excessDeaths: number; freedom: number; offWorld: number }
 const outcomeOf = (r: RunRecord, tick?: number): Outcome => {
   const f = tick === undefined ? r.frames.at(-1)! : (r.frames.filter(x => x.tick <= tick).at(-1) ?? r.frames.at(-1)!)
   const x = f as typeof f & { freedom?: number; offWorld?: number }
-  return { population: f.globalPopulation, lifeExpectancy: f.globalPeriodLifeExpectancy, excessDeaths: f.humanCost?.deaths ?? 0, freedom: x.freedom ?? 0, offWorld: x.offWorld ?? 0 }
+  return { population: populationAt(r, f.tick), lifeExpectancy: f.globalPeriodLifeExpectancy, excessDeaths: f.humanCost?.deaths ?? 0, freedom: x.freedom ?? 0, offWorld: x.offWorld ?? 0 }
 }
 const better: Record<keyof Outcome, 1 | -1> = { population: 1, lifeExpectancy: 1, excessDeaths: -1, freedom: 1, offWorld: 1 }
 const cleanup = (id: string) => { for (const x of ['.json', '.twin.json', '.lives.json', '.places.json', '.places.bin.gz']) { try { fs.unlinkSync(path.join(process.cwd(), 'data', 'runs', `${id}${x}`)) } catch { /* not written */ } } }

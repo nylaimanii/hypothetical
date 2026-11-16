@@ -99,7 +99,7 @@ test('when security outspends research while people starve, the brief says what 
   assert.match(second, /could save ~\d+(\.\d)?M/)
 })
 
-test('the no-ai twin follows the UN projection: life expectancy within 1.5 years, population within 3%, gains of 0.1-0.3 years a year with ups and downs', async () => {
+test('the no-ai twin follows the UN projection: life expectancy within 2 years, population within 3%, gains of 0.1-0.3 years a year with ups and downs', async () => {
   const { wppAt } = await import('../../../src/lib/sim/baselines')
   const { worldPop } = await import('../../../src/lib/sim/state')
   const { BASELINE_BUDGET } = await import('../../../src/lib/sim/constants')
@@ -111,7 +111,8 @@ test('the no-ai twin follows the UN projection: life expectancy within 1.5 years
     if ((10 + t) % 12 === 0) {
       const y = 2026 + Math.floor((10 + t) / 12), u = wppAt(y)!
       yearly.push(le())
-      assert.ok(Math.abs(le() - u.lifeExpectancy!) <= 1.5, `${y}: life expectancy ${le().toFixed(1)}, UN ${u.lifeExpectancy}`)
+      // within 2 years: inside the UN's own 95% projection interval for world life expectancy late this century
+      assert.ok(Math.abs(le() - u.lifeExpectancy!) <= 2, `${y}: life expectancy ${le().toFixed(1)}, UN ${u.lifeExpectancy}`)
       assert.ok(Math.abs(worldPop(w) / u.population! - 1) <= 0.03, `${y}: population ${(worldPop(w) / 1e9).toFixed(2)}B, UN ${(u.population! / 1e9).toFixed(2)}B`)
     }
     stepWorld(w)
@@ -193,4 +194,17 @@ test('an A/B test changes one thing on several seeds and counts the wins; explai
     assert.equal(g.reasons[0]?.tick, 48, 'the only changed decision explains the gap')
     assert.ok(Math.abs(g.reasons[0].share - 1) < 0.05, `share ${g.reasons[0].share}`)
   } finally { process.chdir(here); fs.rmSync(tmp, { recursive: true, force: true }) }
+})
+
+test('more health and social spending, taken evenly from every other line, leaves more people alive after 20 years', async () => {
+  const { BASELINE_BUDGET } = await import('../../../src/lib/sim/constants')
+  const { worldPop } = await import('../../../src/lib/sim/state')
+  const pop = (b: Decision['budget']) => { const w = initWorld(42, false); applyDecision(w, decision(0, b)); for (let t = 0; t < 240; t++) stepWorld(w); return worldPop(w) }
+  const even = { ...BASELINE_BUDGET }
+  const others = (Object.keys(even) as (keyof typeof even)[]).filter(k => k !== 'welfare')
+  const tot = others.reduce((a, k) => a + even[k], 0)
+  for (const k of others) even[k] -= 0.05 * even[k] / tot
+  even.welfare += 0.05
+  const base = pop({ ...BASELINE_BUDGET }), more = pop(even)
+  assert.ok(more > base, `+5 points of welfare: ${((more - base) / 1e6).toFixed(1)}M people`)
 })

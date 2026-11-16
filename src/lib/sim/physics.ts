@@ -3,6 +3,7 @@
 import { A } from './assumptions'
 import type { Budget, Migration } from '../types'
 import {
+  BASELINE_BUDGET,
   BUILD_MONTHS, CAPEX_USD_PER_GW, ELEC_INCOME_ELASTICITY, KCAL_CAP, MIGRATION_MAX_SHARE_YEAR, MIGRATION_MONTHS,
   MIGRATION_USD_PER_PERSON, OM_USD_PER_TWH, RETIRE_PER_YEAR, SURVIVAL_KCAL, TWH_PER_GW_YEAR, YIELD_BASE_GROWTH,
 } from './constants'
@@ -36,7 +37,13 @@ export function allocate(w: World): { revenue: number; space: number; research: 
     for (const k of KEYS) rs.spend[k] = b[k] * revenue * shares[i] * (1 - (rs.leak ?? 0)) / (1 - (rs.leak0 ?? 0))
     rs.spend.welfare = Math.max(0, rs.spend.welfare - migBill * shares[i])
   })
-  return { revenue, space: b.space * revenue, research: b.research * revenue }
+  // research: ~70% of the world's R&D is private (business enterprise R&D, OECD MSTI / UNESCO UIS) and goes on whatever
+  // the budget says; the world government's research line is the other ~30%. at the 2026 budget the total equals the
+  // 2026 research effort exactly; cutting the line to 0 keeps the private 70% (shrinking with unrest)
+  const unrest = w.regions.reduce((a, r) => a + r.r.unrest * r.r.population, 0) / Math.max(w.regions.reduce((a, r) => a + r.r.population, 0), 1)
+  const research0 = BASELINE_BUDGET.research * revenue
+  const research = A(w, 'research_private_share') * research0 * clamp(1 - 0.5 * Math.max(0, unrest - 0.3)) + (1 - A(w, 'research_private_share')) * b.research * revenue
+  return { revenue, space: b.space * revenue, research }
 }
 
 export function stepEnergy(w: World, fx: Record<string, LawEffects>, sectors: Record<string, number> = {}) {
@@ -156,14 +163,20 @@ export function stepEconomy(w: World, popBefore: number[]) {
     // 1990-2020 ~5%/yr, World Bank WDI NY.GDP.PCAP.KD), below the single-country record of the asian tigers:
     // south korea grew ~6%/yr per capita 1960-1990 (Maddison Project, https://www.rug.nl/ggdc/historicaldevelopment/maddison/)
     const b = effectiveBudget(w)
-    const invest = clamp((b.education + b.energy + b.research - 0.233) / 0.25, -1, 1)
+    // cuts below the 2026 share hurt far less than a sustained push helps poor economies catch up: the IMF finds public
+    // investment moves output by ~1.5% per 1% of GDP over 4 years (Abiad et al. 2016, https://doi.org/10.1016/j.jmacro.2016.07.005), a level shift, not a lasting
+    // growth rate (ESTIMATE: the downside at invest_cut_weight of the upside)
+    const raw = clamp((b.education + b.energy + b.research - 0.233) / 0.25, -1, 1)
+    const invest = raw < 0 ? raw * A(w, 'invest_cut_weight') : raw
     rs.investAvg += (invest - rs.investAvg) / 60
     const boost = A(w, 'invest_growth') * rs.investAvg * (1 - inc) * Math.sqrt(rs.r.compliance)
     // ESTIMATE baseline: ~0.6% + catch-up for poorer regions with working institutions + tech (rich regions ~1.2%/yr)
     let g = 0.006 + 0.03 * (1 - inc) * rs.r.compliance + 0.008 * rs.r.techLevel + boost
     why(rs, 'gdpUsd', 'investment in schools, power and research', boost * rs.r.gdpUsd / 12)
     g -= 0.1 * Math.max(0, rs.r.unrest - 0.4)
-    g -= 0.5 * (1 - rs.energyRatio)
+    // unmet power demand costs growth: African outages cut growth per head ~2.9 points a year at ~30% shortfalls
+    // (Andersen & Dalgaard 2013, https://doi.org/10.1016/j.eneco.2013.02.016), about 0.1 x the shortfall
+    g -= A(w, 'power_shortage_growth_cost') * (1 - rs.energyRatio)
     g -= 0.6 * Math.max(0, (2100 - kcal) / 2100)
     if (rs.inRevolt) g -= 0.04
     g -= 0.1 * Math.max(0, w.revenueShare - 0.3)
