@@ -9,6 +9,7 @@
 // - automation takes tasks as tech and compute grow; UBI, retraining, job guarantees, robot taxes, shorter weeks
 // - inequality (gini) tracked per country, region and world
 // numbers are SOURCED with a link or marked ESTIMATE with the reasoning.
+import { A } from './assumptions'
 import { link, recentLink } from './causes'
 import { addCrowd } from './behavior'
 import { countryPop, countriesOf, type CountryState } from './places'
@@ -70,7 +71,7 @@ export function initPower(w: World) {
     // corruption ESTIMATE: leakage ~ 30% of spending at CPI 0, ~0 at CPI 100. reference points: Uganda's school grants
     // lost ~87% in 1991-95 (Reinikka & Svensson 2004, https://doi.org/10.1162/0033553041382120); Indonesian village
     // roads ~24% missing (Olken 2007, https://doi.org/10.1086/517935)
-    const corruption = clamp(0.3 * (100 - (c.seed.cpi || 40)) / 100, 0.01, 0.3)
+    const corruption = clamp(A(w, 'corruption_max_leak') * (100 - (c.seed.cpi || 40)) / 100, 0.01, 0.6)
     // automation ESTIMATE: share of tasks done by machines, ~12% in rich economies, ~3% where incomes are low
     // (IFR World Robotics robot densities, OECD Employment Outlook 2023)
     const automation = 0.03 + 0.1 * inc
@@ -141,16 +142,16 @@ export function stepPower(w: World) {
       const inc = incomeIdx(c.gdpUsd / pop)
       // corruption: audits and transparency cut leakage up to ~70% (Uganda's newspaper campaign cut grant capture from
       // ~80% to ~20%; Olken's audits cut missing road funds by ~8 points); it creeps back ~2%/yr without them
-      const c0 = clamp(0.3 * (100 - (c.seed.cpi || 40)) / 100, 0.01, 0.3)
+      const c0 = clamp(A(w, 'corruption_max_leak') * (100 - (c.seed.cpi || 40)) / 100, 0.01, 0.6)
       const prevC = p.corruption
       p.corruption = clamp(p.corruption + (c0 * (1 - 0.7 * audit.c) - p.corruption) * 0.3, 0.005, 0.4)
       if (c0 - p.corruption > 0.05 && c0 - prevC <= 0.05) link(w, { placeId: c.id, what: `leakage from public spending in ${c.name} fell to ${pct(p.corruption)}`, value: 0.45, because: 'audits and published budgets', byWhom: 'core', lawId: audit.lawId })
       // automation: tasks shift to machines with tech, compute and labor costs (ESTIMATE ~+0.4 points a year in rich
       // economies at 2026 tech, faster as tech rises); robot taxes and limits slow it (South Korea cut its automation
       // tax credit in 2017)
-      const dA = (0.002 + 0.008 * rs.r.techLevel) * (0.3 + inc) * Math.min(1, w.core.capacity) * (1 - 0.6 * robotTax.c) * (1 - p.automation)
+      const dA = (0.002 + A(w, 'automation_pace') * rs.r.techLevel) * (0.3 + inc) * Math.min(1, w.core.capacity) * (1 - 0.6 * robotTax.c) * (1 - p.automation)
       // the 2026 pace (same formula at 2026 tech): its churn is already in 2026 unemployment and growth
-      const dA0 = (0.002 + 0.008 * (rs.tech0 ?? rs.r.techLevel)) * (0.3 + inc) * (1 - p.automation)
+      const dA0 = (0.002 + A(w, 'automation_pace') * (rs.tech0 ?? rs.r.techLevel)) * (0.3 + inc) * (1 - p.automation)
       p.automation = clamp(p.automation + dA, 0, 0.95)
       // jobs: each point of tasks automated displaces ~a point of the workforce (Acemoglu & Restrepo 2020: one robot per
       // thousand workers cut employment-to-population by ~0.2 points, https://doi.org/10.1086/705716); most are

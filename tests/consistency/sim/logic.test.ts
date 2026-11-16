@@ -121,3 +121,26 @@ test('the no-ai twin follows the UN projection: life expectancy within 1.5 years
   assert.ok(mean >= 0.05 && mean <= 0.3, `average gain ${mean.toFixed(3)} years a year`)
   assert.ok(gains.some(g => g < 0), 'life expectancy never dips (a straight line, not real dynamics)')
 })
+
+test('every assumption in data/assumptions.json is read by the sim, with a source and a range around its value', async () => {
+  const fs = await import('node:fs'), path = await import('node:path')
+  const { ASSUMPTIONS } = await import('../../../src/lib/sim/assumptions')
+  const dir = path.join(process.env.HYP_CODE_ROOT ?? process.cwd(), 'src', 'lib', 'sim')
+  const code = fs.readdirSync(dir).filter(f => f.endsWith('.ts') && f !== 'assumptions.ts').map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n')
+  for (const a of ASSUMPTIONS) {
+    assert.ok(code.includes(`'${a.id}'`), `"${a.label}" (${a.id}) is in the file but the sim never reads it`)
+    assert.ok(a.min <= a.value && a.value <= a.max, `${a.id}: value ${a.value} outside its range ${a.min}-${a.max}`)
+    assert.ok(/^https?:\/\//.test(a.source) || /^our guess/.test(a.source), `${a.id}: source must be a url or "our guess"`)
+  }
+})
+
+test('an assumption override changes the world, a value out of range is clamped and reported, an unknown one is refused', async () => {
+  const { assumptionsFor } = await import('../../../src/lib/sim/assumptions')
+  const r = assumptionsFor({ tfr_floor: 0.5, tcre: 0.6 })
+  assert.deepEqual(r.clamped, [{ id: 'tfr_floor', asked: 0.5, used: 0.8, min: 0.8, max: 2.1 }])
+  assert.equal(r.overridden.tcre, 0.6)
+  assert.throws(() => assumptionsFor({ not_a_rule: 1 }), /unknown assumption/)
+  const base = initWorld(42, false), hot = initWorld(42, false, r.values)
+  for (let t = 0; t < 120; t++) { stepWorld(base); stepWorld(hot) }
+  assert.ok(hot.climate.anomalyC > base.climate.anomalyC, `tcre 0.6 should warm faster: ${hot.climate.anomalyC.toFixed(2)} vs ${base.climate.anomalyC.toFixed(2)}`)
+})

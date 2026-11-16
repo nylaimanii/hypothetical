@@ -2,6 +2,7 @@
 // lived through at 18-22, misinformation grows and shrinks with trust, censorship and transparency, meaning (work,
 // faith, family, a shared mission) keeps people alive, and big events come back on their anniversaries.
 // numbers are SOURCED with a link or marked ESTIMATE with the reasoning.
+import { A } from './assumptions'
 import { link } from './causes'
 import { addCrowd } from './behavior'
 import { countryPop, countriesOf, type CountryState } from './places'
@@ -86,7 +87,7 @@ export function stepPeopleMonth(w: World) {
       if (cr.phase !== 'outraged' || cr.intensity < 0.5 || dst.crowds.some(x => x.topic === cr.topic)) continue
       const net = (regionAvg(w, src, c => c.daily?.internet ?? 0.6, 0.6) + regionAvg(w, dst, c => c.daily?.internet ?? 0.6, 0.6)) / 2
       const similar = clamp(1 - Math.abs(src.r.approval - dst.r.approval) - 0.5 * Math.abs(src.r.unrest - dst.r.unrest) + 0.3 * dst.r.unrest)
-      if (u01(w, `spread:${from}:${to}:${cr.topic}:${w.tick}`) < 0.15 * cr.intensity * net * similar) {
+      if (u01(w, `spread:${from}:${to}:${cr.topic}:${w.tick}`) < A(w, 'contagion_rate') * cr.intensity * net * similar) {
         const k = link(w, { placeId: to, what: `protests over ${cr.topic} spread from ${src.r.name} to ${dst.r.name}`, value: 0.5, because: `${pct(net)} of people online, a shared grievance`, byWhom: `crowd:${cr.topic}`, causeIds: cr.causeId ? [cr.causeId] : [] })
         addCrowd(dst, w, { topic: cr.topic, peak: clamp(cr.peak * 0.6), outrageMonths: cr.outrageMonths, delay: 1, lawId: cr.lawId, panic: cr.panic, causeId: k.id })
         P.spreadAcc++
@@ -133,7 +134,7 @@ export function stepPeopleYear(w: World) {
   for (const c of w.countries) {
     const rs = w.regions.find(r => r.r.id === c.regionId)!
     c.meaning = meaningOf(c, clamp(rs.aweShock))
-    const despair = 15 * clamp((c.meaning0 - c.meaning) / 0.2) // per 100k a year
+    const despair = A(w, 'despair_max') * clamp((c.meaning0 - c.meaning) / 0.2) // per 100k a year
     c.despairYear = despair / 1e5 * countryPop(c)
     w.causeDeaths.despair = (w.causeDeaths.despair ?? 0) + c.despairYear
     const crude = Math.max(c.seed.crudeDeath * 100, 300)

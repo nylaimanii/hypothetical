@@ -9,6 +9,7 @@
 //     https://www.planetary.org/space-policy/cost-of-apollo
 //   Artemis ~$93B through FY2025, NASA OIG IG-22-003 https://oig.nasa.gov/docs/IG-22-003.pdf
 //   values below are in 2026 dollars (~1.2x 2020).
+import { A } from './assumptions'
 import launchSitesJson from '../../../data/geo/launch-sites.json'
 import type { MoonStage } from '../types'
 import { clamp, event, popWeighted, type World } from './state'
@@ -82,7 +83,7 @@ export function stepSpace(w: World, spaceUsd: number, researchUsd: number): bool
   const s = w.space
   const spec = nextSpec(s)
   if (!spec) return false
-  const usable = Math.min(spaceUsd, SPACE_ABSORB_USD_YEAR / 12)
+  const usable = Math.min(spaceUsd, A(w, 'space_absorb_usd_year') / 12)
   s.stageSpend += usable
   s.totalSpend += usable
   if (usable > 0) s.stageMonths++

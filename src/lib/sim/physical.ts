@@ -3,6 +3,7 @@
 // ESTIMATE with the reasoning. randomness comes from hashes of (seed, kind, time), so it never shifts any other
 // stream: the same seed gives the same eruptions, storms and closures whatever the governor does, while their
 // damage depends on what the governor built.
+import { A } from './assumptions'
 import { link } from './causes'
 import { addCrowd } from './behavior'
 import { CITY_SEEDS, countryPop, countriesOf, killInRegion, type CountryState } from './places'
@@ -83,7 +84,7 @@ export function initPhysical(w: World) {
     if (idx >= 0) coast.push({ idx, sub, protect, floods: 0, lastFlood: -999, retreat: 0 })
   }
   w.phys = { chokes: CHOKEPOINTS.map(c => ({ id: c.id, closedUntil: -1, severity: 0 })), minerals: 1, fossilReserve: 1, seaLevelM: 0, amoc: false, volcanicC: 0, storm: { until: -1, loss: 0 }, coast, swans: [], retirementAge: 65 }
-  for (const c of w.countries) c.aging = agingOf(c, 65)
+  for (const c of w.countries) c.aging = agingOf(c, 65, undefined, A(w, 'pension_per_dependency'))
   for (const rs of w.regions) { rs.chokeDrag = 0; rs.chokeEnergy = 0; rs.physFood = 1; rs.demoGrowth = 0; rs.pensionSqueeze = 0; rs.wa0 = workingShare(rs.bands, 65); rs.waPrev = rs.wa0 }
 }
 
@@ -91,14 +92,14 @@ export function initPhysical(w: World) {
 export type Aging = { dep: number; dep0: number; pensionGdp: number; pension0: number }
 const shareAbove = (bands: number[], age: number) => sum(bands.map((b, i) => b * clamp((BAND_MID[i] + 2.5 - age) / 5)))
 const workingShare = (bands: number[], ret: number) => { const tot = sum(bands) || 1; return (sum(bands.slice(3)) - 0.5 * bands[3] - shareAbove(bands, ret)) / tot }
-function agingOf(c: CountryState, ret: number, prev?: Aging): Aging {
+function agingOf(c: CountryState, ret: number, prev?: Aging, perDep = 0.26): Aging {
   const old = shareAbove(c.bands, ret), work = sum(c.bands.slice(3)) - 0.5 * c.bands[3] - old
   const dep = old / Math.max(work, 1)
   const inc = clamp(Math.log10(Math.max(c.gdpUsd / Math.max(countryPop(c), 1), 300)) / 5)
   // public pensions ~ 0.26 of GDP per unit of old-age dependency where coverage is full (OECD 2021: dependency ~0.30,
   // pensions ~7.7% of GDP, https://doi.org/10.1787/678055dd-en); ILO: ~20%
   // of elders get a pension in low-income countries. ESTIMATE coverage 0.2 + 0.8 x income index
-  const pensionGdp = 0.26 * dep * (0.2 + 0.8 * inc)
+  const pensionGdp = perDep * dep * (0.2 + 0.8 * inc)
   return { dep, dep0: prev?.dep0 ?? dep, pensionGdp, pension0: prev?.pension0 ?? pensionGdp }
 }
 
@@ -149,7 +150,7 @@ export function stepPhysicalMonth(w: World) {
   // geomagnetic superstorm: a Carrington-class storm ~12% a decade (Riley 2012, https://doi.org/10.1029/2011SW000734).
   // ESTIMATE: high-latitude grids lose 5-25% of capacity (burned transformers take a year or more to replace;
   // Lloyd's 2013 put the US cost at $0.6-2.6 trillion), the core's data centers go dark for months
-  if (u01(w, `storm:${w.tick}`) < 0.0127 / 12) {
+  if (u01(w, `storm:${w.tick}`) < A(w, 'superstorm_rate') / 12) {
     const prot = worldC(w, ['grid_hardening'])
     const loss = 0.05 + 0.2 * u01(w, `stormsev:${w.tick}`) * (1 - 0.7 * prot)
     for (const id of ['na', 'europe', 'rus_ca', 'oceania']) { const rs = w.regions.find(r => r.r.id === id); if (rs) rs.capacityTWh *= 1 - loss }
@@ -160,7 +161,7 @@ export function stepPhysicalMonth(w: World) {
   // volcanic eruptions: VEI 6 (Pinatubo 1991, ~-0.5 C for 2 years) about 1-2 a century, VEI 7 (Tambora 1815, the year
   // without a summer) about 1 in 600-1,000 years (Smithsonian Global Volcanism Program, https://volcano.si.edu/)
   const vu = u01(w, `volcano:${w.tick}`)
-  const vei = vu < 0.0013 / 12 ? 7 : vu < (0.0013 + 0.015) / 12 ? 6 : 0
+  const vei = vu < A(w, 'vei7_rate') / 12 ? 7 : vu < (A(w, 'vei7_rate') + A(w, 'vei6_rate')) / 12 ? 6 : 0
   if (vei) {
     const SITES: [string, string][] = [['IDN', 'seasia'], ['PHL', 'seasia'], ['JPN', 'easia'], ['ISL', 'europe'], ['ITA', 'europe'], ['CHL', 'latam'], ['MEX', 'latam'], ['USA', 'na'], ['RUS', 'rus_ca'], ['PNG', 'oceania']]
     const [cid, rid] = SITES[Math.floor(u01(w, `vsite:${w.tick}`) * SITES.length)]
@@ -174,7 +175,7 @@ export function stepPhysicalMonth(w: World) {
   p.volcanicC *= 0.96 // aerosols wash out over ~2-3 years
   // small asteroid (Tunguska class, ~50 m): ESTIMATE ~1 in 300 years, ~3% chance it hits a populated area; detection
   // (planetary defense law, NASA DART 2022) turns a hit city into an evacuated one
-  if (u01(w, `rock:${w.tick}`) < 0.0033 / 12 && u01(w, `rockpop:${w.tick}`) < 0.03) {
+  if (u01(w, `rock:${w.tick}`) < A(w, 'asteroid_rate') / 12 && u01(w, `rockpop:${w.tick}`) < 0.03) {
     const rs = [...w.regions].sort((a, b) => u01(w, `rockr:${a.r.id}:${w.tick}`) - u01(w, `rockr:${b.r.id}:${w.tick}`))[0]
     const warn = worldC(w, ['planetary_defense'])
     const dead = killInRegion(w, rs, 0.0002 * (1 - 0.9 * warn))
@@ -185,20 +186,20 @@ export function stepPhysicalMonth(w: World) {
   // ESTIMATE ~2%/yr at the 2026 fleet (newer designs are safer than the 1950s-70s plants behind most of those),
   // scaled by nuclear capacity vs 2026 and halving every 25 years as designs improve. Fukushima evacuated ~150,000
   const nuc = sum(w.regions.map(r => r.mixCap.nuclear)), nuc0 = w.nuclear0 || nuc
-  if (nuc > 0 && u01(w, `nuke:${w.tick}`) < 0.02 * (nuc / Math.max(nuc0, 1)) * Math.pow(0.5, w.tick / 300) / 12) {
+  if (nuc > 0 && u01(w, `nuke:${w.tick}`) < A(w, 'reactor_accident_rate') * (nuc / Math.max(nuc0, 1)) * Math.pow(0.5, w.tick / 300) / 12) {
     const rs = [...w.regions].filter(r => r.mixCap.nuclear > 0).sort((a, b) => b.mixCap.nuclear * u01(w, `nr:${b.r.id}:${w.tick}`) - a.mixCap.nuclear * u01(w, `nr:${a.r.id}:${w.tick}`))[0]
     if (rs) { const k = swan(w, `a reactor accident in ${rs.r.name} forced 150k people from their homes`, rs.r.id, 0.6); addCrowd(rs, w, { topic: 'nuclear power', peak: 0.3, outrageMonths: 6, causeId: k.id }) }
   }
   // AMOC collapse: IPCC AR6 has an abrupt collapse before 2100 as very unlikely, but warming raises the odds
   // (Ditlevsen & Ditlevsen 2023, https://doi.org/10.1038/s41467-023-39810-w, argue it could come this century).
   // ESTIMATE hazard 0.4%/yr per C above 1.5 C. effects: colder northern europe, weaker monsoons, faster rise on the US east coast
-  if (!p.amoc && w.tick % 12 === 0 && u01(w, `amoc:${w.tick}`) < 0.004 * Math.max(0, w.climate.anomalyC - 1.5)) {
+  if (!p.amoc && w.tick % 12 === 0 && u01(w, `amoc:${w.tick}`) < A(w, 'amoc_hazard_per_c') * Math.max(0, w.climate.anomalyC - 1.5)) {
     p.amoc = true
     swan(w, `the Atlantic overturning circulation collapsed: northern europe is cooling and monsoons are weakening`, 'europe', 0.95)
   }
   // multiple breadbasket failure: ESTIMATE ~1%/yr in 2026, rising with warming (Gaupp et al. 2019,
   // https://doi.org/10.1038/s41558-019-0600-z). the main exporters lose ~7% of a year's harvest together (2010-12 style)
-  if (w.tick % 12 === 3 && u01(w, `bread:${w.tick}`) < 0.01 * (1 + Math.max(0, w.climate.anomalyC - 1.3))) {
+  if (w.tick % 12 === 3 && u01(w, `bread:${w.tick}`) < A(w, 'breadbasket_rate') * (1 + Math.max(0, w.climate.anomalyC - 1.3))) {
     p.breadUntil = w.tick + 12
     swan(w, 'heat and drought hit several breadbaskets at once, world harvests fall ~7%', 'na', 0.7)
   }
@@ -235,7 +236,7 @@ export function stepPhysicalYear(w: World) {
   p.fossilReserve = clamp(p.fossilReserve - burn + found, 0, 2)
   // sea level
   const amocBoost = p.amoc ? 1.2 : 1
-  p.seaLevelM += 0.0037 * (1 + 0.6 * (w.climate.anomalyC - 1.1)) * amocBoost
+  p.seaLevelM += A(w, 'sea_level_rate') * (1 + A(w, 'sea_level_per_c') * (w.climate.anomalyC - 1.1)) * amocBoost
   const walls = (c: CountryState) => strongest(w, w.regions.find(r => r.r.id === c.regionId), ['sea_wall', 'climate_adaptation'])
   for (const cc of p.coast) {
     const seed = CITY_SEEDS[cc.idx], city = w.realCities[cc.idx]
@@ -277,11 +278,11 @@ export function stepPhysicalYear(w: World) {
   p.retirementAge = 65 + 2 * Math.min(3, raise)
   for (const rs of w.regions) {
     const cs = countriesOf(w, rs.r.id)
-    for (const c of cs) c.aging = agingOf(c, p.retirementAge, c.aging)
+    for (const c of cs) c.aging = agingOf(c, p.retirementAge, c.aging, A(w, 'pension_per_dependency'))
     const gdp = Math.max(sum(cs.map(c => c.gdpUsd)), 1), pop = Math.max(regionPop(rs), 1)
     const extra = sum(cs.map(c => (c.aging.pensionGdp - c.aging.pension0) * c.gdpUsd))
     // half the extra pension bill is paid by squeezing health and social care (ESTIMATE), half by taxes and debt
-    rs.pensionSqueeze = Math.max(0, 0.5 * extra / pop)
+    rs.pensionSqueeze = Math.max(0, A(w, 'pension_squeeze_share') * extra / pop)
     // demographic dividend and drag: a falling working-age share slows growth per head about one for one
     // (Bloom & Williamson 1998, https://doi.org/10.1093/wber/12.3.419), counted only beyond the 2026 trend
     const wa = workingShare(rs.bands, p.retirementAge)

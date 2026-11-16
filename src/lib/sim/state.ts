@@ -4,6 +4,7 @@ import { LAND, initMix, initRail } from './visuals'
 import { onEvent, type CauseInput, type CauseLink, type Story, type Trend } from './causes'
 import { initCountries, type CountryState } from './places'
 import { initDaily, DAILY } from './daily'
+import { DEFAULTS } from './assumptions'
 import { periodLifeExpectancy } from './biology'
 import { initPower, type CoreBody } from './power'
 import { initPhysical, type Physical } from './physical'
@@ -211,6 +212,7 @@ export type World = {
   skilledMigrants: number
   core: CoreBody
   phys: Physical
+  assumptions: Record<string, number> // this world's rules (data/assumptions.json + overrides), read through A(w, id)
   people: People
   diary: { tick: number; date: string; kind: 'entry' | 'lookback'; text: string }[] // the core's own notes
   lastLookback?: string
@@ -248,7 +250,7 @@ export function allocShares(regions: RegionState[]): number[] {
   return regions.map((_, i) => ALLOC_GDP_WEIGHT * gdp[i] / g + (1 - ALLOC_GDP_WEIGHT) * pop[i] / p)
 }
 
-export function initWorld(seed: number, twin: boolean): World {
+export function initWorld(seed: number, twin: boolean, assumptions?: Record<string, number>): World {
   const regions: RegionState[] = SEED_REGIONS.map(src => {
     const r: Region = { ...JSON.parse(JSON.stringify(src)), crowds: [], approval: 0.5, lifeExpectancy: 0, periodLifeExpectancy: 0, fertility: 0, diseaseBurden: 0, travelHoursToNearest: 0, whys: [] }
     const d = DEMOGRAPHICS[r.id]
@@ -281,7 +283,8 @@ export function initWorld(seed: number, twin: boolean): World {
   })
   // per-capita spending at the 2026 budget, the reference point for "more or less than today"
   const shares = allocShares(regions)
-  const revenue = REVENUE_SHARE * sum(regions.map(r => r.r.gdpUsd))
+  const revShare = (assumptions ?? DEFAULTS).revenue_share ?? REVENUE_SHARE
+  const revenue = revShare * sum(regions.map(r => r.r.gdpUsd))
   regions.forEach((rs, i) => {
     const pc = (k: keyof Budget) => BASELINE_BUDGET[k] * revenue * shares[i] / rs.r.population
     rs.pc0 = { welfare: pc('welfare'), education: pc('education'), security: pc('security'), food: pc('food') }
@@ -299,10 +302,10 @@ export function initWorld(seed: number, twin: boolean): World {
       research: stream(seed, 'research'), factions: stream(seed, 'factions'), companies: stream(seed, 'companies'), behavior: stream(seed, 'behavior'),
     },
     peakPop: pop, globalFoodMonthsUnder: 0, revoltStreak: 0, warTension: 0, maxWarSeverity: 0,
-    status: 'alive', wellbeingSum: 0, wellbeingN: 0, revenueShare: REVENUE_SHARE, citizens: [], crewDeaths: 0, citizenSeq: 0, citizenMeta: {},
+    status: 'alive', wellbeingSum: 0, wellbeingN: 0, revenueShare: revShare, citizens: [], crewDeaths: 0, citizenSeq: 0, citizenMeta: {},
     requirements: initRequirements(), cities: [], cityScores: {}, companies: [], factions: initFactions(), frontier: 'none', frontierState: initFrontier(),
     humanCost: { deaths: 0, famineDeaths: 0, unrestDeaths: 0, displaced: 0, approval: 0.5 }, lessonsKnown: 0, researchFocus: [], lawMeta: {}, lawsuits: {},
-    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), lawsProposed: 0, lawsRepeated: 0, lawsAmended: 0, lawsConverted: 0, lawsBudget: 0, lastBudgetLaws: [], lastConverted: [], lastRepeated: [], frameCursor: 0, eventSeq: 0, eventKinds: {}, topEvents: [], spaceAssets: [], flowAcc: [], causes: [], causeSeq: 0, countries: initCountries(regions), climate: undefined as unknown as ClimateState, countryMix: {}, countryMix0: {}, retiredPlants: [], builtPlants: {}, realCities: [], railBuilt: [], housingDeaths: 0, core: undefined as unknown as CoreBody, phys: undefined as unknown as Physical, people: undefined as unknown as People, diary: [], nuclear0: 0, hiddenLoss: 0, vital: { births: 0, deaths: 0, famine: 0, pandemic: 0, riots: 0, disasters: 0, migration: 0, welfare: 0 }, welfareDeathsYear: 0, welfareDeathsAcc: 0, famineDeathsYear: 0, famineDeathsAcc: 0, causeDeaths: { air: 0, water: 0 }, skilledMigrants: 0, recentRepeals: [], citiesHitIdx: {}, infraAcc: [], lifeArchive: {}, names: newNameRegistry(), lastFrameTick: 0,
+    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), lawsProposed: 0, lawsRepeated: 0, lawsAmended: 0, lawsConverted: 0, lawsBudget: 0, lastBudgetLaws: [], lastConverted: [], lastRepeated: [], frameCursor: 0, eventSeq: 0, eventKinds: {}, topEvents: [], spaceAssets: [], flowAcc: [], causes: [], causeSeq: 0, countries: initCountries(regions), climate: undefined as unknown as ClimateState, countryMix: {}, countryMix0: {}, retiredPlants: [], builtPlants: {}, realCities: [], railBuilt: [], housingDeaths: 0, core: undefined as unknown as CoreBody, phys: undefined as unknown as Physical, assumptions: { ...(assumptions ?? DEFAULTS) }, people: undefined as unknown as People, diary: [], nuclear0: 0, hiddenLoss: 0, vital: { births: 0, deaths: 0, famine: 0, pandemic: 0, riots: 0, disasters: 0, migration: 0, welfare: 0 }, welfareDeathsYear: 0, welfareDeathsAcc: 0, famineDeathsYear: 0, famineDeathsAcc: 0, causeDeaths: { air: 0, water: 0 }, skilledMigrants: 0, recentRepeals: [], citiesHitIdx: {}, infraAcc: [], lifeArchive: {}, names: newNameRegistry(), lastFrameTick: 0,
   }
   initRail(world)
   world.climate = initClimate(world)

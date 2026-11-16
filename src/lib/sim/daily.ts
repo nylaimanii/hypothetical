@@ -2,6 +2,7 @@
 // gini), safety, internet, worship, leisure, family, nature. each starts from sourced 2026 values (data/geo/daily.json)
 // and moves with the sim; every rule says where its numbers come from. what each system does to people (deaths,
 // unrest, skills) is applied relative to 2026, because the starting death and growth rates already contain it.
+import { A } from './assumptions'
 import dailyJson from '../../../data/geo/daily.json'
 import { link, recentLink } from './causes'
 import { countryPop, countriesOf, addToRegion, syncRegion, type CountryState } from './places'
@@ -181,7 +182,7 @@ export function stepDaily(w: World, fx: Record<string, LawEffects>) {
       d.forestShare = clamp(c.seed.forestShare * (rs.forest || d.base.forestRegion) / Math.max(d.base.forestRegion, 0.01))
       d.protectedLand = clamp(d.protectedLand + 0.03 * conserve.c * Math.max(0, 0.3 - d.protectedLand) * 3)
       const prevW = d.wildlife
-      d.wildlife = clamp(d.wildlife * (1 - 0.012 + 0.04 * d.protectedLand + 0.5 * (d.forestShare - c.seed.forestShare)) * (1 - 0.003 * Math.max(0, w.climate.anomalyC - 1.3) * 10), 0.01, 2)
+      d.wildlife = clamp(d.wildlife * (1 - A(w, 'wildlife_decline') + 0.04 * d.protectedLand + 0.5 * (d.forestShare - c.seed.forestShare)) * (1 - 0.003 * Math.max(0, w.climate.anomalyC - 1.3) * 10), 0.01, 2)
       if (conserve.lawId && d.wildlife > prevW && d.protectedLand > (DAILY.get(c.id)?.protectedLand ?? 0.15) + 0.05 && w.tick % 60 === 59) link(w, { placeId: c.id, what: `wildlife in ${c.name} recovering, ${pct(d.protectedLand)} of land protected`, value: 0.45, because: 'conservation law', byWhom: 'core', lawId: conserve.lawId })
       // what this does to deaths, relative to 2026 (crude death rate per 100k = crudeDeath x 100)
       const crude = Math.max(c.seed.crudeDeath * 100, 300)

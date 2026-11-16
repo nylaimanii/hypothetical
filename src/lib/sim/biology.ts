@@ -2,6 +2,7 @@
 // crude death rate, split by cause (WHO GHE shares) so medicine can cut specific causes. births come from
 // fertility x women 15-49, with fertility driven by income, education, housing, child costs and optimism.
 // period life expectancy is computed from the age-specific mortality every month with a standard life table.
+import { A } from './assumptions'
 import { hashString } from './rng'
 import { MAX_MORTALITY_DECLINE_YEAR, SURVIVAL_KCAL, TFR_DECLINE, TFR_FLOOR } from './constants'
 import { reqProgress } from './requirements'
@@ -11,11 +12,11 @@ import { countriesOf, countryPop, syncRegion } from './places'
 
 // mortality multiplier from the food supply. ESTIMATE: below 2,300 kcal undernourishment adds up to 30%;
 // under the 1,800 survival threshold mortality rises with the deficit and with how long it has lasted.
-export function foodMortality(kcal: number, monthsUnder: number): number {
+export function foodMortality(kcal: number, monthsUnder: number, survival = SURVIVAL_KCAL): number {
   let m = 1
   if (kcal < 2300) m += 0.3 * clamp((2300 - kcal) / 500)
-  if (kcal < SURVIVAL_KCAL) {
-    const deficit = (SURVIVAL_KCAL - kcal) / SURVIVAL_KCAL
+  if (kcal < survival) {
+    const deficit = (survival - kcal) / survival
     m += 6 * deficit * clamp(monthsUnder / 6)
   }
   return m
@@ -41,7 +42,7 @@ export function stepMedicine(w: World, medicineStrength: number) {
   const specDone = SPECULATIVE_LONGEVITY.filter(id => reqProgress(w, id) >= 1).length
   for (const rs of w.regions) {
     // catch-up: up to +3%/yr extra for regions far below an 80 year life expectancy
-    const maxDecline = (MAX_MORTALITY_DECLINE_YEAR + 0.03 * clamp((80 - (rs.periodLE || 70)) / 25) + 0.02 * specDone) / 12
+    const maxDecline = (A(w, 'mortality_decline_max') + A(w, 'mortality_catchup') * clamp((80 - (rs.periodLE || 70)) / 25) + 0.02 * specDone) / 12
     const pop = Math.max(regionPop(rs), 1)
     const delivery = clamp(0.3 + 0.6 * fWelfare(rs.spend.welfare * 12 / pop) + 0.2 * medicineStrength)
     for (const c of Object.keys(CAUSE_NODES) as Cause[]) {
@@ -106,7 +107,7 @@ export function stepDemography(w: World, fx: Record<string, LawEffects>): { birt
     // rising pension bills squeeze what is left for health and social care (physical.ts)
     const welfarePC = Math.max(0, rs.spend.welfare * 12 / pop - (rs.pensionSqueeze ?? 0))
     // ESTIMATE: health and social spending cut mortality up to 15% at saturation, relative to 2026 levels
-    const welfareMult = (1 - 0.15 * fWelfare(welfarePC)) / (1 - 0.15 * fWelfare(rs.pc0.welfare))
+    const welfareMult = (1 - A(w, 'welfare_mortality_max') * fWelfare(welfarePC)) / (1 - A(w, 'welfare_mortality_max') * fWelfare(rs.pc0.welfare))
     // health laws: primary care and vaccination drives cut mortality as they are followed, most where health is poorest.
     // ESTIMATE up to -80% at full compliance in a region at 55 years of life expectancy, phased in over ~3 years;
     // china's rural health campaigns are the reference (life expectancy ~44 in 1960 to ~68 by 1985)
@@ -114,7 +115,7 @@ export function stepDemography(w: World, fx: Record<string, LawEffects>): { birt
     // misinformation above 2026 cuts uptake of health programs (UK MMR coverage fell from ~92% to ~80% after the 1998
     // vaccine scare, https://en.wikipedia.org/wiki/MMR_vaccine_and_autism)
     const misinfo = rs.people ? Math.max(0, rs.people.misinfo - rs.people.misinfo0) : 0
-    const healthTarget = 0.8 * Math.sqrt(fx[rs.r.id]?.health ?? 0) * (1 - 1.5 * misinfo) * clamp((85 - (rs.periodLE || 70)) / 30)
+    const healthTarget = A(w, 'health_law_max_cut') * Math.sqrt(fx[rs.r.id]?.health ?? 0) * (1 - 1.5 * misinfo) * clamp((85 - (rs.periodLE || 70)) / 30)
     rs.healthLaw += (healthTarget - rs.healthLaw) / 36
     // year-to-year mortality noise: flu seasons, heat waves, cold winters. ESTIMATE ~1.5% a year with half of it carrying
     // into the next year, and a ~5% chance of a bad year (+3%): the swings seen in excess-mortality series
@@ -122,7 +123,7 @@ export function stepDemography(w: World, fx: Record<string, LawEffects>): { birt
     if (w.tick % 12 === 0) {
       const u = (s: string) => ((hashString(`${w.seed}:${s}`) % 1000003) + 1) / 1000004
       const z = Math.sqrt(-2 * Math.log(u(`mn1:${rs.r.id}:${w.tick}`))) * Math.cos(2 * Math.PI * u(`mn2:${rs.r.id}:${w.tick}`))
-      rs.mortNoise = 0.5 * (rs.mortNoise ?? 0) + 0.015 * z + (u(`mn3:${rs.r.id}:${w.tick}`) < 0.05 ? 0.03 : 0)
+      rs.mortNoise = 0.5 * (rs.mortNoise ?? 0) + A(w, 'mortality_noise') * z + (u(`mn3:${rs.r.id}:${w.tick}`) < 0.05 ? 0.03 : 0)
     }
     const lawMult = (1 - 0.02 * (fx[rs.r.id]?.redistributive ?? 0)) * (1 - rs.healthLaw) * (1 + clamp(rs.mortNoise ?? 0, -0.05, 0.08))
     const pandemic = w.tick < rs.pandemicUntil ? rs.pandemicMort * (1 - 0.5 * reqProgress(w, 'pandemic_preparedness')) : 0
@@ -154,7 +155,7 @@ export function stepDemography(w: World, fx: Record<string, LawEffects>): { birt
     let rTotalDead = 0, rFamine = 0, rPandemicDead = 0, rBorn = 0, wTfr = 0, wPle = 0, wPop = 0
     units.forEach((u, ui) => {
       const params = { gompertzA: u.gompertzA, infantMort: u.infantMort, agingSlope: rs.agingSlope, causeMult: rs.causeMult, oldAgeFloor: rs.oldAgeFloor }
-      const foodMult = foodMortality(u.kcal, u.monthsUnder)
+      const foodMult = foodMortality(u.kcal, u.monthsUnder, A(w, 'survival_kcal'))
       // housing (slums, camps) is part of the baseline, not famine; its excess over 2026 is counted on its own
       const mult = welfareMult * foodMult * lawMult * u.homeMort
       const dead = new Array(NBANDS).fill(0)
@@ -173,7 +174,7 @@ export function stepDemography(w: World, fx: Record<string, LawEffects>): { birt
       rTotalDead += totalDead; rFamine += famine; rPandemicDead += pandemicDead
       w.humanCost.deaths += Math.max(0, totalDead - baseDead)
       // fertility: long-run decline toward a floor (UN WPP trend), plus the region's policy and mood shift
-      u.tfr += (TFR_FLOOR - u.tfr) * TFR_DECLINE * eduPull / 12
+      u.tfr += (A(w, 'tfr_floor') - u.tfr) * A(w, 'tfr_decline') * eduPull / 12
       const effTfr = clamp((u.tfr + tfrShift) * u.homeTfr, 0.5, 7)
       const women = 0.5 * sum(u.bands.slice(3, 10))
       // ESTIMATE: hunger suppresses births (deficit below 2,100 kcal cuts conception proportionally)
@@ -204,7 +205,7 @@ export function stepDemography(w: World, fx: Record<string, LawEffects>): { birt
     if (pandemic > 0) why(rs, 'population', 'pandemic deaths', -rPandemicDead, 'https://doi.org/10.1073/pnas.2105482118')
     why(rs, 'population', 'births', rBorn)
     rs.r.fertility = wTfr / Math.max(wPop, 1)
-    why(rs, 'fertility', 'long-run decline', (TFR_FLOOR - rs.tfr) * TFR_DECLINE * eduPull / 12, 'https://population.un.org/wpp/')
+    why(rs, 'fertility', 'long-run decline', (A(w, 'tfr_floor') - rs.tfr) * A(w, 'tfr_decline') * eduPull / 12, 'https://population.un.org/wpp/')
     if (Math.abs(rs.pronatal) > 0.005) why(rs, 'fertility', 'family policy', rs.pronatal, 'https://en.wikipedia.org/wiki/Demographics_of_Hungary')
     if (Math.abs(housing) > 0.005) why(rs, 'fertility', 'housing and child costs', housing)
     if (Math.abs(optimism) > 0.01) why(rs, 'fertility', 'optimism', optimism)

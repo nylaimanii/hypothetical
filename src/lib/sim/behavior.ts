@@ -11,6 +11,7 @@
 // - social identity (Tajfel & Turner 1979): groups judge laws by who they think wins and loses.
 //   https://en.wikipedia.org/wiki/Social_identity_theory
 // magnitudes are ESTIMATE calibrations of those findings.
+import { A } from './assumptions'
 import type { Archetype, Behavior, Citizen, Emotion, GroupKey, Mood } from '../types'
 import { HEDONIC_DECAY, LOSS_AVERSION, PROTEST_TIPPING_SHARE, SURVIVAL_KCAL } from './constants'
 import { pick, pickWeighted } from './rng'
@@ -180,7 +181,7 @@ export function stepRegionBehavior(w: World, rs: RegionState, lawBacklash: numbe
   const alarmed = Math.min(1, rs.crowds.reduce((a, c) => a + (c.phase === 'alarmed' ? c.intensity : 0), 0))
   const bored = rs.crowds.filter(c => c.phase === 'bored').length / 4
   const kcal = r.foodKcalPerCapita
-  const foodIdx = clamp((kcal - SURVIVAL_KCAL) / 900)
+  const foodIdx = clamp((kcal - A(w, 'survival_kcal')) / 900)
   const foodStress = clamp((2300 - kcal) / 500)
   const pandemic = w.tick < rs.pandemicUntil ? clamp(rs.pandemicMort * 100) : 0
   const relIncome = clamp((r.gdpUsd / pop) / Math.max(popWeighted(w, x => x.r.gdpUsd / Math.max(regionPop(x), 1)), 1))
@@ -238,7 +239,7 @@ export function stepRegionBehavior(w: World, rs: RegionState, lawBacklash: numbe
   // preference falsification: people say they approve until visible dissent passes the tipping share
   const privateApproval = clamp(0.5 + (valence(m) - 0.5) * 1.3 - 0.25 * (r.unrest - 0.3))
   rs.privateApproval = privateApproval
-  if (!rs.flipped && (b.protesting >= PROTEST_TIPPING_SHARE || (privateApproval < 0.3 && outrage > 0.5))) {
+  if (!rs.flipped && (b.protesting >= A(w, 'protest_tipping_share') || (privateApproval < 0.3 && outrage > 0.5))) {
     rs.flipped = true
     const lastProtest = w.causes.slice().reverse().find(x => x.placeId === r.id && /protested/.test(x.what) && w.tick - x.tick <= 12)
     event(w, { regionId: r.id, kind: 'revolt', text: `in ${r.name} public approval collapses almost overnight: people now say out loud what they said in private`, severity: 0.5 },

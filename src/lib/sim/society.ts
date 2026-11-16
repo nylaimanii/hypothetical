@@ -1,6 +1,7 @@
 // political realism. every law gets per-region support from that region's culture (faith, education,
 // unrest, income). low support means low compliance: the law is mostly ignored and breeds unrest.
 // regions can slide into revolt and attempt secession. the governor cannot simply order things.
+import { A } from './assumptions'
 import type { Law, Layer, ReligionPolicy } from '../types'
 import {
   EDUCATION_LAG_TICKS, EDUCATION_TURNOVER_MONTHS, REVOLT_END_UNREST, REVOLT_ONSET_MONTHS, REVOLT_UNREST,
@@ -105,8 +106,9 @@ export function stepLaws(w: World): Record<string, LawEffects> {
       // to ~93% among the public within a year of it taking effect, Fong et al. 2006,
       // https://doi.org/10.1136/tc.2005.013649); deeply coercive laws keep more of their sting
       const age = Math.max(0, w.tick - (l.enactedTick ?? w.tick))
-      const habit = (0.3 + 0.3 * Math.min(1, f.coercive)) + (0.7 - 0.3 * Math.min(1, f.coercive)) * Math.exp(-age / 36)
-      e.backlash += Math.max(0, 0.5 - s) * 0.08 * (1 + f.coercive) * habit
+      const resid = A(w, 'law_backlash_residual')
+      const habit = (resid + resid * Math.min(1, f.coercive)) + (1 - resid - resid * Math.min(1, f.coercive)) * Math.exp(-age / A(w, 'law_habituation_months'))
+      e.backlash += Math.max(0, 0.5 - s) * A(w, 'law_backlash') * (1 + f.coercive) * habit
     }
     e.backlash = Math.min(e.backlash, 0.3)
     fx[rs.r.id] = e
@@ -121,7 +123,7 @@ export function stepLaws(w: World): Record<string, LawEffects> {
   }
   // tax laws raise revenue share, scaled by compliance
   const taxC = sum(w.regions.map((r, i) => fx[r.r.id].tax * pops[i])) / tot
-  w.revenueShare = clamp(REVENUE_SHARE + 0.08 * taxC, 0, REVENUE_SHARE_MAX)
+  w.revenueShare = clamp(A(w, 'revenue_share') + 0.08 * taxC, 0, REVENUE_SHARE_MAX)
   return fx
 }
 
@@ -186,7 +188,7 @@ export function stepSociety(w: World, fx: Record<string, LawEffects>, researchUs
 
     // ---------- revolt and secession ----------
     if (!rs.seceded) {
-      if (r.unrest > REVOLT_UNREST) rs.revoltPressure++
+      if (r.unrest > A(w, 'revolt_unrest')) rs.revoltPressure++
       else rs.revoltPressure = Math.max(0, rs.revoltPressure - 1)
       if (!rs.inRevolt && rs.revoltPressure >= REVOLT_ONSET_MONTHS) {
         rs.inRevolt = true

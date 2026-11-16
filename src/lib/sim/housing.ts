@@ -4,6 +4,7 @@
 // and rents up; rent burden and joblessness drive evictions; slums and camps cost lives; expensive housing costs births.
 // starting point: data/geo/housing.json (UN-Habitat slum shares, UNHCR refugees and IDPs, ESTIMATE household size,
 // tenure). everything not sourced is marked ESTIMATE with its reasoning.
+import { A } from './assumptions'
 import housingJson from '../../../data/geo/housing.json'
 import type { HomeKind } from '../types-v5'
 import { link, recentLink } from './causes'
@@ -192,7 +193,7 @@ export function stepHousing(w: World) {
       const priceCause = h.priceLink && w.tick - h.priceLink.tick < 120 ? [h.priceLink.id] : []
       // ---- evictions: ~2.3% of US renter households a year before 2020 (Eviction Lab, https://evictionlab.org), rising
       // with rent burden and job losses, halved by rent protection. ESTIMATE elsewhere at half the formal rate
-      const rate = clamp(0.023 * Math.pow(h.rentBurden / h.burden0, 2) * (1 + 5 * Math.max(0, c.unemployment - h.unemp0)) * (1 - 0.5 * rent.c) * (gdppc > 15000 ? 1 : 0.5), 0, 0.2)
+      const rate = clamp(A(w, 'eviction_base') * Math.pow(h.rentBurden / h.burden0, 2) * (1 + 5 * Math.max(0, c.unemployment - h.unemp0)) * (1 - 0.5 * rent.c) * (gdppc > 15000 ? 1 : 0.5), 0, 0.2)
       const evicted = h.rented * rate
       h.evictedYear = evicted
       // most evicted families rent again, ~10% end up informal or on the street (ESTIMATE)
@@ -217,7 +218,7 @@ export function stepHousing(w: World) {
       // camps ~+80% (Sphere standards: emergency crude mortality often 2x baseline; ESTIMATE for protracted camps)
       // change in the share of people in slums and camps (not head counts: a growing country keeps its 2026 share)
       const slumPop = h.informal / H - h.informal0 / h.hh0, campPop = h.camp / pop - h.camp0 / (h.hh0 * h.hhSize)
-      h.mortMult = clamp(1 + 0.25 * slumPop + 0.8 * campPop, 0.8, 1.5)
+      h.mortMult = clamp(1 + A(w, 'slum_mortality') * slumPop + A(w, 'camp_mortality') * campPop, 0.8, 1.5)
       // expensive housing costs births: +10% house prices -> renters' births -1.3% (Dettling & Kearney 2014,
       // https://doi.org/10.1016/j.jpubeco.2013.09.009)
       const renters = h.rented / Math.max(H, 1)

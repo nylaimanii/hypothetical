@@ -1,6 +1,7 @@
 // seeded base-rate shocks. the events stream draws a fixed count of numbers every tick, whatever the
 // policy, so the ai world and its no-ai twin face the same disasters on the same dates.
 // rates are rough ESTIMATEs anchored to the cited references.
+import { A } from './assumptions'
 import type { WorldEvent } from '../types'
 import { clamp, event, regionPop, type RegionState, type World } from './state'
 import { fmt } from './physics'
@@ -35,7 +36,7 @@ export function stepEvents(w: World) {
     }
   }
   const p = rng(), ps = rng(), po = rng()
-  if (p < perMonth(PANDEMIC_P_YEAR)) {
+  if (p < perMonth(A(w, 'pandemic_rate'))) {
     const sev = 0.15 + 0.85 * ps * ps * ps
     const origin = w.regions[Math.floor(po * w.regions.length) % w.regions.length]
     startPandemic(w, origin, sev)

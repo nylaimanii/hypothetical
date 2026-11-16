@@ -2,6 +2,7 @@
 // climate normals, every pip lives in a real city with a local job, a commute, clothes for the weather and a
 // day plan. power plants, rail and cities change over time and are recorded as diffs from the real 2026
 // baseline. states and cities get yearly stats, stories and trends in a compact lazy file per run.
+import { A } from './assumptions'
 import { homeOf } from './housing'
 import { generationOf } from './generations'
 import { faithOf, type Faith } from './daily'
@@ -48,13 +49,13 @@ export function stepClimate(w: World) {
   const other = NON_POWER_GT_2026 * Math.sqrt(gdp / Math.max(c.gdp0, 1)) * (fossilShare / Math.max(c.fossilShare0, 0.01))
   c.gtPerYear = power + other
   c.cumGt += c.gtPerYear / 12
-  c.anomalyC = START_ANOMALY_C + TCRE_C_PER_GT * c.cumGt
+  c.anomalyC = START_ANOMALY_C + A(w, 'tcre') / 1000 * c.cumGt
   for (const t of [1.5, 2, 2.5, 3]) if (c.anomalyC >= t && !c.marks.includes(t)) {
     c.marks.push(t)
     link(w, { placeId: 'world', what: `the world passed ${t} C of warming`, value: t, because: `${Math.round(c.cumGt)} Gt of CO2 emitted since 2026 at ${c.gtPerYear.toFixed(1)} Gt a year (IPCC TCRE 0.45 C per 1,000 Gt)`, byWhom: 'core', sig: 0.8 })
   }
 }
-export const climateYield = (w: World) => 1 - YIELD_LOSS_PER_C * Math.max(0, w.climate.anomalyC - START_ANOMALY_C)
+export const climateYield = (w: World) => 1 - A(w, 'yield_loss_per_c') * Math.max(0, w.climate.anomalyC - START_ANOMALY_C)
 
 // ---------- climate normals grid (lazy) ----------
 let GRID: { buf: Buffer; layers: number } | null | undefined

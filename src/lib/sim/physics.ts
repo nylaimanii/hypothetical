@@ -1,5 +1,6 @@
 // energy, food, economy, migration. hard limits: consumption never exceeds production, capacity costs
 // money and takes years, migrants cost money and take months.
+import { A } from './assumptions'
 import type { Budget, Migration } from '../types'
 import {
   BUILD_MONTHS, CAPEX_USD_PER_GW, ELEC_INCOME_ELASTICITY, KCAL_CAP, MIGRATION_MAX_SHARE_YEAR, MIGRATION_MONTHS,
@@ -57,7 +58,7 @@ export function stepEnergy(w: World, fx: Record<string, LawEffects>, sectors: Re
     if (rs.seceded) capex = 0
     // energy laws, energy companies and storage/fission/fusion progress cut the cost per GW (ESTIMATE, max ~45%)
     const costMult = 1 - 0.1 * (fx[rs.r.id]?.energy ?? 0) - 0.15 * (sectors.energy ?? 0) - 0.08 * reqProgress(w, 'grid_storage') - 0.07 * reqProgress(w, 'advanced_fission') - 0.05 * reqProgress(w, 'fusion_power')
-    const gw = capex / (CAPEX_USD_PER_GW * costMult)
+    const gw = capex / (A(w, 'capex_per_gw') * costMult)
     // each tranche of new capacity is tagged with the source mix it was funded under
     if (gw > 0) rs.pipeline.push({ readyTick: w.tick + BUILD_MONTHS, twh: gw * TWH_PER_GW_YEAR, mix: buildShares(w, rs) })
     const ready = rs.pipeline.filter(p => p.readyTick <= w.tick)
@@ -87,9 +88,9 @@ export function stepFood(w: World, fx: Record<string, LawEffects>, sectors: Reco
     // collectivization: output falls as it is enforced (Great Leap Forward grain output fell ~30%, 200 to 143 Mt,
     // 1958-1961; https://en.wikipedia.org/wiki/Great_Leap_Forward). target harvest x(1 - 0.3 x compliance), over ~2 years
     const coll = Math.max(0, ...w.laws.filter(l => !l.vetoed && l.policyKind === 'collectivization').map(l => rs.lawCompliance[l.id] ?? 0))
-    rs.collectiveMult += ((1 - 0.3 * coll) - rs.collectiveMult) / 24
+    rs.collectiveMult += ((1 - A(w, 'collectivization_cut') * coll) - rs.collectiveMult) / 24
     rs.collC = coll
-    const gy = YIELD_BASE_GROWTH + 0.01 * (1 - Math.exp(-spendPC / 80)) + 0.003 * rs.r.techLevel
+    const gy = A(w, 'yield_base_growth') + 0.01 * (1 - Math.exp(-spendPC / 80)) + 0.003 * rs.r.techLevel
       + 0.012 * Math.max(0, (2900 - kcalNow) / 1000) * rs.r.compliance
       + 0.003 * (fx[rs.r.id]?.food ?? 0) - 0.01 * Math.max(0, rs.r.unrest - 0.5)
       + 0.004 * (sectors.food ?? 0) + 0.003 * (reqProgress(w, 'drought_crops') + reqProgress(w, 'precision_fermentation') + reqProgress(w, 'vertical_farming'))
@@ -127,15 +128,15 @@ export function stepFood(w: World, fx: Record<string, LawEffects>, sectors: Reco
     // collectivized farms deliver quotas to the state (cities, reserves, export) before the farmers eat: the
     // countryside loses ~15% more at full enforcement (ESTIMATE; china kept exporting grain through 1959-61 and
     // ukraine's 1932 quotas took seed grain: https://en.wikipedia.org/wiki/Holodomor)
-    const kcal = avail[i] / Math.max(pops[i], 1) * hoardingFactor(rs) * (1 - 0.15 * (rs.collC ?? 0))
+    const kcal = avail[i] / Math.max(pops[i], 1) * hoardingFactor(rs) * (1 - A(w, 'collectivization_procurement') * (rs.collC ?? 0))
     rs.priceIdx = Math.pow(rs.foodBase / Math.max(rs.pop0, 1) / Math.max(kcal, 300), 1.5) * (1 + rs.behavior.hoarding + 2 * rs.behavior.panic_buying)
     why(rs, 'foodKcalPerCapita', 'harvest and yields', prod[i] / Math.max(pops[i], 1) - rs.r.foodKcalPerCapita)
     if (avail[i] !== prod[i]) why(rs, 'foodKcalPerCapita', avail[i] > prod[i] ? 'world food pool (received)' : 'world food pool (given)', (avail[i] - prod[i]) / Math.max(pops[i], 1))
     if (hoardingFactor(rs) < 0.99) why(rs, 'foodKcalPerCapita', 'hoarding and panic buying', kcal - avail[i] / Math.max(pops[i], 1))
     rs.r.foodKcalPerCapita = kcal
-    if (kcal < SURVIVAL_KCAL) rs.foodMonthsUnder++
+    if (kcal < A(w, 'survival_kcal')) rs.foodMonthsUnder++
     else rs.foodMonthsUnder = Math.max(0, rs.foodMonthsUnder - 2)
-    if (kcal < SURVIVAL_KCAL && rs.foodMonthsUnder === 3) {
+    if (kcal < A(w, 'survival_kcal') && rs.foodMonthsUnder === 3) {
       event(w, { regionId: rs.r.id, kind: 'famine', text: `famine in ${rs.r.name}: food supply ${Math.round(kcal)} kcal per person per day`, severity: (SURVIVAL_KCAL - kcal) / SURVIVAL_KCAL * 3 })
     }
   })
@@ -157,7 +158,7 @@ export function stepEconomy(w: World, popBefore: number[]) {
     const b = effectiveBudget(w)
     const invest = clamp((b.education + b.energy + b.research - 0.233) / 0.25, -1, 1)
     rs.investAvg += (invest - rs.investAvg) / 60
-    const boost = 0.1 * rs.investAvg * (1 - inc) * Math.sqrt(rs.r.compliance)
+    const boost = A(w, 'invest_growth') * rs.investAvg * (1 - inc) * Math.sqrt(rs.r.compliance)
     // ESTIMATE baseline: ~0.6% + catch-up for poorer regions with working institutions + tech (rich regions ~1.2%/yr)
     let g = 0.006 + 0.03 * (1 - inc) * rs.r.compliance + 0.008 * rs.r.techLevel + boost
     why(rs, 'gdpUsd', 'investment in schools, power and research', boost * rs.r.gdpUsd / 12)

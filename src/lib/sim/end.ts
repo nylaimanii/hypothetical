@@ -15,6 +15,7 @@
 //   0.15 x population trend over the last 10 years (1 if not declining, falling to 0 at a 10% decline)
 //   0.15 x share of requirement nodes completed
 //   goal_achieved scores 1.
+import { A } from './assumptions'
 import { MAX_TICKS, SURVIVAL_KCAL } from './constants'
 import { FRONTIERS, has } from './frontier'
 import { clamp, popWeighted, worldPop, type World } from './state'
@@ -22,7 +23,7 @@ import { clamp, popWeighted, worldPop, type World } from './state'
 export const START_PLE = 73
 
 export function wellbeing(w: World): number {
-  return popWeighted(w, r => 0.4 * clamp((r.r.foodKcalPerCapita - SURVIVAL_KCAL) / 700) + 0.4 * (1 - r.r.unrest) + 0.2 * r.energyRatio)
+  return popWeighted(w, r => 0.4 * clamp((r.r.foodKcalPerCapita - A(w, 'survival_kcal')) / 700) + 0.4 * (1 - r.r.unrest) + 0.2 * r.energyRatio)
 }
 
 export function globalPLE(w: World): number {
@@ -45,7 +46,7 @@ export function checkEnd(w: World) {
   w.wellbeingSum += wellbeing(w)
   w.wellbeingN++
   const food = popWeighted(w, r => r.r.foodKcalPerCapita)
-  w.globalFoodMonthsUnder = food < SURVIVAL_KCAL ? w.globalFoodMonthsUnder + 1 : 0
+  w.globalFoodMonthsUnder = food < A(w, 'survival_kcal') ? w.globalFoodMonthsUnder + 1 : 0
   const revolts = w.regions.filter(r => r.inRevolt)
   w.revoltStreak = revolts.length >= 3 ? w.revoltStreak + 1 : 0
 
@@ -57,7 +58,7 @@ export function checkEnd(w: World) {
     w.causeOfDeath = `${revolts.map(r => r.r.name).join(', ')} stayed in open revolt for two years and the world government fell apart.`
   } else if (w.globalFoodMonthsUnder >= 12) {
     w.status = 'destroyed'
-    w.causeOfDeath = `The world food supply stayed below ${SURVIVAL_KCAL} kcal per person for a full year and civilization starved.`
+    w.causeOfDeath = `The world food supply stayed below ${A(w, 'survival_kcal')} kcal per person for a full year and civilization starved.`
   } else if (w.warTension >= 1) {
     w.status = 'destroyed'
     w.causeOfDeath = 'Crackdowns on breakaway regions escalated into open war that the world government could not survive.'

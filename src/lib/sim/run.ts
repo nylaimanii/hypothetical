@@ -3,6 +3,7 @@
 // (default 12, live 1), at every decision and on death. a no-ai baseline twin runs on the same seed with
 // 2026 policies frozen and no llm calls. full state snapshots every 60 ticks allow exact branching.
 import { SIM_VERSION } from './version'
+import { assumptionsFor } from './assumptions'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { BaselineFrame, Decision, Frame, Lesson, Override, RunOptions, RunRecord, RunSummary, Snapshot, WorldEvent } from '../types'
@@ -82,7 +83,8 @@ function applyOverride(w: World, o: Override, mem: GovernorMemory) {
 // source's later decisions ('replay', the clean what-if) or let this run's governor take over ('govern')
 export type FlipChange = { dropLaws?: string[]; addLaws?: { title: string; text: string }[]; repeal?: string[]; budget?: Partial<Decision['budget']>; religionPolicy?: Decision['religionPolicy'] }
 export type FlipDecision = { tick: number; change: FlipChange; after?: 'replay' | 'govern' }
-export type RunOpts = RunOptions & { agentId?: string; startFrom?: { runId: string; tick: number }; untilTick?: number; flipDecision?: FlipDecision }
+// assumptions: overrides of data/assumptions.json for this run (and its twin); clamped to each range and recorded
+export type RunOpts = RunOptions & { agentId?: string; startFrom?: { runId: string; tick: number }; untilTick?: number; flipDecision?: FlipDecision; assumptions?: Record<string, number> }
 
 // repeated-law rate of the last finished world in this process (logged; not yet in the RunSummary contract)
 export let lawStats = { proposed: 0, repeated: 0, amended: 0, converted: 0 }
@@ -221,6 +223,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   let branchedFrom: RunRecord['branchedFrom']
   let w: World
   let srcRun: RunRecord | undefined
+  const rules = assumptionsFor(opts.assumptions ?? {})
   let srcDec = new Map<number, Decision>()
   const flip = opts.flipDecision
   if (flip && !opts.startFrom) throw new Error('flipDecision needs startFrom (the run to change)')
@@ -235,6 +238,8 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
     const snap = (src.snapshots ?? []).filter(s => s.tick <= target).sort((a, b) => b.tick - a.tick)[0]
     if (!snap) throw new Error(`startFrom: run ${opts.startFrom.runId} has no snapshot at or before tick ${target}`)
     w = restoreWorld(snap)
+    // a branch keeps its source's rules unless this run overrides some
+    if (opts.assumptions && Object.keys(opts.assumptions).length) w.assumptions = { ...w.assumptions, ...rules.overridden }
     const srcDecisions = new Map(src.frames.filter(f => f.decision).map(f => [f.decision!.tick, f.decision!]))
     srcRun = src; srcDec = srcDecisions
     ctx.mem.last = [...srcDecisions.values()].filter(d => d.tick < snap.tick).sort((a, b) => b.tick - a.tick)[0]
@@ -256,13 +261,14 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
     ctx.snapshots = (src.snapshots ?? []).filter(s => s.tick < target)
     branchedFrom = { runId: src.runId, tick: target, agentId: src.agentId ?? src.summary.agentId ?? 'unassigned' }
   } else {
-    w = initWorld(opts.seed, false)
+    w = initWorld(opts.seed, false, rules.values)
     initCitizens(w)
   }
   w.lessonsKnown = knownLessons.length
 
   // the twin always runs from tick 0: it never depends on the governor, so it is identical across branches
-  const twin = initWorld(opts.seed, true)
+  // the twin lives by the same rules as its world, so the only difference is the governor
+  const twin = initWorld(opts.seed, true, w.assumptions)
   const baseline: BaselineFrame[] = [baselineFrame(twin)]
   applyDecision(twin, BASELINE_DECISION(0))
   // the twin as a full yearly record (same frame shape as the world, no pips): the twin LIFE is lived in it
@@ -286,7 +292,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   if (flip) ctx.due = t => t === flip.tick || ((flip.after ?? 'replay') === 'replay' ? srcDec.has(t) : decisionDue(t, live))
   const rec = (done: boolean) => {
     const r = record(opts, w, twin, frames, baseline, !done, usage, lessonsLearned, knownLessons, ctx.snapshots, branchedFrom)
-    Object.assign(r, { diary: w.diary })
+    Object.assign(r, { diary: w.diary, assumptions: { overridden: rules.overridden, clamped: rules.clamped } })
     if (flip && srcRun) Object.assign(r, { whatIf: whatIfOf(flip, srcRun, frames) })
     return r
   }
