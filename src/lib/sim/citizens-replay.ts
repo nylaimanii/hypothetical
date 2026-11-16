@@ -107,7 +107,37 @@ export function dayContextOf(countryId: string | undefined, tick: number, workHo
   return { weekday: date.getUTCDay(), weekend: weekendOf(countryId), ...(h ? { holiday: h.name, holidayKind: h.kind } : {}), ...(workHoursWeek ? { workHoursWeek } : {}) }
 }
 
-export function dayPlanOf(c: Citizen, tick: number, nightlife = 0.3, day?: DayContext): { hour: number; activity: Activity }[] {
+export type PlanSlot = { hour: number; activity: Activity; place: 'home' | 'school' | 'work' | 'transit' | 'out' | 'worship' | 'shops'; with: 'alone' | 'caregiver' | 'family' | 'class' | 'coworkers' | 'friends' }
+// where each activity happens
+const PLACE: Record<string, PlanSlot['place']> = { sleeping: 'home', eating: 'home', resting: 'home', idle: 'home', school: 'school', working: 'work', commuting: 'transit', moving: 'transit', praying: 'worship', shopping: 'shops', socializing: 'out', celebrating: 'out', protesting: 'out', striking: 'out', aid_line: 'out' }
+// a day with its places and company, and age-appropriate care: babies under ~3 months stay home with a caregiver
+// (ILO maternity protection: at least 14 weeks of leave, https://www.ilo.org/topics/maternity-protection), children
+// under 8 are never alone outside home or school, nobody under 14 is out after 20:00 or before 6:00
+export function dayPlanOf(c: Citizen, tick: number, nightlife = 0.3, day?: DayContext): PlanSlot[] {
+  const birthTick = (c as Citizen & { birthTick?: number }).birthTick
+  const months = birthTick !== undefined ? tick - birthTick : c.age * 12
+  if (months < 3.25) return [{ hour: 0, activity: 'sleeping', place: 'home', with: 'caregiver' }, { hour: 6, activity: 'eating', place: 'home', with: 'caregiver' }, { hour: 8, activity: 'sleeping', place: 'home', with: 'caregiver' }, { hour: 11, activity: 'eating', place: 'home', with: 'caregiver' }, { hour: 13, activity: 'resting', place: 'home', with: 'caregiver' }, { hour: 17, activity: 'eating', place: 'home', with: 'caregiver' }, { hour: 19, activity: 'sleeping', place: 'home', with: 'caregiver' }]
+  const age = c.age
+  const slots = basePlan(c, tick, nightlife, day).map(p => {
+    let place = PLACE[p.activity] ?? 'home'
+    if (age < 6 && p.activity === 'socializing') place = 'home'
+    let activity = p.activity
+    // children are home by 20:00 (and not out before 6:00)
+    if (age < 14 && (p.hour >= 20 || p.hour < 6) && place !== 'home') { activity = 'resting'; place = 'home' }
+    const company: PlanSlot['with'] = age < 1 ? 'caregiver'
+      : place === 'school' ? 'class'
+      : place === 'work' ? 'coworkers'
+      : place === 'home' ? (age < 18 || p.activity === 'eating' ? 'family' : 'alone')
+      : age < 8 ? 'caregiver'
+      : p.activity === 'socializing' || p.activity === 'celebrating' ? 'friends'
+      : age < 14 && place === 'transit' ? 'friends' : 'alone'
+    return { hour: p.hour, activity, place, with: company }
+  })
+  // merge repeats created by the night rule
+  return slots.filter((s, i) => i === 0 || s.activity !== slots[i - 1].activity || s.place !== slots[i - 1].place)
+}
+
+function basePlan(c: Citizen, tick: number, nightlife = 0.3, day?: DayContext): { hour: number; activity: Activity }[] {
   const u = (salt: string) => { let h = 2166136261; const s = salt; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); let a = (c.personalitySeed ^ h) >>> 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
   const plan: { hour: number; activity: Activity }[] = []
   const at = (hour: number, activity: Activity) => { if (!plan.length || plan[plan.length - 1].activity !== activity) plan.push({ hour, activity }) }

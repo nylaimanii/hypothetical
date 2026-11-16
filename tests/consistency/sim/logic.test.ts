@@ -68,3 +68,19 @@ test('the space program starts from what humans had already done by 2026 (orbit 
   const w = initWorld(42, false)
   assert.equal(w.space.stage, 'life_support')
 })
+
+test('young children are never alone outside, children are home at night, newborns stay home with a caregiver', async () => {
+  const { dayPlanOf, dayContextOf } = await import('../../../src/lib/sim/citizens-replay')
+  for (let seed = 1; seed < 300; seed++) for (const age of [0, 1, 3, 5, 6, 7, 9, 12, 13, 15, 17]) for (const tick of [0, 5, 17, 40]) {
+    const c = { id: 'k', age, birthTick: tick - age * 12 - (seed % 12), personalitySeed: seed * 2654435761 >>> 0, belief: seed % 3 ? 'religious' : 'secular', behavior: seed % 7 ? 'working' : 'protesting', workplace: age < 18 ? 'school' : 'office', employed: false, faith: 'christian' } as never
+    for (const ctx of [undefined, dayContextOf('USA', tick), dayContextOf('NGA', tick), { weekday: 6, weekend: [6, 0], holiday: 'Christmas', holidayKind: 'christian' }]) {
+      const plan = dayPlanOf(c, tick, 0.9, ctx as never)
+      const months = tick - (c as { birthTick: number }).birthTick
+      for (const s of plan) {
+        if (months < 3.25) assert.ok(s.place === 'home' && s.with === 'caregiver', `a ${months}-month-old is at ${s.place} at ${s.hour}:00`)
+        if (age < 8) assert.ok(s.place === 'home' || s.place === 'school' || s.with !== 'alone', `a ${age}-year-old is alone at ${s.place} at ${s.hour}:00`)
+        if (age < 14) assert.ok(!(s.hour >= 20 || s.hour < 6) || s.place === 'home', `a ${age}-year-old is at ${s.place} at ${s.hour}:00`)
+      }
+    }
+  }
+})
