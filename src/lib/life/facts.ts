@@ -2,7 +2,7 @@
 // every name, age, date, count and event shown anywhere comes from the record through these functions; nothing is
 // recomputed with its own formula on a page, and nothing is invented. (tick 0 = 2026-11; one tick is one month.)
 // tests: tests/consistency/life
-import type { Kin, LifeRecord, MonthSnap } from './types'
+import type { Kin, LifeRecord, Milestone, MonthSnap } from './types'
 import { monthOfTick, yearOfTick } from '../sim/replay-pure'
 
 // ---------- time ----------
@@ -92,4 +92,45 @@ export function birthHour(r: LifeRecord): number {
   const u = x / 2 ** 32, v = ((Math.imul(x, 2654435761) >>> 0) / 2 ** 32)
   const h = u < 0.3 ? 1 + v * 6 : v * 24 // 30% in 1am-7am, the rest anywhere
   return Math.round(h * 6) / 6 // to the 10 minutes
+}
+
+// ---------- a decision, as the site says it ----------
+// the narrator's voice: "2052 · love. jabari chose wait over commit: "i need to save first"". the reason is her own
+// words, so it stays in quotes; a reason that calls someone in her family by the wrong relation (the llm guessing who
+// halima is) is left out, because the record knows who everyone is
+const REL: [string, RegExp][] = [
+  ['mother', /^(mom|mother|mum|mama|ma)$/], ['father', /^(dad|father|papa|baba)$/], ['sister', /^(sister|sis)$/], ['brother', /^brother$/],
+  ['partner', /^(partner|wife|husband|girlfriend|boyfriend|spouse)$/], ['daughter', /^daughter$/], ['son', /^son$/], ['child', /^(kid|child|baby)$/],
+  ['grandchild', /^(grandson|granddaughter|grandchild|grandkid)$/], ['outsider', /^(neighbor|neighbour|friend|colleague|coworker|boss|stranger|landlord|cousin|aunt|uncle)$/],
+]
+const fits = (k: Kin, rel: string) => rel === k.relation || (k.relation === 'sibling' && rel === (k.sex === 'female' ? 'sister' : 'brother')) || (k.relation === 'child' && (rel === 'child' || rel === (k.sex === 'female' ? 'daughter' : 'son')))
+// true when every family member named in `text` is called what the record says they are (or nothing)
+export function honestAbout(r: LifeRecord, text: string): boolean {
+  const words = text.toLowerCase().replace(/[^a-z' ]/g, ' ').split(/\s+/).filter(Boolean).map(w => w.replace(/'s$/, ''))
+  for (const k of r.kin) {
+    const name = k.name.toLowerCase().split(' ')[0]
+    words.forEach((w, i) => {
+      if (w !== name) return
+      // "my neighbor halima", "halima, my neighbor", "halima has been my neighbor"
+      for (const near of [...words.slice(Math.max(0, i - 2), i), ...words.slice(i + 1, i + 5)]) {
+        const rel = REL.find(([, re]) => re.test(near))?.[0]
+        if (rel && !fits(k, rel)) throw new Error(`${k.name} called ${rel}`)
+      }
+    })
+  }
+  return true
+}
+const honest = (r: LifeRecord, text: string) => { try { return honestAbout(r, text) } catch { return false } }
+// option labels from older records, in the narrator's voice (the options themselves are fixed in milestones.ts)
+const OLD_LABEL: [string, string][] = [['my family needs me first', 'family comes first']]
+export const labelOf = (s: string) => OLD_LABEL.reduce((t, [a, b]) => t.split(a).join(b), s)
+export function captionOf(r: LifeRecord, m: Milestone): string {
+  const c = labelOf(m.caption)
+  const reason = labelOf((m.reasoning ?? '').replace(/\.$/, '').trim())
+  let head = c, said = ''
+  if (m.decider === 'self' && reason) { const i = c.indexOf(`, ${reason.slice(0, 24)}`); if (i > 0) { head = c.slice(0, i); said = reason } }
+  head = head.replace(/^(\d{4} · [^.]+)\. chose /, `$1. ${firstName(r)} chose `)
+  if (!said || !honest(r, said)) return head
+  const cut = said.length > 150 ? `${said.slice(0, 150).replace(/\s+\S*$/, '')}...` : said
+  return `${head}: "${cut}"`
 }

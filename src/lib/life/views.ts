@@ -2,7 +2,7 @@
 // nothing else; tests/consistency/life checks every view against every other view and against the record, so no two
 // pages can say different things about the same life.
 import type { LifeRecord, LifeSummary } from './types'
-import { ageAt, ageYears, cityAt, childrenCount, conditionsAt, dateLabel, deathLine, endTick, epitaph, isDead, kinAt, lifespanLabel, snapAt, yearOf } from './facts'
+import { labelOf, ageAt, ageYears, cityAt, childrenCount, conditionsAt, dateLabel, deathLine, endTick, epitaph, isDead, kinAt, lifespanLabel, snapAt, yearOf } from './facts'
 
 // ---------- a card on the home page (from the summary index, which tests check against the record) ----------
 export type CardView = { lifeId: string; name: string; place: string; years: string; status: string; deathAge: number | null; score: number | null; lifeNo: number }
@@ -97,7 +97,7 @@ export function compareView(a: LifeRecord, b: LifeRecord): CompareView {
   const ids = [...new Set([...own(a), ...own(b)].sort((x, y) => x.age - y.age).map(m => key(m.id)))]
   const cell = (r: LifeRecord, id: string) => {
     const m = own(r).find(x => key(x.id) === id)
-    return m ? { label: m.options.find(o => o.id === m.choice)?.label ?? m.choice, age: ageYears(r, m.tick), lesson: !!m.lessonApplied, choice: m.choice, m } : null
+    return m ? { label: labelOf(m.options.find(o => o.id === m.choice)?.label ?? m.choice), age: ageYears(r, m.tick), lesson: !!m.lessonApplied, choice: m.choice, m } : null
   }
   const rows: CompareRow[] = ids.map(id => {
     const ca = cell(a, id), cb = cell(b, id)

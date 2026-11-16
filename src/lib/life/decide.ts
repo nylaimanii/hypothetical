@@ -99,6 +99,18 @@ export async function politeLlm<T>(fn: () => Promise<T>): Promise<T> {
 }
 let inFlight: Promise<void> = Promise.resolve()
 
+// everyone in the family by name and relation, so the reason never has to guess who someone is ("halima, my
+// neighbor" when halima is the mother)
+function familyLine(p: Person, partner: ReturnType<typeof partnerOf>): string {
+  const alive = p.kin.filter(k => k.bornTick <= p.tick && (k.diedTick === undefined || k.diedTick > p.tick) && (k.relation !== 'partner' || k === partner))
+  const word = (k: (typeof alive)[number]) => k.relation === 'sibling' ? (k.sex === 'female' ? 'sister' : 'brother') : k.relation === 'child' ? (k.sex === 'female' ? 'daughter' : 'son') : k.relation
+  const age = (k: (typeof alive)[number]) => Math.floor((p.tick - k.bornTick) / 12)
+  const lost = p.kin.filter(k => k.diedTick !== undefined && k.diedTick <= p.tick && k.relation !== 'grandchild').map(k => `${word(k)} ${k.name} (died)`)
+  const now = alive.filter(k => k.relation !== 'grandchild').map(k => `${word(k)} ${k.name} (${age(k)})`)
+  const g = alive.filter(k => k.relation === 'grandchild').length
+  return [...now, ...lost, ...(g ? [`${g} grandchild${g === 1 ? '' : 'ren'}`] : []), ...(partner ? [] : ['no partner'])].join(', ') + '. use these names and relations exactly'
+}
+
 // ---------- the llm call ----------
 const clean = (s: string) => s.replace(/[\u2014\u2013]/g, ',').replace(/\s+/g, ' ').trim()
 
@@ -112,7 +124,7 @@ export async function decideLlm(p: Person, env: MonthEnv, question: string, opts
     `you are ${p.name}, ${age}, ${p.sex}, living in ${p.place.city}, ${p.place.country}, in ${env.year}.`,
     `temperament: ${temperamentWords(p.temperament)}.`,
     `${p.job ? `work: ${p.job.title}, about $${Math.round(p.lastIncome)} a month` : p.retired ? 'retired' : p.inSchool ? 'in school' : 'no job'}; ${p.savings < 0 ? `$${Math.round(-p.savings)} in debt` : `$${Math.round(p.savings)} saved`}; ${p.schoolYears.toFixed(0)} years of school.`,
-    `family: ${partner ? `partner ${partner.name}` : 'no partner'}${kids.length ? `, ${kids.length} ${kids.length === 1 ? 'child' : 'children'}` : ''}. health ${Math.round(p.health * 100)}/100${p.chronic.length ? ` (${p.chronic.join(', ')})` : ''}. habits: ${[...p.habits].join(', ') || 'none'}.`,
+    `family: ${familyLine(p, partner)}. health ${Math.round(p.health * 100)}/100${p.chronic.length ? ` (${p.chronic.join(', ')})` : ''}. habits: ${[...p.habits].join(', ') || 'none'}.`,
     p.marks ? `childhood left: ${p.marks.hungerMonths > 6 ? 'hungry years, ' : ''}${p.marks.displaced ? 'losing a home, ' : ''}${p.marks.lostParent ? 'losing a parent, ' : ''}${p.marks.stableHome > 0.7 ? 'a stable home, ' : ''}trust in others ${Math.round(p.marks.trust * 100)}/100.` : '',
     `the world here: food ${env.food < 0.85 ? 'short' : 'enough'}, prices ${env.prices.toFixed(1)}x normal, unrest ${env.unrest > 0.45 ? 'high' : 'normal'}, life expectancy ${env.lifeExpectancy.toFixed(0)}${world ? `. right now: ${world}` : ''}.`,
     brief ? `what this means for this decision, where you live:\n${brief}` : '',

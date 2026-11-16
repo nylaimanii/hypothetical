@@ -242,7 +242,7 @@ at(40, {
     opt('volunteer', 'volunteer every week', ['helping', 'community'], () => { habit(p, 'volunteers'); p.community = clamp(p.community + 0.15); return ['started volunteering'] }),
     opt('mentor', 'mentor young people in your trade', ['helping', 'mentoring'], () => { habit(p, 'mentors'); return ['took on apprentices'] }),
     opt('give', 'give money instead of time', ['helping', 'money'], () => { p.help += 40; p.savings *= 0.9; return ['gave money'] }),
-    opt('none', 'my family needs me first', ['family'], () => ['kept to the family'], { default: true }),
+    opt('none', 'family comes first', ['family'], () => ['kept to the family'], { default: true }),
   ],
 })
 
