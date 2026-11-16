@@ -10,6 +10,7 @@ import { agentRanges } from './uncertainty'
 import { epitaphOf } from '../notify/epitaph'
 import { autopsy, autopsyLines, realBaseline, type Autopsy, type RealBaseline } from './evidence'
 import { dateOfTick, yearOfTick } from './facts'
+import { changeLines } from './rerun'
 
 export type Ref = { tick?: number; date?: string; url?: string; runId?: string }
 export type Claim = { text: string; refs: Ref[] }
@@ -223,7 +224,10 @@ export function worldReport(rec: RunRecord): WorldReport {
   const firstDecision = rec.frames.filter(f => f.decision).sort((a, b) => a.tick - b.tick)[0]?.decision
   const base = realBaseline(rec)
   const dead = s.status === 'destroyed' ? autopsy(rec) : null
+  // a world run with changed assumptions says so first: its numbers are not the default world's
+  const changed = changeLines((rec as RunRecord & { assumptions?: { overridden?: Record<string, number> } }).assumptions?.overridden ?? {})
   const summary = [
+    changed.length ? `this world ran with changed assumptions: ${changed.slice(0, 3).join('; ')}${changed.length > 3 ? `; and ${changed.length - 3} more` : ''}.` : '',
     `${name} governed this world (generation ${rec.generation}, seed ${rec.seed}) from 2026 to ${s.endDate.slice(0, 4)}, and it ${s.status === 'destroyed' ? `died: ${firstSentence(s.causeOfDeath ?? 'collapse')}` : s.status === 'goal_achieved' ? 'achieved the mission' : 'was still standing at the end'}.`,
     `it reached ${s.frontier === 'none' ? 'no frontier beyond earth' : words(s.frontier)}, with a peak period life expectancy of ${s.peakPeriodLifeExpectancy.toFixed(1)} years and ${pop(s.finalPopulation)} people at the end. score ${s.score}${base ? `; against UN projections it ${base.text}` : ''}.`,
     s.humanCost ? `the cost: ${pop(s.humanCost.deaths)} deaths and ${pop(s.humanCost.displaced)} displaced. approval ended at ${pct(s.humanCost.approval)}.` : '',

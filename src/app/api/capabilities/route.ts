@@ -14,6 +14,8 @@ export async function GET() {
     // petitions and what-ifs on a world (POST /api/petition, /api/whatif)
     petitions: local,
     whatIf: local,
+    // rerun a world with changed assumptions (POST /api/rerun); the list itself (GET /api/assumptions) works everywhere
+    rerun: local,
     // branch a world from a tick, override a live world, ask the core (all need the runner or the llm)
     branch: local,
     override: local,
