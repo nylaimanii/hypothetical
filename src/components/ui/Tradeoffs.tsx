@@ -20,6 +20,16 @@ const radius = (o: number) => 4 + 10 * Math.sqrt(Math.max(0, Math.min(1, o)))
 const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n)
 const usable = (t: Tradeoffs) => finite(t.lifespan) && t.lifespan > 0 && finite(t.population) && t.population > 0 && finite(t.freedom) && finite(t.offWorld)
 
+// before sim 5.10.10 the freedom index started at 1 and was clipped there, so a voice in decisions (+0.1) vanished:
+// 1.0 on those sims means "no restrictions", not "the most free" (b, 7aa4caf). from 5.10.10, 2026 policy reads 0.9
+const VOICE_FROM = [5, 10, 10]
+const clipsFreedom = (v: string | null) => {
+  if (!v || v === 'unrecorded') return true
+  const x = v.split('.').map(Number)
+  for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== VOICE_FROM[i]) return (x[i] ?? 0) < VOICE_FROM[i]
+  return false
+}
+
 function ticks(lo: number, hi: number, n = 5) {
   const step = (hi - lo) / n
   return Array.from({ length: n + 1 }, (_, i) => lo + i * step)
@@ -90,7 +100,7 @@ export default function TradeoffsPage() {
               )}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-ink/60">
-              <span className="flex items-center gap-1">freedom {[0.05, 0.5, 0.95].map((f) => <span key={f} className="inline-block h-3 w-3 rounded-full" style={{ background: fill(f) }} />)} <span>less to more free</span></span>
+              <span className="flex items-center gap-1">freedom {[0.05, 0.5, 0.95].map((f) => <span key={f} className="inline-block h-3 w-3 rounded-full" style={{ background: fill(f) }} />)} <span>less to more free{clipsFreedom(v) ? ' (stops at 1.0 on this sim)' : ''}</span></span>
               <span className="flex items-center gap-1">off-world <span className="inline-block h-2 w-2 rounded-full border border-ink/40" /> <span className="inline-block h-4 w-4 rounded-full border border-ink/40" /> <span>none to the farthest frontier</span></span>
               <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-full border-2 border-ink" /> frontier</span>
               <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-full border-2 border-ember" /> destroyed</span>
@@ -111,7 +121,8 @@ export default function TradeoffsPage() {
                 ))}
               </tbody>
             </table>
-            <p className="mt-3 text-[11px] text-ink/50">freedom is the sim&apos;s defined index (0 to 1): force, censorship, limits on movement and a large security budget lower it, a voice in decisions raises it. its weights are an estimate, after Freedom House&apos;s civil-liberties categories. off-world is the frontier reached, of 7 stages beyond 2026.</p>
+            <p className="mt-3 text-[11px] text-ink/50">freedom is the sim&apos;s defined index (0 to 1): force, censorship, limits on movement and a large security budget lower it{clipsFreedom(v) ? '' : ', a voice in decisions raises it (2026 policy reads 0.9)'}. its weights are an estimate, after Freedom House&apos;s civil-liberties categories. off-world is the frontier reached, of 7 stages beyond 2026.</p>
+            {clipsFreedom(v) && <p className="mt-1 text-[11px] text-ink/60">on sim <Num>{v}</Num> the index stopped at 1.0, so 1.0 means no restrictions, and a voice in decisions does not show. sims from 5.10.10 measure it, so compare freedom only within one sim.</p>}
           </>
         )}
       </div>
