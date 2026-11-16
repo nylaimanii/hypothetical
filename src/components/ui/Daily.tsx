@@ -95,12 +95,13 @@ export function DailyPaper() {
   const setDaily = useStore((s) => s.setDaily)
   const { record, frame } = useCurrentFrame()
   const meta = useStore((s) => s.slim[record.runId])
-  const years = useMemo(() => yearsOf(record, meta?.lazy ? meta.lastTick : undefined), [record, meta])
+  // years up to the playhead only: never the future
+  const years = useMemo(() => yearsOf(record, Math.min(frame.tick, meta?.lazy ? meta.lastTick : Infinity)), [record, meta, frame.tick])
   const current = Math.floor(frame.tick / 12)
   const year = daily.year ?? current
   // lazy runs: make sure that year's frames are loaded
   useEffect(() => { if (daily.open) ensureWindow(record.runId, year * 12 + 6) }, [daily.open, year, record.runId])
-  const issue = useMemo(() => (daily.open ? buildIssue(record, year) : null), [daily.open, record, year])
+  const issue = useMemo(() => (daily.open ? buildIssue(record, Math.min(year, current), frame.tick) : null), [daily.open, record, year, current, frame.tick])
   if (!daily.open) return null
   const close = () => setDaily({ open: false, year: null })
   return (
@@ -146,7 +147,7 @@ export function DailyPeek() {
     const t = setTimeout(() => setDaily({ peek: null }), 8000)
     return () => clearTimeout(t)
   }, [daily.peek, setDaily])
-  const issue = useMemo(() => (daily.peek !== null ? buildIssue(record, daily.peek) : null), [daily.peek, record])
+  const issue = useMemo(() => (daily.peek !== null ? buildIssue(record, daily.peek, frame.tick) : null), [daily.peek, record, frame.tick])
   if (!issue || daily.open) return null
   return (
     <div className="dossier-in pointer-events-auto w-[22rem] rotate-[-1.2deg] rounded-sm bg-[#F3EDE0] p-4 font-display text-ink shadow-[0_18px_40px_-14px_rgba(0,0,0,0.55)]">

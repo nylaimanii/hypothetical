@@ -92,7 +92,7 @@ export function biggestEvent(rec: RunRecord, tick: number) {
   const y = Math.floor(tick / 12)
   let best: { text: string; severity: number } | null = null
   for (const f of rec.frames) {
-    if (Math.floor(f.tick / 12) !== y) continue
+    if (Math.floor(f.tick / 12) !== y || f.tick > tick) continue // that year so far, never past the playhead
     for (const e of f.newEvents) if (!best || e.severity > best.severity) best = { text: e.text, severity: e.severity }
   }
   return best

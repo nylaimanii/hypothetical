@@ -31,7 +31,8 @@ const cap = (s: string) => s
 const people = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} billion` : n >= 1e6 ? `${Math.round(n / 1e6)} million` : n >= 1e3 ? `${Math.round(n / 1e3)} thousand` : `${Math.round(n)}`)
 const brief = (t: string) => t.split(/[.;]/)[0].trim()
 
-export const yearFrames = (rec: RunRecord, yearIndex: number) => rec.frames.filter((f) => f.tick >= yearIndex * 12 && f.tick < yearIndex * 12 + 12)
+// a year's frames, never past the playhead (upTo): the paper only reports what has happened
+export const yearFrames = (rec: RunRecord, yearIndex: number, upTo = Infinity) => rec.frames.filter((f) => f.tick >= yearIndex * 12 && f.tick < yearIndex * 12 + 12 && f.tick <= upTo)
 export const yearsOf = (rec: RunRecord, lastTick?: number) => {
   const last = lastTick ?? rec.frames.at(-1)?.tick ?? 0
   return Array.from({ length: Math.floor(last / 12) + 1 }, (_, i) => i)
@@ -108,8 +109,8 @@ function crowdStories(f: Frame, prev: Frame | undefined): Story[] {
   return out
 }
 
-export function buildIssue(rec: RunRecord, yearIndex: number): Issue | null {
-  const frames = yearFrames(rec, yearIndex)
+export function buildIssue(rec: RunRecord, yearIndex: number, upTo = Infinity): Issue | null {
+  const frames = yearFrames(rec, yearIndex, upTo)
   if (!frames.length) return null
   const last = frames.at(-1)!
   const before = rec.frames.filter((f) => f.tick < yearIndex * 12).at(-1)
@@ -123,7 +124,13 @@ export function buildIssue(rec: RunRecord, yearIndex: number): Issue | null {
     ...(decision ? decision.decision!.laws.map((l) => lawStory(l, decision, rec.precedents ?? [], `${seed}:${l.id}`)) : []),
     ...frames.flatMap((f, i) => crowdStories(f, i ? frames[i - 1] : before)),
   ]
-  const fallback: Story = {
+  // a quiet year only once the whole year is in (its last month reached, and data up to it); before that, say so
+  const yearDone = upTo >= yearIndex * 12 + 11 && (rec.frames.at(-1)?.tick ?? 0) >= yearIndex * 12 + 11
+  const fallback: Story = !yearDone ? {
+    kind: 'decision', ref: { tick: frames[0].tick },
+    headline: 'no news yet this year',
+    body: 'the year is still going. nothing has made the front page so far.',
+  } : {
     kind: 'decision', ref: { tick: frames[0].tick },
     headline: pick(seed, ['nothing happens, experts baffled', 'slow year: citizens report doing their jobs', 'quiet year reported; pundits furious']),
     body: 'no disasters, no revolts, no launches. talk shows filled the time by asking whether the quiet was suspicious. it was not.',

@@ -90,16 +90,17 @@ function DailyView() {
   const worlds = useViewWorlds()
   const year = Math.floor(frame.tick / 12)
   const [shown, setShown] = useState<number | null>(null)
-  const y = shown ?? year
+  const y = Math.min(shown ?? year, year) // never a year past the playhead
   useEffect(() => { ensureWindow(record.runId, y * 12 + 6) }, [record.runId, y])
-  const issue = useMemo(() => buildIssue(record, y), [record, y])
+  const issue = useMemo(() => buildIssue(record, y, frame.tick), [record, y, frame.tick])
   // same day, other worlds: the lead story every other open world printed that year
   const others = useMemo(() => worlds.filter((w) => !w.active).map((w) => {
     const last = w.record.frames[w.record.frames.length - 1]
     const alive = y * 12 <= (last?.tick ?? 0)
-    const iss = alive ? buildIssue(w.record, y) : null
+    // the same date in the other world: nothing past this playhead
+    const iss = alive ? buildIssue(w.record, y, frame.tick) : null
     return { w, headline: iss?.lead.headline ?? null, gone: !alive }
-  }), [worlds, y])
+  }), [worlds, y, frame.tick])
   const date = tickToDate(y * 12 + 1)
   return (
     <div className="flex h-full min-h-0 gap-4">

@@ -40,14 +40,14 @@ export default function Launches({ frame, spaceport }: { frame: Frame; spaceport
   }, [juice])
 
   const spawnPuff = (at: THREE.Vector3, vel: THREE.Vector3, size: number, life: number) => {
-    const now = performance.now() / 1000
+    const now = sceneRefs.wt
     const list = puffs.current
     if (list.length >= PUFFS) list.shift()
     list.push({ pos: at.clone(), vel, born: now, life, size })
   }
 
   useFrame((_, dt) => {
-    const now = performance.now() / 1000
+    const now = sceneRefs.wt
     const a = active.current
     padShake.current = 0
     launchState.flying = false
@@ -99,7 +99,7 @@ export default function Launches({ frame, spaceport }: { frame: Frame; spaceport
         const p = puffs.current[i]
         if (!p) { pm.setMatrixAt(i, m.makeScale(0, 0, 0)); continue }
         const k = (now - p.born) / p.life
-        p.pos.addScaledVector(p.vel, dt)
+        p.pos.addScaledVector(p.vel, sceneRefs.wdt)
         p.vel.multiplyScalar(0.97)
         const s = p.size * Math.sin(Math.min(1, k * 1.4) * Math.PI * 0.5) * (1 - k * k) * 1.6
         pm.setMatrixAt(i, m.compose(p.pos, q, new THREE.Vector3(s, s, s)))
@@ -116,7 +116,7 @@ export default function Launches({ frame, spaceport }: { frame: Frame; spaceport
         if (!c) { cm.setMatrixAt(i, m.makeScale(0, 0, 0)); continue }
         const nrm = c.pos.clone().normalize()
         c.vel.addScaledVector(nrm, -3 * dt)
-        c.pos.addScaledVector(c.vel, dt)
+        c.pos.addScaledVector(c.vel, sceneRefs.wdt)
         if (c.pos.length() < 10.25) { c.pos.setLength(10.25); c.vel.multiplyScalar(0.3) }
         q.setFromEuler(new THREE.Euler(now * 3 + i, now * 2, i))
         cm.setMatrixAt(i, m.compose(c.pos, q, new THREE.Vector3(0.08, 0.05, 0.1)))

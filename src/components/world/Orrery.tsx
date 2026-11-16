@@ -6,14 +6,13 @@ import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import type { Frame, SpaceAsset } from '@/lib/types'
-import { C, R, sceneRefs, toonGradient } from './lib'
+import { C, R, sceneRefs, toonGradient, MOON_ORBIT, MOON_R, MOON_TILT } from './lib'
 import { tipProps, useCallouts, yearOf, type Callout } from './explain'
 
-const MOON_ORBIT = 30
-const MOON_TILT = 0.26
-const MARS_ORBIT = 120
-const BELT = 165
-const OUTER = 215
+// the moon's orbit is the same one the moon itself flies (lib.ts); the rest is spread out beyond it
+const MARS_ORBIT = 170
+const BELT = 205
+const OUTER = 240
 const MARS_R = 4
 const FADE_FROM = 90
 const FADE_TO = 130
@@ -68,7 +67,7 @@ function assetPos(a: SpaceAsset, i: number, t: number, out: THREE.Vector3) {
       return out.set(Math.cos(ang) * R * 1.6, Math.sin(ang * 0.7) * 2.5, Math.sin(ang) * R * 1.6)
     }
     case 'moon':
-      return out.copy(sceneRefs.moonPos).add(new THREE.Vector3(Math.cos(k) * 2.6, 1.4, Math.sin(k) * 2.6))
+      return out.copy(sceneRefs.moonPos).add(new THREE.Vector3(Math.cos(k) * (MOON_R + 1), 1.4, Math.sin(k) * (MOON_R + 1)))
     case 'mars': {
       marsPos(t, out)
       return out.add(new THREE.Vector3(Math.cos(k) * (MARS_R + 1.6), 2.2, Math.sin(k) * (MARS_R + 1.6)))
@@ -143,10 +142,10 @@ function Debris({ seed, mat }: { seed: number; mat: THREE.Material }) {
     const r = rng(seed)
     return Array.from({ length: 5 }, () => ({ d: new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).normalize(), s: 0.15 + r() * 0.25, p: r() * 10 }))
   }, [seed])
-  useFrame(({ clock }) => {
+  useFrame(() => {
     const grp = g.current
     if (!grp) return
-    const t = clock.elapsedTime
+    const t = sceneRefs.wt
     grp.children.forEach((c, i) => {
       const ch = chips[i]
       c.position.copy(ch.d).multiplyScalar(1.6 + ((t * 0.15 + ch.p) % 2))
@@ -240,7 +239,7 @@ export default function Orrery({ frame }: { frame: Frame }) {
   const tmp = useMemo(() => new THREE.Vector3(), [])
   const probeIdx = assets.findIndex((a) => a.kind === 'probe' && a.body === 'outer')
 
-  useFrame(({ clock }) => {
+  useFrame(() => {
     const d = sceneRefs.camDist
     const g = root.current
     if (!g) return
@@ -251,10 +250,10 @@ export default function Orrery({ frame }: { frame: Frame }) {
     labels.current.forEach((el) => { if (el) { el.style.opacity = String(f); el.style.display = f > 0.02 ? '' : 'none' } })
     list.forEach((c, i) => { c.weight = f > 0.3 ? KIND_WEIGHT[assets[i].kind] : 0 })
     if (!show) return
-    const t = clock.elapsedTime
+    const t = sceneRefs.wt
     if (mars.current) { marsPos(t, mars.current.position); mars.current.rotation.y = t * 0.1 }
     if (belt.current) belt.current.rotation.y = beltRot(t)
-    if (moonLabel.current) moonLabel.current.position.copy(sceneRefs.moonPos).add(tmp.set(0, 3.2, 0))
+    if (moonLabel.current) moonLabel.current.position.copy(sceneRefs.moonPos).add(tmp.set(0, MOON_R + 1.6, 0))
     assets.forEach((a, i) => {
       const grp = assetGroups.current[i]
       assetPos(a, i, t, list[i].pos)

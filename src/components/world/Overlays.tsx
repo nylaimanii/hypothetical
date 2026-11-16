@@ -79,7 +79,7 @@ export function MigrationLines({ frame }: { frame: Frame }) {
     return [{ key: m.from + m.to, pts }]
   }), [frame])
   const mats = useRef<(THREE.Material & { dashOffset?: number } | null)[]>([])
-  useFrame((_, dt) => { for (const m of mats.current) if (m && 'dashOffset' in m) m.dashOffset = (m.dashOffset ?? 0) - dt * 0.6 })
+  useFrame(() => { for (const m of mats.current) if (m && 'dashOffset' in m) m.dashOffset = (m.dashOffset ?? 0) - sceneRefs.wdt * 0.6 })
   if (zoom === 'far' || !lines.length) return null
   return (
     <>

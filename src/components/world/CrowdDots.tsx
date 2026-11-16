@@ -208,7 +208,7 @@ export default function CrowdDots({ frame }: { frame: Frame }) {
   const calloutKey = useRef('')
   useCallouts('crowds', callout)
 
-  useFrame(({ clock, camera }, dt) => {
+  useFrame(({ camera }, dt) => {
     const g = group.current
     if (!g) return
     // mid zoom only: fade in below the far threshold, out before close
@@ -241,7 +241,7 @@ export default function CrowdDots({ frame }: { frame: Frame }) {
       V[i] = c.n.dot(camDir) > horizonCos ? 1 : 0
       if (V[i] && !revolt && act.current[i] > bestAct) { bestAct = act.current[i]; best = i }
     }
-    u.uTime.value = clock.elapsedTime
+    u.uTime.value = sceneRefs.wt
     u.uFade.value = fade
     lineMat.opacity = 0.32 * fade
     // explain: the busiest city in view, only during a real rush hour

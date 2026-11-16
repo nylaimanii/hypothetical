@@ -42,12 +42,12 @@ export default function TrendArrows({ frame }: { frame: Frame }) {
   const blockGeo = useMemo(() => new RoundedBoxGeometry(0.36, 0.14, 0.36, 2, 0.05), [])
   const mat = useMemo(() => new THREE.MeshToonMaterial({ gradientMap: toonGradient() }), [])
 
-  useFrame(({ clock }) => {
+  useFrame(() => {
     const trendMode = useStore.getState().overlay === 'trend'
     const d = sceneRefs.camDist
     const show = d > ZOOM_FAR - 2 || (trendMode && d > ZOOM_CLOSE)
     const scale = (trendMode ? 1.6 : 1) * Math.min(1.4, Math.max(0.6, d / 45))
-    const t = clock.elapsedTime
+    const t = sceneRefs.wt
     const m = new THREE.Matrix4(), p = new THREE.Vector3(), s = new THREE.Vector3()
     const write = (mesh: THREE.InstancedMesh | null, list: Spot[]) => {
       if (!mesh) return

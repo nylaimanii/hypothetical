@@ -4,11 +4,9 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { Outlines } from '@react-three/drei'
 import type { Frame } from '@/lib/types'
-import { C, sceneRefs, vinyl } from './lib'
+import { C, MOON_ORBIT, MOON_R, MOON_TILT, sceneRefs, vinyl } from './lib'
 import { useStore } from '../state/store'
 
-const ORBIT = 30
-const TILT = 0.26
 
 export default function Moon({ frame }: { frame: Frame }) {
   const select = useStore((s) => s.select)
@@ -21,19 +19,19 @@ export default function Moon({ frame }: { frame: Frame }) {
     return { p: v.clone().multiplyScalar(1.55), q: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), v), r: 0.18 + (i % 3) * 0.1 }
   }), [])
   const landed = frame.moonStage === 'crewed_landing'
-  useFrame(({ clock }) => {
-    const a = clock.elapsedTime * 0.04 + 0.6
-    const x = Math.cos(a) * ORBIT, z = Math.sin(a) * ORBIT
+  useFrame(() => {
+    const a = sceneRefs.wt * 0.04 + 0.6
+    const x = Math.cos(a) * MOON_ORBIT, z = Math.sin(a) * MOON_ORBIT
     if (g.current) {
-      g.current.position.set(x, Math.sin(a) * ORBIT * Math.sin(TILT) + 3, z * Math.cos(TILT))
+      g.current.position.set(x, Math.sin(a) * MOON_ORBIT * Math.sin(MOON_TILT) + 3, z * Math.cos(MOON_TILT))
       sceneRefs.moonPos.copy(g.current.position)
       g.current.lookAt(0, 0, 0) // flag faces home
     }
     const glow = frame.moonProgress
-    mat.emissiveIntensity = glow * 1.6 + (landed ? Math.sin(clock.elapsedTime * 2) * 0.2 + 0.4 : 0)
+    mat.emissiveIntensity = glow * 1.6 + (landed ? Math.sin(sceneRefs.wt * 2) * 0.2 + 0.4 : 0)
   })
   return (
-    <group ref={g}
+    <group ref={g} scale={MOON_R / 1.6}
       onClick={(e) => { e.stopPropagation(); select({ kind: 'moon' }) }}
       onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = 'pointer' }}
       onPointerOut={() => { document.body.style.cursor = '' }}>

@@ -46,7 +46,7 @@ export function MovementStreams({ frame }: { frame: Frame }) {
   const camera = useThree((s) => s.camera)
   const labels = useRef<(HTMLDivElement | null)[]>([])
   const slots = useRef<(THREE.Group | null)[]>([])
-  useFrame(({ clock }) => {
+  useFrame(() => {
     const c = camera.position.clone().normalize()
     const on = useStore.getState().overlay === 'movement'
     for (let i = 0; i < STREAM_SLOTS; i++) {
@@ -59,7 +59,7 @@ export function MovementStreams({ frame }: { frame: Frame }) {
     }
     const m = mesh.current
     if (!m) return
-    const t = clock.elapsedTime
+    const t = sceneRefs.wt
     const mtx = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3()
     const col = new THREE.Color()
     let k = 0
@@ -138,12 +138,12 @@ export function EmotionPulse({ frame }: { frame: Frame }) {
     const n = latLonToVec3(r.lat, r.lon, 1).normalize()
     return { pos: n.clone().multiplyScalar(LAND_TOP + 0.35), q: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), n), color: new THREE.Color(d ? EMOTION_HEX[d.emotion] : '#ffffff'), level: d?.level ?? 0 }
   }), [frame])
-  useFrame(({ clock }) => {
+  useFrame(() => {
     const m = mesh.current
     if (!m) return
     const mtx = new THREE.Matrix4(), s = new THREE.Vector3()
     spots.forEach((sp, i) => {
-      const beat = 0.5 + 0.5 * Math.sin(clock.elapsedTime * (1.2 + sp.level * 3) + i)
+      const beat = 0.5 + 0.5 * Math.sin(sceneRefs.wt * (1.2 + sp.level * 3) + i)
       const r = 0.6 + sp.level * 1.6 + beat * 0.35 * sp.level
       m.setMatrixAt(i, mtx.compose(sp.pos, sp.q, s.set(r, r, r)))
       m.setColorAt(i, sp.color)

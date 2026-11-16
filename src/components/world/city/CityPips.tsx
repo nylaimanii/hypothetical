@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import type { Activity, Citizen, City, Frame, Workplace } from '@/lib/types'
-import { C, HAIR_HEX, MONK, toonGradient } from '../lib'
+import { C, HAIR_HEX, MONK, sceneRefs, toonGradient } from '../lib'
 import { localHour, utcHourOf, worldDate } from '../time'
 import { useStore } from '../../state/store'
 import { useCallouts, type Callout } from '../explain'
@@ -173,10 +173,12 @@ export default function CityPips({ city, frame, layout, onLot }: { city: City; f
   // ---- the frame loop ----
   const _M = useMemo(() => ({ base: new THREE.Matrix4(), t: new THREE.Matrix4(), a: new THREE.Matrix4(), q: new THREE.Quaternion(), e: new THREE.Euler(), v: new THREE.Vector3(), s: new THREE.Vector3(), torso: new THREE.Matrix4(), head: new THREE.Matrix4(), arm: new THREE.Matrix4(), leg: new THREE.Matrix4(), out: new THREE.Matrix4() }), [])
   const occAcc = useRef(0)
-  useFrame(({ clock }, dt) => {
+  useFrame(() => {
+    // the world clock: everyone stands still while paused
+    const dt = sceneRefs.wdt
     const st = useStore.getState()
     const lh = localHour(utcHourOf(worldDate(st.playhead, st.hour, st.playing)), city.lon)
-    const t = clock.elapsedTime
+    const t = sceneRefs.wt
     const fastForward = st.playing
     let n = 0, nb = 0, nbox = 0, ns = 0, nbike = 0, nst = 0, nh = 0
     const R = refs

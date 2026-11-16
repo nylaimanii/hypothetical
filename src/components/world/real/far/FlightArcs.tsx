@@ -48,14 +48,14 @@ function useArcLines(arcs: Arc[]) {
 
 // movers (planes or ships) along arcs, packed into the first slots, past-the-horizon ones skipped
 function useMovers(mesh: React.RefObject<THREE.InstancedMesh | null>, arcs: Arc[], speed: number, perArc: (vol: number) => number, scale: number, lineMat: THREE.LineBasicMaterial, maxOpacity: number, group: React.RefObject<THREE.Group | null>) {
-  useFrame(({ clock, camera }) => {
+  useFrame(({ camera }) => {
     const m = mesh.current, g = group.current
     if (!m || !g) return
     const fade = farFade()
     g.visible = fade > 0.01
     if (!g.visible) return
     lineMat.opacity = maxOpacity * fade
-    const t0 = clock.elapsedTime
+    const t0 = sceneRefs.wt
     const camDir = camera.position.clone().normalize()
     const horizon = Math.cos(Math.acos(Math.min(1, LAND_TOP / camera.position.length())) + 0.05)
     const p = new THREE.Vector3(), ahead = new THREE.Vector3(), mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(scale * fade, scale * fade, scale * fade)

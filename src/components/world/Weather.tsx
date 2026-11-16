@@ -105,9 +105,9 @@ export function Clouds({ frame }: { frame: Frame }) {
   const darkMat = useMemo(() => new THREE.MeshToonMaterial({ color: '#8E8C96', gradientMap: toonGradient() }), [])
   const hidden = zoom === 'close' || adaptive >= 1
 
-  useFrame(({ clock }) => {
+  useFrame(() => {
     if (hidden) return
-    const t = clock.elapsedTime
+    const t = sceneRefs.wt
     const m = mesh.current, h = storm.current
     const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3()
     if (m) {
@@ -212,8 +212,8 @@ export function DisasterFx({ frame }: { frame: Frame }) {
     smoke: new THREE.MeshToonMaterial({ color: '#77727A', gradientMap: toonGradient() }),
   }), [])
 
-  useFrame(({ clock }) => {
-    const t = clock.elapsedTime
+  useFrame(() => {
+    const t = sceneRefs.wt
     const key = `${frame.tick}:${plan.floods.length}`
     if (key !== lastKey.current) { lastKey.current = key; startedAt.current = t }
     const since = t - startedAt.current

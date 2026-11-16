@@ -5,7 +5,7 @@ import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import type { Frame } from '@/lib/types'
 import type { Biome } from './geodata'
-import { buildTiles, C, LAND_TOP, OCEAN_TOP, R, STEP, toonGradient } from './lib'
+import { buildTiles, C, LAND_TOP, OCEAN_TOP, R, STEP, toonGradient, sceneRefs } from './lib'
 import { tickToDate } from './time'
 import { useStore } from '../state/store'
 import { ChunkSet } from './chunks'
@@ -223,10 +223,10 @@ export default function Planet({ frame }: { frame: Frame }) {
     for (const m of [L, S, O, G]) m.commitColors()
   }, [frame, tiles, layout, month, overlay, sets, places, farTiles])
 
-  useFrame(({ clock, camera }) => {
-    ocean.uniforms.uTime.value = clock.elapsedTime
-    foam.uniforms.uTime.value = clock.elapsedTime
-    glowMat.opacity = 0.55 + Math.sin(clock.elapsedTime * 2.4) * 0.25
+  useFrame(({ camera }) => {
+    ocean.uniforms.uTime.value = sceneRefs.wt
+    foam.uniforms.uTime.value = sceneRefs.wt
+    glowMat.opacity = 0.55 + Math.sin(sceneRefs.wt * 2.4) * 0.25
     // high poly only for patches within ~9 units of the camera: only ever true up close
     for (const x of Object.values(sets)) x.update(camera.position, LAND_TOP, 9)
   })

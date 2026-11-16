@@ -162,14 +162,14 @@ export default function RoadsRail({ frame }: { frame: Frame }) {
     })
   }, [frame, built, order, dotMat])
 
-  useFrame(({ clock }) => {
+  useFrame(() => {
     const g = group.current
     if (!g) return
     const fade = midFade()
     g.visible = fade > 0.01 && !!built
     if (!g.visible) return
     const s = useStore.getState()
-    dotMat.uniforms.uTime.value = clock.elapsedTime
+    dotMat.uniforms.uTime.value = sceneRefs.wt
     dotMat.uniforms.uUtc.value = utcHourOf(worldDate(s.playhead, s.hour, s.playing))
     dotMat.uniforms.uFade.value = fade
     ;(dotMat.uniforms.uSun.value as THREE.Vector3).copy(sceneRefs.sunDir)

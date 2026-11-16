@@ -167,6 +167,8 @@ function closed(s: State): Partial<State> {
 let juiceId = 1
 let shotId = 1
 export const TICKS_PER_SECOND = 3
+// what each speed really is: sim time per real second at TICKS_PER_SECOND ticks (months) per second times the speed
+export const speedLabel = (speed: number) => { const months = TICKS_PER_SECOND * speed; return months < 12 ? `${months} mo/s` : `${months / 12} y/s` }
 
 export const useStore = create<State>((set) => ({
   record: mockRuns()[0],

@@ -270,7 +270,7 @@ export default function CityView({ cityId, frame, agent }: { cityId: string; fra
 
   // a little tram running the main street
   const tramRef = useRef<THREE.Mesh>(null)
-  useFrame(({ clock }) => { if (tramRef.current) tramRef.current.position.x = Math.sin(clock.elapsedTime * 0.22) * 13 })
+  useFrame(() => { if (tramRef.current) tramRef.current.position.x = Math.sin(sceneRefs.wt * 0.22) * 13 })
 
   if (!city) return null
   return (

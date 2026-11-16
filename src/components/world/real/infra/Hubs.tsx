@@ -7,7 +7,7 @@ import * as THREE from 'three'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { Frame } from '@/lib/types'
-import { groundRadius, latLonToVec3, OCEAN_TOP, toonGradient } from '../../lib'
+import { groundRadius, latLonToVec3, OCEAN_TOP, toonGradient, sceneRefs } from '../../lib'
 import { useStore } from '../../../state/store'
 import { localHour, utcHourOf, worldDate } from '../../time'
 import { HOURLY, midFade, trafficOf, useHubs } from './stream'
@@ -82,7 +82,7 @@ export default function Hubs({ frame }: { frame: Frame }) {
 
   const acc = useRef(1)
   const busy = useRef<{ air: Hub[]; port: Hub[] }>({ air: [], port: [] })
-  useFrame(({ clock, camera }, dt) => {
+  useFrame(({ camera }, dt) => {
     const grp = group.current
     if (!grp) return
     const fade = midFade()
@@ -101,7 +101,7 @@ export default function Hubs({ frame }: { frame: Frame }) {
         .filter((x) => x.b > 0.25).sort((a, b) => b.b - a.b).slice(0, BUSY).map((x) => x.h)
       busy.current = { air: pick(hubs.air, 'air'), port: pick(hubs.port, 'port') }
     }
-    const t = clock.elapsedTime
+    const t = sceneRefs.wt
     // planes: a loop out along the runway, climbing, then back down
     const pm = planeRef.current
     if (pm) {

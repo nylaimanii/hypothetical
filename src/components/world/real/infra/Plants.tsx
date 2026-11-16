@@ -8,7 +8,7 @@ import * as THREE from 'three'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { Frame } from '@/lib/types'
-import { groundRadius, latLonToVec3, toonGradient } from '../../lib'
+import { groundRadius, latLonToVec3, toonGradient, sceneRefs } from '../../lib'
 import { useStore } from '../../../state/store'
 import { midFade, usePlants } from './stream'
 import { useInfraDiffs } from './infraDiffs'
@@ -103,13 +103,13 @@ export default function Plants({ frame }: { frame: Frame }) {
     }
   }, [byKind])
 
-  useFrame(({ clock, camera }) => {
+  useFrame(({ camera }) => {
     const g = group.current
     if (!g) return
     const fade = midFade()
     g.visible = fade > 0.01 && sites.length > 0
     if (!g.visible) return
-    const t = clock.elapsedTime, now = performance.now() / 1000
+    const t = sceneRefs.wt, now = performance.now() / 1000
     const col = new THREE.Color()
     // only plants the sim just built animate (a short rise); everything else was written once below
     for (const k of KINDS) {

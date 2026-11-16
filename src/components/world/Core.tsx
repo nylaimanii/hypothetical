@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { Outlines } from '@react-three/drei'
 import type { Frame } from '@/lib/types'
-import { C, CORE_POS, LAND_TOP, latLonToVec3, vinyl } from './lib'
+import { C, CORE_POS, LAND_TOP, latLonToVec3, vinyl, sceneRefs } from './lib'
 import { useStore } from '../state/store'
 
 // regions a decision touched: migration endpoints plus any region whose stats moved
@@ -47,8 +47,8 @@ export default function Core({ frame, prev, idx }: { frame: Frame; prev?: Frame;
 
   useEffect(() => { if (frame.decision) pulse.current = performance.now() / 1000 }, [idx, frame.decision])
 
-  useFrame(({ clock }) => {
-    const t = clock.elapsedTime
+  useFrame(() => {
+    const t = sceneRefs.wt
     const since = performance.now() / 1000 - pulse.current
     const p = since < 1.6 ? Math.sin((since / 1.6) * Math.PI) : 0
     if (body.current) {

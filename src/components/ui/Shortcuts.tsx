@@ -1,11 +1,11 @@
 'use client'
 import { useEffect } from 'react'
-import { useStore } from '../state/store'
+import { useStore, speedLabel } from '../state/store'
 
 export const SHORTCUTS: [string, string][] = [
   ['space', 'play or pause'],
   ['← →', 'step a year back or forward'],
-  ['1 2 3', 'speed 1x, 4x, 16x'],
+  ['1 2 3', `speed ${speedLabel(1)}, ${speedLabel(4)}, ${speedLabel(16)}`],
   ['d', 'director mode on or off'],
   ['f', 'fullscreen globe, ui hidden'],
   ['?', 'this sheet'],

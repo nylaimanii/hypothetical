@@ -59,6 +59,16 @@ function Later({ children, ms = 120 }: { children: ReactNode; ms?: number }) {
 import DeadWorld, { CoreShards, useDeathMood } from './DeadWorld'
 import { setDeathMuffle } from '../sound/engine'
 
+// the world clock: advances only while the timeline plays
+function WorldClock() {
+  useFrame((_, dt) => {
+    const playing = useStore.getState().playing
+    sceneRefs.wdt = playing ? Math.min(dt, 0.1) : 0
+    sceneRefs.wt += sceneRefs.wdt
+  }, -100)
+  return null
+}
+
 export function Sky({ grey = 0 }: { grey?: number }) {
   const scene = useThree((s) => s.scene)
   // night in view, in steps of a fifth, so the gradient is redrawn only a few times across dusk
@@ -367,6 +377,7 @@ export default function Globe() {
         onPointerMissed={(e) => { if ((e.target as HTMLElement | null)?.tagName === 'CANVAS') select(null) }}
       >
         <PerformanceMonitor bounds={() => [50, 58]} flipflops={6} onIncline={() => setDpr((d) => Math.min(cap, d + 0.25))} onDecline={() => setDpr((d) => Math.max(1, d - 0.25))} onFallback={() => setDpr(1)} />
+        <WorldClock />
         <AdaptiveQuality high={high} />
         <Sky grey={sky} />
         <KeyLight high={high} />

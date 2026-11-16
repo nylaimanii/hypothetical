@@ -6,7 +6,7 @@ import { useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import type { Frame, RegionVisual } from '@/lib/types'
-import { C, CORE_POS, LAND_TOP, STEP, buildTiles, latLonToVec3, toonGradient, vinyl, type Tile } from './lib'
+import { C, CORE_POS, LAND_TOP, STEP, buildTiles, latLonToVec3, toonGradient, vinyl, type Tile, sceneRefs } from './lib'
 import { useCallouts, yearOf, type Callout } from './explain'
 import { useStore } from '../state/store'
 
@@ -237,8 +237,8 @@ export default function DeadWorld({ frame }: { frame: Frame }) {
   const q = useMemo(() => new THREE.Quaternion(), [])
   const v = useMemo(() => new THREE.Vector3(), [])
   const sc = useMemo(() => new THREE.Vector3(), [])
-  useFrame(({ clock }) => {
-    const t = clock.elapsedTime
+  useFrame(() => {
+    const t = sceneRefs.wt
     ashMat.uniforms.uTime.value = t
     const m = smokeRef.current, em = emberRef.current
     if (!m || !scars.smoke.length) return
@@ -292,9 +292,9 @@ export function CoreShards({ active }: { active: boolean }) {
       return { dir, s: new THREE.Vector3(0.5 + r() * 0.4, 0.4 + r() * 0.5, 0.45 + r() * 0.35), spin: new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).multiplyScalar(0.6), p: r() * 6 }
     })
   }, [])
-  useFrame(({ clock }) => {
+  useFrame(() => {
     if (!active || !g.current) { since.current = null; return }
-    const t = clock.elapsedTime
+    const t = sceneRefs.wt
     since.current ??= t
     // ease apart over ~8s, then keep drifting very slowly
     const k = Math.min(1, (t - since.current) / 8)

@@ -1,7 +1,7 @@
 'use client'
 import { useRef, useState } from 'react'
 import type { Divergence } from '@/lib/types'
-import { useCurrentFrame, useStore } from '../state/store'
+import { useCurrentFrame, useStore, speedLabel } from '../state/store'
 import { Num } from './bits'
 import Emblem from './Emblem'
 import { Offline } from './api'
@@ -11,7 +11,8 @@ export function startReel() {
   const s = useStore.getState()
   if (s.reel) { stopReel(); return }
   const rec = s.compare ? s.compare.records[s.compareFocus ?? 0] : s.record
-  const stops = rec.frames.flatMap((f) => f.newEvents.filter((e) => e.kind !== 'law').map((e) => ({ tick: f.tick, regionId: e.regionId, kind: e.kind, sig: e.significance ?? e.severity })))
+  // the highlight reel replays what has happened so far, never the future
+  const stops = rec.frames.filter((f) => f.tick <= s.playhead + 1e-6).flatMap((f) => f.newEvents.filter((e) => e.kind !== 'law').map((e) => ({ tick: f.tick, regionId: e.regionId, kind: e.kind, sig: e.significance ?? e.severity })))
     .sort((a, b) => b.sig - a.sig).slice(0, 10).sort((a, b) => a.tick - b.tick).map(({ tick, regionId, kind }) => ({ tick, regionId, kind }))
   if (!stops.length) { s.setNotice('nothing big has happened in this world yet'); return }
   s.setReel({ stops, i: 0, returnTo: s.playhead, wasPlaying: s.playing })
@@ -86,16 +87,18 @@ export default function Timeline() {
     const r = bar.current!.getBoundingClientRect()
     setPlayhead(t0 + Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * (t1 - t0))
   }
-  const decisions = meta?.lazy
+  // the governor's decisions so far (a future decision's reasoning would be a spoiler)
+  const decisions = (meta?.lazy
     ? meta.decisions.map((d) => ({ tick: d.tick, date: d.date, text: record.frames.find((f) => f.tick === d.tick)?.decision?.rationale ?? (d.lawsEnacted.length ? `enacted ${d.lawsEnacted.join(', ')}` : 'the core decides') }))
-    : record.frames.filter((f) => f.decision).map((f) => ({ tick: f.tick, date: f.date, text: f.decision!.rationale }))
+    : record.frames.filter((f) => f.decision).map((f) => ({ tick: f.tick, date: f.date, text: f.decision!.rationale }))).filter((d) => d.tick <= playhead + 1e-6)
   const compare = useStore((s) => s.compare)
   const reel = useStore((s) => s.reel)
   const agents = useStore((s) => s.agents)
   const [split, setSplit] = useState<Divergence | null>(null)
   const [branching, setBranching] = useState(false)
   const name = (runId: string) => { const r = compare?.records.find((x) => x.runId === runId); return agents.find((a) => a.id === r?.agentId)?.name ?? r?.agentId ?? runId }
-  const dangers = record.frames.filter((f) => f.newEvents.some((e) => e.severity >= 0.7 && ['famine', 'revolt', 'war', 'disaster', 'pandemic'].includes(e.kind)))
+  // marks on the track only up to the playhead (the timeline shouldn't give away what's coming)
+  const dangers = record.frames.filter((f) => f.tick <= playhead + 1e-6 && f.newEvents.some((e) => e.severity >= 0.7 && ['famine', 'revolt', 'war', 'disaster', 'pandemic'].includes(e.kind)))
   return (
     // minimal shell: thin, translucent, icons instead of words
     <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-bone/85 px-2 py-1 shadow-sm">
@@ -108,7 +111,7 @@ export default function Timeline() {
       </button>
       <div className="hidden shrink-0 whitespace-nowrap rounded-full p-0.5 font-mono text-[10px] sm:flex">
         {([1, 4, 16] as const).map((s) => (
-          <button key={s} onClick={() => setSpeed(s)} className={`rounded-full px-2 py-0.5 ${speed === s ? 'bg-ink text-bone' : 'text-ink/60'}`}>{s}x</button>
+          <button key={s} onClick={() => setSpeed(s)} className={`rounded-full px-2 py-0.5 ${speed === s ? 'bg-ink text-bone' : 'text-ink/60'}`} title={`${speedLabel(s)} of world time per real second`}>{speedLabel(s)}</button>
         ))}
       </div>
       <Num className="hidden shrink-0 whitespace-nowrap text-[11px] text-ink/50 sm:block">{firstDate}</Num>

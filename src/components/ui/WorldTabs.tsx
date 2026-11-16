@@ -229,11 +229,12 @@ export default function WorldTabs({ onLive }: { onLive: () => void }) {
               className={`group flex h-7 shrink-0 items-center gap-1.5 rounded-full pl-0.5 pr-1.5 text-[12px] transition ${on ? 'bg-ink/90 text-bone' : 'bg-bone/80 text-ink/75 hover:bg-bone/95'} ${tone.ring}`}>
               <button onClick={() => switchTab(id)} className="flex items-center gap-1.5" title={`${a?.name ?? prettyAgent(rec?.agentId)} · world #${worldNumber(id, runs)}${year ? ` · ${year}` : ''} · ${tone.word} · ctrl+${i + 1}`}>
                 <Thumb frame={f} dead={status === 'destroyed'} />
-                <span className="max-w-[8rem] truncate font-display text-[12.5px]">{a?.name ?? (rec ? prettyAgent(rec.agentId) : 'loading')}</span>
-                <span className={`text-[10.5px] ${on ? 'text-bone/60' : 'text-ink/45'}`}>#<Num>{worldNumber(id, runs)}</Num>{year && <> · <Num>{year}</Num></>}</span>
+                <span className="max-w-[5.5rem] truncate font-display text-[12.5px] sm:max-w-[8rem]">{a?.name ?? (rec ? prettyAgent(rec.agentId) : 'loading')}</span>
+                {/* phones: name only, so two worlds fit beside the + (the number and year are in the tooltip) */}
+                <span className={`hidden text-[10.5px] sm:inline ${on ? 'text-bone/60' : 'text-ink/45'}`}>#<Num>{worldNumber(id, runs)}</Num>{year && <> · <Num>{year}</Num></>}</span>
                 <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
               </button>
-              {tabs.length > 1 && <button onClick={() => closeTab(id)} aria-label="close world" className={`ml-0.5 rounded-full px-1 text-[13px] leading-none opacity-0 transition group-hover:opacity-100 ${on ? 'text-bone/70 hover:text-bone' : 'text-ink/50 hover:text-ink'}`}>×</button>}
+              {tabs.length > 1 && <button onClick={() => closeTab(id)} aria-label="close world" className={`ml-0.5 rounded-full px-1 text-[13px] leading-none opacity-0 transition group-hover:opacity-100 ${on ? 'max-sm:opacity-100' : ''} ${on ? 'text-bone/70 hover:text-bone' : 'text-ink/50 hover:text-ink'}`}>×</button>}
             </div>
           )
         })}
