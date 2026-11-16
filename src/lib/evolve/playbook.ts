@@ -149,11 +149,11 @@ export function lessonLine(l: PlaybookLesson): string {
 // ---------- controlled a/b tests (the lesson's mechanism, in the sim) ----------
 // for each lesson with a budget test: per seed, world A runs under the offline governor (deterministic, no model);
 // world B is A from its first decision with 5 points of the budget moved the way the lesson says (from the "down"
-// lines to the "up" lines, or from/to the rest in proportion to their shares), then A's own later decisions replayed, so that one year's
+// lines to the "up" lines, or from/to the rest in proportion to their shares), then A's own later decisions replayed, so that one decision's budget (it holds until the governor's next decision, 2 years for the offline governor)
 // change is the only difference (b's flipDecision 'replay'). measured: people alive after 20 years (truth.ts). this
 // tests what the lesson does in the sim, not whether an agent would choose it. results: data/playbook-ab.json, per
 // sim version, folded into the lesson's evidence next to the natural same-seed pairs
-export type Controlled = { simVersion: string; seeds: number[]; wins: number; losses: number; of: number; years: number; shift: string; perSeed: { seed: number; a: number; b: number }[] }
+export type Controlled = { simVersion: string; seeds: number[]; wins: number; losses: number; of: number; years: number; shift: string; perSeed: { seed: number; a: number; b: number }[]; months?: number; from?: string }
 export const controlledFile = () => path.join(process.cwd(), 'data', 'playbook-ab.json')
 export const readControlled = () => readJson<Record<string, Controlled>>(controlledFile()) ?? {}
 export const controlledKey = (lessonId: string, t: LessonTest, version: string) => `${lessonId}|${t.up.join('+')}>${t.down.join('+')}|${version}`
@@ -180,6 +180,8 @@ export async function controlledTest(lessonId: string, t: LessonTest, version: s
   const untilTick = years * 12
   const constitution = 'Govern for the long-term survival and wellbeing of everyone.'
   const perSeed: Controlled['perSeed'] = []
+  // how long the shifted budget holds (until the governor's next decision) and the budget it was shifted from
+  let months: number | undefined, from: string | undefined
   for (const seed of seeds) {
     const aId = `pb-${lessonId}-a-s${seed}`.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 80), bId = aId.replace('-a-s', '-b-s')
     try {
@@ -187,6 +189,12 @@ export async function controlledTest(lessonId: string, t: LessonTest, version: s
       const a = deps.load(aId)
       const first = a?.frames.filter(f => f.decision).sort((x, y) => x.tick - y.tick)[0]?.decision
       if (!a || !first) continue
+      if (months === undefined) {
+        const next = a.frames.filter(f => f.decision && f.decision.tick > first.tick).sort((x, y) => x.tick - y.tick)[0]?.decision
+        months = next ? next.tick - first.tick : untilTick - first.tick
+        const top = (Object.entries(first.budget) as [BudgetKey, number][]).sort((x, y) => y[1] - x[1])[0]
+        from = `the offline governor's opening budget, which already puts ${Math.round(top[1] * 100)}% into ${top[0]}`
+      }
       await deps.run({ runId: bId, generation: 0, seed, constitution, untilTick, startFrom: { runId: aId, tick: first.tick }, flipDecision: { tick: first.tick, change: { budget: shiftedBudget(t, first.budget) }, after: 'replay' } })
       const b = deps.load(bId)
       if (!b) continue
@@ -194,8 +202,9 @@ export async function controlledTest(lessonId: string, t: LessonTest, version: s
     } finally { deps.cleanup(aId); deps.cleanup(bId) }
   }
   const lbl = (ks: BudgetKey[]) => ks.join(' and ')
-  const shift = t.up.length && t.down.length ? `5 points of one year's budget moved from ${lbl(t.down)} to ${lbl(t.up)}` : t.up.length ? `5 more points of one year's budget on ${lbl(t.up)} (taken from every other line in proportion to its share)` : `5 fewer points of one year's budget on ${lbl(t.down)} (spread over every other line in proportion to its share)`
-  return { simVersion: version, seeds, wins: perSeed.filter(p => p.b > p.a).length, losses: perSeed.filter(p => p.b < p.a).length, of: perSeed.length, years, shift, perSeed }
+  const span = months === undefined ? "one decision's budget" : months % 12 === 0 ? `the budget for ${months / 12 === 1 ? 'one year' : `${months / 12} years`}` : `the budget for ${months} months`
+  const shift = (t.up.length && t.down.length ? `5 points of ${span} moved from ${lbl(t.down)} to ${lbl(t.up)}` : t.up.length ? `5 more points of ${span} on ${lbl(t.up)} (taken from every other line in proportion to its share)` : `5 fewer points of ${span} on ${lbl(t.down)} (spread over every other line in proportion to its share)`) + (from ? `, starting from ${from}` : '')
+  return { simVersion: version, seeds, wins: perSeed.filter(p => p.b > p.a).length, losses: perSeed.filter(p => p.b < p.a).length, of: perSeed.length, years, shift, perSeed, months, from }
 }
 
 // runs the missing controlled tests for the current version and saves them. offline only: never uses model time
