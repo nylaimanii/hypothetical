@@ -5,17 +5,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { findLife, listWorlds, livesFile, readIndex, readNow } from '../life/store'
 import { endOfLifeLine } from '../life/telegram'
+import { CONTINENT_NAME, continentOf } from '../life/births'
 import type { LifeRecord } from '../life/types'
 import { readAgents } from './agents'
 import { readRunIndex } from './store'
 
-// the sim's 12 regions on 6 continents (the caribbean counts as north america, the pacific islands as oceania
-// would split the region, so carib_pac goes with the americas it trades with)
-const CONTINENT: Record<string, string> = {
-  na: 'north america', carib_pac: 'north america', latam: 'south america', europe: 'europe', rus_ca: 'asia', mideast: 'asia',
-  sasia: 'asia', easia: 'asia', seasia: 'asia', nafrica: 'africa', ssa: 'africa', oceania: 'oceania',
-}
-export const continentOf = (regionId: string | undefined) => (regionId && CONTINENT[regionId]) || 'elsewhere'
+// continents are d's (src/lib/life/births.ts, by birth country; russia counts as europe), so /lives matches d's roster
+const continentName = (countryId: string | undefined) => { const c = countryId ? continentOf(countryId) : null; return c ? CONTINENT_NAME[c] : 'elsewhere' }
 
 const lower = (s: string) => s.replace(/^./, c => c.toLowerCase())
 const noEmoji = (s: string) => s.replace(/\p{Extended_Pictographic}️?/gu, '').replace(/\s+$/gm, '').trim()
@@ -64,29 +60,28 @@ export function livesSection(since: number): string[] {
   return lines.slice(0, 2)
 }
 
-// city name -> sim region, from B's baked geo layer (data/geo/cities.json, read-only)
-let cityRegions: Map<string, string> | null = null
-function cityRegion(city: string): string | undefined {
-  if (!cityRegions) {
-    cityRegions = new Map()
+// city name -> country, from B's baked geo layer (data/geo/cities.json, read-only), for a life d has not indexed yet
+let cityCountries: Map<string, string> | null = null
+function cityCountry(city: string): string | undefined {
+  if (!cityCountries) {
+    cityCountries = new Map()
     try {
-      const geo = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'data', 'geo', 'cities.json'), 'utf8')) as { cities: { name: string; regionId: string; pop: number }[] }
+      const geo = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'data', 'geo', 'cities.json'), 'utf8')) as { cities: { name: string; countryId: string; pop: number }[] }
       // the biggest city wins a shared name
-      for (const c of [...geo.cities].sort((a, b) => a.pop - b.pop)) cityRegions.set(c.name.toLowerCase(), c.regionId)
+      for (const c of [...geo.cities].sort((a, b) => a.pop - b.pop)) cityCountries.set(c.name.toLowerCase(), c.countryId)
     } catch { /* no geo yet */ }
   }
-  return cityRegions.get(city.toLowerCase())
+  return cityCountries.get(city.toLowerCase())
 }
 
 // everyone being lived right now, by continent: "africa: amara 34 lagos (meridian), ..."
 export function livingByContinent(): { continent: string; people: { name: string; age: number; city: string; agent: string | null }[] }[] {
   const groups = new Map<string, { name: string; age: number; city: string; agent: string | null }[]>()
   for (const e of readNow()) {
-    // the record is written when a life ends; mid-life, the city's region comes from B's geo table
-    const r = findLife(e.lifeId)
-    const region = r?.places[r.places.length - 1]?.regionId ?? cityRegion(e.city)
-    const c = continentOf(region)
-    const worldId = r?.worldId ?? e.lifeId.replace(/-life-\d+$/, '')
+    // the continent of the roster slot: where d's index says they were born (running lives are indexed too)
+    const worldId = e.lifeId.replace(/-life-\d+$/, '')
+    const entry = readIndex(worldId).find(x => x.lifeId === e.lifeId)
+    const c = continentName(entry?.birthplace.countryId ?? cityCountry(e.city))
     groups.set(c, [...(groups.get(c) ?? []), { name: e.name, age: Math.floor(e.age), city: e.city, agent: worldAgent(worldId) }])
   }
   const order = ['africa', 'asia', 'europe', 'north america', 'south america', 'oceania', 'elsewhere']
