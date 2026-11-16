@@ -7,7 +7,7 @@ import { latLonToVec3 } from './lib'
 import { captionFor, shotScore, type FeedKind } from '../ui/events'
 import { useCurrentFrame, useStore } from '../state/store'
 
-type Candidate = { kind: FeedKind; regionId?: string; severity: number; text: string; score: number; at: number; force?: boolean }
+type Candidate = { kind: FeedKind; regionId?: string; severity: number; text: string; score: number; at: number; force?: boolean; lat?: number; lon?: number; dist?: number }
 type Shot = {
   c: Candidate
   phase: 'fly' | 'hold' | 'out'
@@ -97,6 +97,10 @@ export default function Director() {
     if (!shotReq) return
     const f = frameRef.current
     const ev = f.newEvents.find((e) => e.regionId === shotReq.regionId)
+    if (shotReq.target === 'place' && shotReq.lat !== undefined && shotReq.lon !== undefined) {
+      offer({ kind: 'migration', severity: 0.3, text: shotReq.label ?? '', score: 99, at: performance.now() / 1000, force: true, lat: shotReq.lat, lon: shotReq.lon, dist: shotReq.dist })
+      return
+    }
     offer({
       kind: shotReq.target === 'core' ? 'decision' : (ev?.kind ?? 'migration'),
       regionId: shotReq.regionId, severity: ev?.severity ?? 0.5,
@@ -112,6 +116,8 @@ export default function Director() {
   }
 
   const targetFor = (c: Candidate): { dir: THREE.Vector3; dist: number; aim: THREE.Vector3 } => {
+    // a point on the planet (a country from the url)
+    if (c.lat !== undefined && c.lon !== undefined) return { dir: latLonToVec3(c.lat, c.lon, 1).normalize(), dist: c.dist ?? 30, aim: new THREE.Vector3() }
     if (c.kind === 'decision' || !c.regionId) {
       const az = new THREE.Vector3(camera.position.x, 0, camera.position.z)
       if (az.lengthSq() < 1e-4) az.set(0, 0, 1)

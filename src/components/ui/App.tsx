@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useRef } from 'react'
 import { isPhoneNow, usePhone } from './usePhone'
+import { loadGeo } from '../world/geo/lazy'
 import dynamic from 'next/dynamic'
 import { TICKS_PER_SECOND, useStore } from '../state/store'
 import { api, Offline } from './api'
@@ -124,6 +125,16 @@ function useUrlState() {
         if (!useStore.getState().tabs.length) useStore.getState().setTabs([useStore.getState().record.runId])
       }
       if (t !== undefined && isFinite(t)) useStore.getState().setPlayhead(t)
+      // ?place=<country>: fly to that country (iso3 code or name, any case), used by the one-life site's world button
+      const place = q.get('place')?.trim().toLowerCase()
+      if (place) {
+        // a deep link to a country came for that country: skip the intro this visit (it isn't marked seen)
+        useStore.getState().setIntro(false)
+        loadGeo().then((g) => {
+          const c = g.COUNTRY_TABLE.find((x) => x.iso3.toLowerCase() === place || x.name === place)
+          if (c) useStore.getState().requestShot({ target: 'place', lat: c.lat, lon: c.lon, dist: 30, label: c.name, force: true })
+        }).catch(() => {})
+      }
       setTimeout(() => { applying.current = false }, 50)
     }
     apply()

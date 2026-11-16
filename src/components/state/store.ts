@@ -32,7 +32,8 @@ export type Source = 'mock' | 'api' | 'live'
 // a visual effect trigger, from frame events or local injections
 export type Juice = { id: number; kind: WorldEvent['kind']; regionId?: string; severity: number; text: string; at: number }
 // a camera shot: a region or the core, asked for by the director, the feed, or the user
-export type ShotRequest = { id: number; target: 'region' | 'core'; regionId?: string; force?: boolean }
+// target 'place': fly to a point (lat/lon, optional distance), e.g. a country from ?place= in the url
+export type ShotRequest = { id: number; target: 'region' | 'core' | 'place'; regionId?: string; force?: boolean; lat?: number; lon?: number; dist?: number; label?: string }
 export type Caption = { id: number; parts: { t: string; mono?: boolean }[]; danger?: boolean }
 // what is known about a run without its frames. lazy runs load frames around the scrubber
 export type SlimMeta = { firstTick: number; lastTick: number; years: YearRow[]; decisions: DecisionRow[]; lazy: boolean }
