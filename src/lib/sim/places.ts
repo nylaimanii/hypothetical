@@ -1,4 +1,5 @@
 import { initHousing, type Housing } from './housing'
+import type { Daily } from './daily'
 // v4 / phase 1: the sim at country level. ~200 real countries carry their own age bands, mortality,
 // fertility, food, economy, unrest and compliance; regions are the sum of their countries and stay as the
 // summary layer for the governor brief. states (admin-1) and real cities roll down from their country by
@@ -33,6 +34,8 @@ export type CountryState = {
   stats: PlaceStats; hist: { tick: number; livability: number; population: number }[]
   ple: number
   housing: Housing; housingGdpPrev: number
+  daily: Daily
+  droughtSev: number; droughtUntil: number
 }
 
 export const countryPop = (c: CountryState) => sum(c.bands)
@@ -62,7 +65,7 @@ export function initCountries(regions: RegionState[]): CountryState[] {
         gdpUsd: s.gdpUsd * rs.r.gdpUsd / Math.max(sum(seeds.map(x => x.gdpUsd)), 1), kcalRatio: clamp(s.kcal / Math.max(regionKcal, 1), 0.6, 1.6), kcal: s.kcal, foodMonthsUnder: 0,
         unrestOffset: unrestC - rs.r.unrest, complianceOffset: complianceC - rs.r.compliance, unrest: unrestC, compliance: complianceC,
         unemployment: s.unemployment, happiness: clamp(s.happiness / 10), damage: 0, shock: 0,
-        stats: emptyStats(pop), hist: [], ple: 0, housing: undefined as unknown as Housing, housingGdpPrev: 0,
+        stats: emptyStats(pop), hist: [], ple: 0, housing: undefined as unknown as Housing, housingGdpPrev: 0, daily: undefined as unknown as Daily, droughtSev: 0, droughtUntil: 0,
       })
       out[out.length - 1].housing = initHousing(out[out.length - 1])
     }
@@ -152,12 +155,17 @@ export function stepCountries(w: World) {
     cs.forEach((c, i) => { c.gdpUsd = raw[i] * scale })
     void regionGdp0
     for (const c of cs) {
-      c.kcal = clamp(rs.r.foodKcalPerCapita * c.kcalRatio, 600, 4200)
+      // a country in its own drought eats less than its region (trade and aid cover ~30% of the loss, ESTIMATE);
+      // the region-wide drop already counts its share, so the rest of the region barely notices
+      const own = w.tick < c.droughtUntil ? c.droughtSev * 0.7 : 0
+      const reg = w.tick < rs.droughtUntil ? rs.droughtSev : 0
+      c.kcal = clamp(rs.r.foodKcalPerCapita * c.kcalRatio * (1 - own) / (1 - Math.min(reg, own, 0.9)), 600, 4200)
       if (c.kcal < 1800) c.foodMonthsUnder++
       else c.foodMonthsUnder = Math.max(0, c.foodMonthsUnder - 2)
       c.shock *= 0.9
       c.damage *= 0.97
-      c.unrest = clamp(rs.r.unrest + c.unrestOffset + c.shock + (c.housing?.unrest ?? 0))
+      // extreme poverty above 2026 adds unrest (ESTIMATE 0.3 per point of share)
+      c.unrest = clamp(rs.r.unrest + c.unrestOffset + c.shock + (c.housing?.unrest ?? 0) + (c.daily ? 0.3 * Math.max(0, c.daily.poverty - c.daily.pov0) : 0))
       c.compliance = clamp(rs.r.compliance + c.complianceOffset)
       // ESTIMATE unemployment: drifts with the region's growth (Okun's law, ~0.4 points per growth point) and strikes
       c.unemployment = clamp(c.unemployment + (0.4 * (0.025 - rs.growth) / 12) * 0.1 + 0.02 * rs.behavior.striking - (c.unemployment - c.seed.unemployment / 100) * 0.01, 0.01, 0.5)
@@ -204,11 +212,11 @@ export function updateCountryStats(w: World, valence: (rs: RegionState) => numbe
     const rs = w.regions.find(r => r.r.id === c.regionId)!
     const pop = countryPop(c)
     const fossilGrowth = Math.max(0, (rs.mixCap.fossil / Math.max(rs.capacityTWh, 1)) - 0.6)
-    const pm = c.seed.pm25 * (1 + 0.5 * fossilGrowth) * (1 - 0.3 * clamp(1 - rs.mixCap.fossil / Math.max(rs.capacityTWh, 1) - 0.4))
+    const pm = c.daily ? c.daily.pm25 : c.seed.pm25 * (1 + 0.5 * fossilGrowth) * (1 - 0.3 * clamp(1 - rs.mixCap.fossil / Math.max(rs.capacityTWh, 1) - 0.4))
     const dens = pop / Math.max(c.seed.areaKm2, 1)
     const growth = c.hist.length ? pop / Math.max(c.hist[c.hist.length - 1].population, 1) - 1 : 0
     c.happiness = clamp(c.seed.happiness / 10 + 0.5 * (valence(rs) - rs.valence0) - 0.3 * c.damage - 0.1 * c.shock)
-    const s = placeStats(pop, c.kcal, c.seed.homicidePer100k, c.unrest, c.ple || rs.periodLE, c.unemployment, c.housing ? c.housing.priceIdx : housingMultiple(c.seed.urban, dens, growth), pm, c.gdpUsd / Math.max(pop, 1), c.happiness)
+    const s = placeStats(pop, c.kcal, c.daily ? c.daily.homicide : c.seed.homicidePer100k, c.unrest, c.ple || rs.periodLE, c.unemployment, c.housing ? c.housing.priceIdx : housingMultiple(c.seed.urban, dens, growth), pm, c.gdpUsd / Math.max(pop, 1), c.happiness)
     const trend = trendOf(c.hist, s, w.tick)
     c.stats = { ...s, trend }
     if (w.tick % 12 === 0) { c.hist.push({ tick: w.tick, livability: s.livability, population: s.population }); if (c.hist.length > 12) c.hist.shift() }

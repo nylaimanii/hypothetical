@@ -3,6 +3,7 @@ import type { Behavior, Budget, Citizen, City, Company, CrowdState, Faction, Flo
 import { LAND, initMix, initRail } from './visuals'
 import { onEvent, type CauseInput, type CauseLink, type Story, type Trend } from './causes'
 import { initCountries, type CountryState } from './places'
+import { initDaily } from './daily'
 import { initCities, initClimate, initCountryMix, type CityState, type ClimateState } from './world-layer'
 import type { InfraDiff } from '../types-v5'
 import type { Mix } from './visuals'
@@ -194,6 +195,8 @@ export type World = {
   builtPlants: Record<string, number>
   realCities: CityState[]
   recentRepeals: { tick: number; title: string; policyKind: string }[] // last 4 years
+  causeDeaths: { air: number; water: number } // excess over 2026 rates, from daily.ts
+  skilledMigrants: number
   housingDeaths: number // excess deaths from slum and camp growth since 2026 (negative when housing improves)
   railBuilt: string[] // cross-border rail lines built since 2026 ('a|b')
   citiesHitIdx: Record<string, number>
@@ -274,12 +277,13 @@ export function initWorld(seed: number, twin: boolean): World {
     status: 'alive', wellbeingSum: 0, wellbeingN: 0, revenueShare: REVENUE_SHARE, citizens: [], crewDeaths: 0, citizenSeq: 0, citizenMeta: {},
     requirements: initRequirements(), cities: [], cityScores: {}, companies: [], factions: initFactions(), frontier: 'none', frontierState: initFrontier(),
     humanCost: { deaths: 0, famineDeaths: 0, unrestDeaths: 0, displaced: 0, approval: 0.5 }, lessonsKnown: 0, researchFocus: [], lawMeta: {}, lawsuits: {},
-    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), lawsProposed: 0, lawsRepeated: 0, lawsAmended: 0, lawsConverted: 0, lastConverted: [], lastRepeated: [], frameCursor: 0, eventSeq: 0, eventKinds: {}, topEvents: [], spaceAssets: [], flowAcc: [], causes: [], causeSeq: 0, countries: initCountries(regions), climate: undefined as unknown as ClimateState, countryMix: {}, countryMix0: {}, retiredPlants: [], builtPlants: {}, realCities: [], railBuilt: [], housingDeaths: 0, recentRepeals: [], citiesHitIdx: {}, infraAcc: [], lifeArchive: {}, lastFrameTick: 0,
+    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), lawsProposed: 0, lawsRepeated: 0, lawsAmended: 0, lawsConverted: 0, lastConverted: [], lastRepeated: [], frameCursor: 0, eventSeq: 0, eventKinds: {}, topEvents: [], spaceAssets: [], flowAcc: [], causes: [], causeSeq: 0, countries: initCountries(regions), climate: undefined as unknown as ClimateState, countryMix: {}, countryMix0: {}, retiredPlants: [], builtPlants: {}, realCities: [], railBuilt: [], housingDeaths: 0, causeDeaths: { air: 0, water: 0 }, skilledMigrants: 0, recentRepeals: [], citiesHitIdx: {}, infraAcc: [], lifeArchive: {}, lastFrameTick: 0,
   }
   initRail(world)
   world.climate = initClimate(world)
   initCountryMix(world)
   initCities(world)
+  for (const c of world.countries) c.daily = initDaily(world, c, world.regions.find(r => r.r.id === c.regionId)!)
   return world
 }
 

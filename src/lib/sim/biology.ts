@@ -136,7 +136,7 @@ export function stepDemography(w: World, fx: Record<string, LawEffects>): { birt
     // the units: this region's countries, each with its own calibrated mortality, fertility and food supply
     const cs = countriesOf(w, rs.r.id)
     const units: Unit[] = cs.length
-      ? cs.map(c => ({ bands: c.bands, tfr: c.tfr, gompertzA: c.gompertzA, infantMort: c.infantMort, kcal: c.kcal, monthsUnder: c.foodMonthsUnder, ple: c.ple, pop: () => countryPop(c), homeMort: c.housing?.mortMult ?? 1, homeTfr: c.housing?.tfrMult ?? 1 }))
+      ? cs.map(c => ({ bands: c.bands, tfr: c.tfr, gompertzA: c.gompertzA, infantMort: c.infantMort, kcal: c.kcal, monthsUnder: c.foodMonthsUnder, ple: c.ple, pop: () => countryPop(c), homeMort: (c.housing?.mortMult ?? 1) * (c.daily?.mortMult ?? 1), homeTfr: c.housing?.tfrMult ?? 1 }))
       : [{ bands: rs.bands, tfr: rs.tfr, gompertzA: rs.gompertzA, infantMort: rs.infantMort, kcal: rs.r.foodKcalPerCapita, monthsUnder: rs.foodMonthsUnder, ple: rs.periodLE, pop: () => regionPop(rs), homeMort: 1, homeTfr: 1 }]
     let rTotalDead = 0, rFamine = 0, rPandemicDead = 0, rBorn = 0, wTfr = 0, wPle = 0, wPop = 0
     units.forEach((u, ui) => {

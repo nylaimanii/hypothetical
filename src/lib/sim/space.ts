@@ -9,6 +9,7 @@
 //     https://www.planetary.org/space-policy/cost-of-apollo
 //   Artemis ~$93B through FY2025, NASA OIG IG-22-003 https://oig.nasa.gov/docs/IG-22-003.pdf
 //   values below are in 2026 dollars (~1.2x 2020).
+import launchSitesJson from '../../../data/geo/launch-sites.json'
 import type { MoonStage } from '../types'
 import { clamp, event, popWeighted, type World } from './state'
 import { onLaunchFailure } from './visuals'
@@ -86,10 +87,12 @@ export function stepSpace(w: World, spaceUsd: number, researchUsd: number): bool
   const ready = s.stageSpend >= spec.costUsd && s.stageMonths >= spec.minMonths && tech >= spec.techGate
   if (!ready) return false
   // physics check: the vehicle this tech can build must close the delta-v budget
+  const site = launchSite(w)
+  const need = spec.dvKms - (site.rotKms - CAPE_ROT)
   const dv = achievableDv(tech, spec.payloadFrac, spec.nStages)
-  if (dv < spec.dvKms) {
+  if (dv < need) {
     s.cooldownUntil = w.tick + 12
-    event(w, { kind: 'launch', text: `${spec.label} design review failed: vehicle reaches ${dv.toFixed(1)} of ${spec.dvKms.toFixed(1)} km/s needed`, severity: 0.2 })
+    event(w, { kind: 'launch', text: `${spec.label} design review failed: vehicle reaches ${dv.toFixed(1)} of ${need.toFixed(1)} km/s needed from ${site.name}`, severity: 0.2 })
     return false
   }
   // test flight. ESTIMATE: failure odds fall with research (up to half) and rise when tech barely clears the gate
@@ -104,12 +107,12 @@ export function stepSpace(w: World, spaceUsd: number, researchUsd: number): bool
       s.stageSpend *= 0.7
       s.cooldownUntil = w.tick + 24
       for (const r of w.regions) r.shock += 0.15
-      event(w, { kind: 'launch', text: `crewed lunar landing failed, all ${crew} crew killed`, severity: 0.9 })
+      event(w, { kind: 'launch', text: `crewed lunar landing failed, all ${crew} crew killed (launched from ${site.name})`, severity: 0.9 })
       onLaunchFailure(w, 'moon', 'lost lunar lander')
     } else {
       s.stageSpend *= 0.8
       s.cooldownUntil = w.tick + 6
-      event(w, { kind: 'launch', text: `${spec.label} test flight failed`, severity: 0.4 })
+      event(w, { kind: 'launch', text: `${spec.label} test flight failed at ${site.name}`, severity: 0.4 })
     }
     return false
   }
@@ -117,9 +120,26 @@ export function stepSpace(w: World, spaceUsd: number, researchUsd: number): bool
   s.stageSpend = 0
   s.stageMonths = 0
   if (spec.stage === 'crewed_landing') {
-    event(w, { kind: 'launch', text: 'crewed landing on the moon succeeded, the crew is home safe [moon stage: crewed_landing]', severity: 1 })
+    event(w, { kind: 'launch', text: `crewed landing on the moon succeeded, launched from ${site.name}, the crew is home safe [moon stage: crewed_landing]`, severity: 1 })
     return true
   }
-  event(w, { kind: 'launch', text: `${spec.label} flight test succeeded [moon stage: ${spec.stage}]`, severity: 0.5 })
+  event(w, { kind: 'launch', text: `${spec.label} flight test from ${site.name} succeeded [moon stage: ${spec.stage}]`, severity: 0.5 })
   return false
 }
+
+// ---------- real launch sites ----------
+// the program flies from the best working site: real pads (data/geo/launch-sites.json), ranked by the free speed
+// earth's rotation gives an eastward launch (465 m/s x cos latitude) and by how established the site is; a site in
+// a country in revolt or badly damaged is skipped
+type Site = { id: string; name: string; countryId: string; lat: number; lon: number }
+const SITES = (launchSitesJson as unknown as { sites: Site[] }).sites
+// ESTIMATE: share of world orbital launches 2020-2024 (heavy pads get the first missions)
+const ESTABLISHED: Record<string, number> = { cape_canaveral: 1, starbase: 0.8, vandenberg: 0.6, jiuquan: 0.6, wenchang: 0.6, xichang: 0.5, baikonur: 0.5, kourou: 0.5, taiyuan: 0.4, mahia: 0.3, sriharikota: 0.3, plesetsk: 0.3, vostochny: 0.3, tanegashima: 0.2 }
+export function launchSite(w: World): Site & { rotKms: number } {
+  const ok = (s: Site) => { const c = w.countries.find(k => k.id === s.countryId); if (!c) return true; const rs = w.regions.find(r => r.r.id === c.regionId); return !(rs?.inRevolt || rs?.seceded) && c.damage < 0.5 }
+  const ranked = SITES.filter(ok).map(s => ({ s, score: Math.cos(s.lat * Math.PI / 180) + (ESTABLISHED[s.id] ?? 0.05) })).sort((a, b) => b.score - a.score)
+  const s = (ranked[0] ?? { s: SITES[0] }).s
+  return { ...s, rotKms: 0.465 * Math.cos(s.lat * Math.PI / 180) }
+}
+// required delta-v is quoted for a cape canaveral launch (28.5 N); other sites gain or lose the rotation difference
+const CAPE_ROT = 0.465 * Math.cos(28.5 * Math.PI / 180)

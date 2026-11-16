@@ -2,6 +2,8 @@
 // the last frame); every other frame carries `citizenDelta` with just what changed. citizensAt() rebuilds the
 // full roster for any tick so the ui and the api never do this math themselves.
 import type { Activity, Citizen, LifeEvent, RunRecord } from '../types'
+import { frameDate, holidayOn } from './calendar'
+import { weekendOf } from './daily'
 
 export const KEYFRAME_EVERY = 60
 export const FRAME_LIFE_EVENTS = 4
@@ -96,7 +98,16 @@ export function requirementsAt(record: Pick<RunRecord, 'frames'>, tick: number):
 
 // a pip's typical day this year, derived only from its own fields (so frames do not store it):
 // age, workplace, employment, behavior, belief, personality. change points only; same function the sim uses.
-export function dayPlanOf(c: Citizen, tick: number, nightlife = 0.3): { hour: number; activity: Activity }[] {
+// the day a frame's plan stands for (the 15th of the month): weekday, the country's weekend, any real holiday, work hours.
+// pure; the ui passes dayContextOf(countryId, tick) as dayPlanOf's 4th argument
+export type DayContext = { weekday: number; weekend: number[]; holiday?: string; holidayKind?: string; workHoursWeek?: number }
+export function dayContextOf(countryId: string | undefined, tick: number, workHoursWeek?: number): DayContext {
+  const date = frameDate(tick)
+  const h = holidayOn(countryId, date)
+  return { weekday: date.getUTCDay(), weekend: weekendOf(countryId), ...(h ? { holiday: h.name, holidayKind: h.kind } : {}), ...(workHoursWeek ? { workHoursWeek } : {}) }
+}
+
+export function dayPlanOf(c: Citizen, tick: number, nightlife = 0.3, day?: DayContext): { hour: number; activity: Activity }[] {
   const u = (salt: string) => { let h = 2166136261; const s = salt; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); let a = (c.personalitySeed ^ h) >>> 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
   const plan: { hour: number; activity: Activity }[] = []
   const at = (hour: number, activity: Activity) => { if (!plan.length || plan[plan.length - 1].activity !== activity) plan.push({ hour, activity }) }
@@ -104,6 +115,24 @@ export function dayPlanOf(c: Citizen, tick: number, nightlife = 0.3): { hour: nu
   const crisis: Activity = c.behavior === 'striking' ? 'striking' : c.behavior === 'protesting' || c.behavior === 'rioting' ? 'protesting' : c.behavior === 'migrating' || c.behavior === 'moving_to_new_city' ? 'moving' : 'working'
   const night = (wp === 'clinic' || wp === 'power_plant' || wp === 'factory') && u('night') < 0.3
   const prays = c.belief === 'religious' && (c.behavior === 'praying' || u('devout') < 0.4)
+  // worship on the real days: friday midday prayers (muslim), saturday shabbat (jewish), sunday service (christian),
+  // temple on festival days (hindu, buddhist). the faith comes from the country's Pew 2020 mix
+  const faith = (c as Citizen & { faith?: string }).faith
+  const wd = day?.weekday
+  const worshipToday = c.belief === 'religious' && wd !== undefined && ((faith === 'muslim' && wd === 5) || (faith === 'jewish' && wd === 6) || (faith === 'christian' && wd === 0) || (!!day?.holiday && day.holidayKind === faith))
+  const offDay = !!day && (day.weekend.includes(wd!) || !!day.holiday) && crisis === 'working'
+  if (offDay && c.age >= 6) {
+    // a day off: sleep in, worship, family and friends, celebrate on holidays
+    at(0, 'sleeping'); at(8, 'eating')
+    if (worshipToday && faith !== 'muslim') at(9, 'praying')
+    at(11, day!.holiday ? 'celebrating' : u(`shop${tick}`) < 0.4 ? 'shopping' : 'socializing')
+    if (worshipToday && faith === 'muslim') at(13, 'praying')
+    at(14, 'eating'); at(15, day!.holiday ? 'celebrating' : 'resting'); at(19, 'eating')
+    if (c.age >= 18 && c.age < 35 && u(`outoff${tick}`) < nightlife * 1.5) { at(21, 'socializing'); at(1, 'sleeping') } else at(22, 'sleeping')
+    return plan.sort((a, b) => a.hour - b.hour)
+  }
+  // weekly hours set when the workday ends (ILO: ~45-48 h in low income countries, ~33-37 h in rich ones)
+  const endWork = day?.workHoursWeek ? Math.round(8 + day.workHoursWeek / 5 + 1) : 17
   if (c.age < 6) { at(0, 'sleeping'); at(7, 'eating'); at(8, 'socializing'); at(12, 'eating'); at(13, 'sleeping'); at(15, 'socializing'); at(18, 'eating'); at(19, 'sleeping'); return plan }
   if (c.age < 18) { at(0, 'sleeping'); at(6, 'eating'); at(7, 'commuting'); at(8, 'school'); at(15, 'commuting'); at(16, c.behavior === 'protesting' ? 'protesting' : 'socializing'); at(19, 'eating'); at(21, 'resting'); at(22, 'sleeping'); return plan }
   if (!employed) {
@@ -115,9 +144,9 @@ export function dayPlanOf(c: Citizen, tick: number, nightlife = 0.3): { hour: nu
   }
   if (wp === 'farm') { at(0, 'sleeping'); at(4, 'eating'); at(5, crisis); at(11, 'eating'); at(12, 'resting'); at(15, crisis); at(19, 'eating'); at(20, prays ? 'praying' : 'resting'); at(21, 'sleeping'); return plan }
   if (night) { at(0, crisis); at(7, 'commuting'); at(8, 'sleeping'); at(15, 'eating'); at(16, c.behavior === 'hoarding' ? 'shopping' : 'resting'); at(21, 'commuting'); at(22, crisis); return plan }
-  at(0, 'sleeping'); at(6, 'eating'); at(7, 'commuting'); at(8, crisis); at(12, 'eating'); at(13, crisis); at(17, 'commuting')
-  at(18, c.behavior === 'hoarding' || c.behavior === 'panic_buying' ? 'shopping' : 'eating')
-  at(19, prays ? 'praying' : c.behavior === 'celebrating' ? 'celebrating' : 'resting')
+  at(0, 'sleeping'); at(6, 'eating'); at(7, 'commuting'); at(8, crisis); at(12, worshipToday && faith === 'muslim' ? 'praying' : 'eating'); at(13, crisis); at(endWork, 'commuting')
+  at(endWork + 1, c.behavior === 'hoarding' || c.behavior === 'panic_buying' ? 'shopping' : 'eating')
+  at(Math.max(19, endWork + 2), prays ? 'praying' : c.behavior === 'celebrating' ? 'celebrating' : 'resting')
   if (c.age < 35 && u(`out${Math.floor(tick / 12)}`) < nightlife) { at(21, 'socializing'); at(1, 'sleeping') } else at(22, 'sleeping')
   return plan.sort((a, b) => a.hour - b.hour)
 }

@@ -73,7 +73,12 @@ export function applyEvent(w: World, rs: RegionState, kind: WorldEvent['kind'], 
       return event(w, { regionId: rs.r.id, kind: injected ? 'injected' : 'disaster', text: `${label}, ${fmt(dead)} dead`, severity: sev })
     }
     case 'famine': {
-      rs.droughtSev = Math.max(rs.droughtSev * (w.tick < rs.droughtUntil ? 1 : 0), 0.3 * sev)
+      // a drought in one country cuts that country's harvest; the region loses that country's share of its farmland
+      const hit = countryId ? w.countries.find(k => k.id === countryId) : undefined
+      const farm = (k: { seed: { farmlandShare: number; areaKm2: number } }) => k.seed.farmlandShare * k.seed.areaKm2
+      const share = hit ? farm(hit) / Math.max(w.countries.filter(k => k.regionId === rs.r.id).reduce((a, k) => a + farm(k), 0), 1) : 1
+      if (hit) { hit.droughtSev = Math.max(hit.droughtSev * (w.tick < hit.droughtUntil ? 1 : 0), 0.3 * sev); hit.droughtUntil = w.tick + 12 }
+      rs.droughtSev = Math.max(rs.droughtSev * (w.tick < rs.droughtUntil ? 1 : 0), 0.3 * sev * share)
       rs.droughtUntil = w.tick + 12
       rs.shock += 0.05 * sev
       return event(w, { regionId: rs.r.id, kind: injected ? 'injected' : 'disaster', text: label, severity: sev })

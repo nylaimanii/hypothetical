@@ -3,6 +3,7 @@
 // day plan. power plants, rail and cities change over time and are recorded as diffs from the real 2026
 // baseline. states and cities get yearly stats, stories and trends in a compact lazy file per run.
 import { homeOf } from './housing'
+import { faithOf, type Faith } from './daily'
 import { addLifeEvent } from './behavior'
 import type { HomeKind } from '../types-v5'
 import fs from 'node:fs'
@@ -296,6 +297,9 @@ export function localLife(w: World, c: Citizen) {
     for (const [k, v] of Object.entries(share)) { u -= v; if (u <= 0) { mode = k; break } }
     commuteMode = (c.age < 18 && (mode === 'car' || mode === 'motorbike')) ? 'transit' : mode as CommuteMode
   }
+  // faith: stable per pip, from the country's Pew 2020 mix (sets worship days in the day plan)
+  const cf = c as Citizen & { faith?: Faith }
+  if (!cf.faith || cf.faith === 'unaffiliated' && c.belief !== 'secular') cf.faith = faithOf(cc.countryId, c.belief, unit(c.personalitySeed, 'faith'))
   // home: stable per pip (drawn once from the country's tenure mix for its income band), moved by evictions
   const cx = c as Citizen & { home?: HomeKind; rentShare?: number }
   if (country?.housing) {
