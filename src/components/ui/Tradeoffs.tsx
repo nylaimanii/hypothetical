@@ -1,7 +1,8 @@
 'use client'
 // the tradeoff map: every world that recorded its tradeoffs (b's summary.tradeoffs, sim 5.10.1+), lifespan across,
 // population up, freedom as the fill (one hue, light = less free) and off-world progress as the size. the frontier
-// (pareto.ts) is the worlds nothing beats on all four; it is outlined and joined. one sim version at a time: worlds
+// (pareto.ts) is the worlds nothing beats on all four; it is outlined, not joined: it has four axes, so a line on two
+// of them would suggest a curve that is not there. one sim version at a time: worlds
 // from different sims ran different rules, so a frontier across them would mix models
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -15,6 +16,9 @@ const W = 640, H = 380, PAD = { l: 56, r: 16, t: 14, b: 40 }
 const RAMP = ['#DCE4F5', '#B4C4EA', '#8AA2DC', '#5F7FC9', '#3F5FA8', '#2A447E']
 const fill = (f: number) => RAMP[Math.max(0, Math.min(RAMP.length - 1, Math.floor(f * RAMP.length)))]
 const radius = (o: number) => 4 + 10 * Math.sqrt(Math.max(0, Math.min(1, o)))
+
+const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n)
+const usable = (t: Tradeoffs) => finite(t.lifespan) && t.lifespan > 0 && finite(t.population) && t.population > 0 && finite(t.freedom) && finite(t.offWorld)
 
 function ticks(lo: number, hi: number, n = 5) {
   const step = (hi - lo) / n
@@ -32,7 +36,10 @@ export default function TradeoffsPage() {
   }, [])
   const versions = useMemo(() => [...new Set((all ?? []).filter((w) => w.tradeoffs).map((w) => w.simVersion ?? 'unrecorded'))], [all])
   const v = version ?? versions[0] ?? null
-  const pts = useMemo(() => (all ?? []).filter((w): w is Plotted => !!w.tradeoffs && (w.simVersion ?? 'unrecorded') === v), [all, v])
+  const mine = useMemo(() => (all ?? []).filter((w): w is Plotted => !!w.tradeoffs && (w.simVersion ?? 'unrecorded') === v), [all, v])
+  // a world whose record broke (5.10.7's housing bug left no final population) has nothing true to plot: counted, not drawn
+  const pts = useMemo(() => mine.filter((w) => usable(w.tradeoffs)), [mine])
+  const broken = mine.length - pts.length
   const missing = (all ?? []).filter((w) => !w.tradeoffs).length
   const { front, beatenBy } = useMemo(() => paretoFront(pts), [pts])
 
@@ -41,23 +48,22 @@ export default function TradeoffsPage() {
   const [x0, x1] = pad(Math.min(...xs), Math.max(...xs)), [y0, y1] = pad(Math.min(...ys), Math.max(...ys))
   const sx = (x: number) => PAD.l + ((x - x0) / (x1 - x0)) * (W - PAD.l - PAD.r)
   const sy = (y: number) => H - PAD.b - ((y - y0) / (y1 - y0)) * (H - PAD.t - PAD.b)
-  const frontPts = pts.filter((p) => front.has(p.runId)).sort((a, b) => a.tradeoffs.lifespan - b.tradeoffs.lifespan)
 
   return (
     <main className="page-scroll min-h-screen bg-bone px-4 py-6 text-ink sm:px-8">
       <div className="mx-auto max-w-4xl">
         <Link href="/" className="text-[12px] text-ink/55 underline decoration-ink/20 underline-offset-2">back to the world</Link>
         <h1 className="mt-2 font-display text-[28px] leading-tight">the tradeoff map</h1>
-        <p className="mt-1 max-w-2xl text-[13px] text-ink/65">every world at its end: how long people lived, how many there were, how free they were, and how far off earth they got. outlined worlds are the frontier: no other world beat them on all four at once.</p>
+        <p className="mt-1 max-w-2xl text-[13px] text-ink/65">every world at its end: how long people lived, how many there were, how free they were, and how far off earth they got. outlined worlds are the frontier: no other world beat them on all four at once, so a world can be on it for one axis this chart does not place, like off-world reach.</p>
         {failed && <p className="mt-6 text-[13px] text-ink/60">the world runner is offline, so there is nothing to map</p>}
         {!failed && !all && <p className="mt-6 text-[13px] text-ink/60">loading worlds</p>}
-        {all && !pts.length && <p className="mt-6 text-[13px] text-ink/60">no world has recorded its tradeoffs yet (the sim records them from version 5.10.1)</p>}
+        {all && !pts.length && !broken && <p className="mt-6 text-[13px] text-ink/60">no world has recorded its tradeoffs yet (the sim records them from version 5.10.1)</p>}
         {pts.length > 0 && (
           <>
             <div className="mt-4 flex flex-wrap items-center gap-2 text-[12px]">
               <span className="text-ink/55">sim</span>
               {versions.map((x) => <button key={x} onClick={() => setVersion(x)} className={`rounded-full px-2.5 py-0.5 font-mono ${x === v ? 'bg-ink text-bone' : 'border border-ink/20 hover:bg-ink/5'}`}>{x}</button>)}
-              <span className="text-ink/50"><Num>{pts.length}</Num> worlds{missing > 0 && <>; <Num>{missing}</Num> older worlds ran before the sim measured freedom and are not shown</>}</span>
+              <span className="text-ink/50"><Num>{pts.length}</Num> worlds{missing > 0 && <>; <Num>{missing}</Num> older worlds ran before the sim measured freedom and are not shown</>}{broken > 0 && <>; <Num>{broken}</Num> more ended without a final population (a sim bug fixed in 5.10.9) and are not shown</>}</span>
             </div>
             <div className="relative mt-3">
               <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="worlds by lifespan and population">
@@ -65,7 +71,6 @@ export default function TradeoffsPage() {
                 {ticks(y0, y1).map((t) => <g key={`y${t}`}><line x1={PAD.l} x2={W - PAD.r} y1={sy(t)} y2={sy(t)} stroke="var(--ink)" strokeOpacity={0.07} /><text x={PAD.l - 6} y={sy(t) + 3} textAnchor="end" className="fill-ink/50 font-mono text-[10px]">{fmt.people(t)}</text></g>)}
                 <text x={(PAD.l + W - PAD.r) / 2} y={H - 6} textAnchor="middle" className="fill-ink/60 text-[11px]">life expectancy at the end (years)</text>
                 <text x={12} y={(PAD.t + H - PAD.b) / 2} textAnchor="middle" transform={`rotate(-90 12 ${(PAD.t + H - PAD.b) / 2})`} className="fill-ink/60 text-[11px]">people alive at the end</text>
-                {frontPts.length > 1 && <polyline points={frontPts.map((p) => `${sx(p.tradeoffs.lifespan)},${sy(p.tradeoffs.population)}`).join(' ')} fill="none" stroke="var(--ink)" strokeOpacity={0.35} strokeWidth={1.5} strokeDasharray="4 3" />}
                 {pts.map((p) => (
                   <circle key={p.runId} cx={sx(p.tradeoffs.lifespan)} cy={sy(p.tradeoffs.population)} r={radius(p.tradeoffs.offWorld)}
                     fill={fill(p.tradeoffs.freedom)} stroke={p.status === 'destroyed' ? 'var(--ember)' : front.has(p.runId) ? 'var(--ink)' : 'var(--bone)'} strokeWidth={front.has(p.runId) || p.status === 'destroyed' ? 2 : 1.5}
