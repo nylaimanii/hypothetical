@@ -19,7 +19,8 @@
     "morning": "tsx scripts/morning.ts",
     "consistency": "tsx scripts/consistency.ts",
     "explain-gaps": "tsx scripts/explain-gaps.ts",
-    "hooks:install": "sh scripts/hooks/install.sh"
+    "hooks:install": "sh scripts/hooks/install.sh",
+    "controls": "tsx scripts/controls.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",

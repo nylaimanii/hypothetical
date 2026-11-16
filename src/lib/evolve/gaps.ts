@@ -94,6 +94,6 @@ export function pairsToReplay(top = 3): [LeaderboardEntry, LeaderboardEntry][] {
 export function gapFor(lb: LeaderboardEntry[], i: number, gaps = readGaps()) {
   const a = lb[i], b = lb[i + 1]
   const g = b ? gaps[gapKey(a.candidateId, b.candidateId)] : undefined
-  if (g) return { method: 'replay' as const, vs: g.lowerRun, seed: g.seed, gap: g.gap, decisive: g.reasons.map(r => r.text), text: g.text }
+  if (g) return { method: 'replay' as const, vs: g.lowerRun, seed: g.seed, gap: g.gap, decisive: g.reasons.map(r => r.text), reasons: g.reasons.map(r => ({ text: r.text, tick: r.tick, share: r.share, run: g.higherRun })), text: g.text }
   return a.explainGap ? { method: 'pattern' as const, ...a.explainGap, text: `${a.explainGap.text} (from comparing their decisions; not yet tested by replay)` } : null
 }

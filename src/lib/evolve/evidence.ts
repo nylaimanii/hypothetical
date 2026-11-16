@@ -184,7 +184,10 @@ export function realBaseline(rec: Pick<RunRecord, 'frames'>, atYear?: number): R
 }
 
 // ---------- why one world beat the next ----------
-export type GapExplanation = { vs: string; decisive: string[]; consequence: string | null; text: string }
+export type GapExplanation = { vs: string; decisive: string[]; consequence: string | null; text: string; reasons?: GapReason[] }
+// one decisive decision, for a clickable list: tick and run only where the difference has a real moment (a law passed
+// in a given month, a replayed decision), never for a budget average over the whole run
+export type GapReason = { text: string; tick?: number; share?: number; run?: string }
 const pct = (x: number) => `${Math.round(x * 100)}%`
 const words = (s: string) => s.replace(/[_-]+/g, ' ').trim()
 const an = (s: string) => `${/^[aeiou]/i.test(s) ? 'an' : 'a'} ${s}`
@@ -208,7 +211,7 @@ export function explainGap(a: { name: string; record: RunRecord; features?: RunF
   // weigh each difference by how much the cross-world recipe says that kind of decision matters
   const steps = readSteps()
   const effect = new Map([...(steps?.helped ?? []), ...(steps?.hurt ?? [])].map(s => [s.id, Math.abs(s.effect)]))
-  const cands: { w: number; text: string }[] = []
+  const cands: { w: number; text: string; tick?: number; run?: string }[] = []
   for (const k of Object.keys(fa.budget) as (keyof RunFeatures['budget'])[]) {
     const d = fa.budget[k] - fb.budget[k]
     if (Math.abs(d) < 0.03) continue
@@ -219,15 +222,17 @@ export function explainGap(a: { name: string; record: RunRecord; features?: RunF
   for (const k of kinds) {
     const ta = fa.lawFirstTick[k], tb = fb.lawFirstTick[k]
     const w = 0.04 + (effect.get(`law-${k}`) ?? 0) + (effect.get(`law-early-${k}`) ?? 0)
-    if (ta !== undefined && tb === undefined) cands.push({ w, text: `${a.name} passed ${an(words(k))} law in ${yearOfTick(ta)}, ${b.name} never did` })
-    else if (tb !== undefined && ta === undefined) cands.push({ w, text: `${b.name} passed ${an(words(k))} law in ${yearOfTick(tb)}, ${a.name} never did` })
-    else if (ta !== undefined && tb !== undefined && Math.abs(ta - tb) >= 60) cands.push({ w: w * 0.6, text: `${ta < tb ? a.name : b.name} passed ${an(words(k))} law in ${yearOfTick(Math.min(ta, tb))}, ${Math.round(Math.abs(ta - tb) / 12)} years before ${ta < tb ? b.name : a.name}` })
+    if (ta !== undefined && tb === undefined) cands.push({ w, tick: ta, run: a.record.runId, text: `${a.name} passed ${an(words(k))} law in ${yearOfTick(ta)}, ${b.name} never did` })
+    else if (tb !== undefined && ta === undefined) cands.push({ w, tick: tb, run: b.record.runId, text: `${b.name} passed ${an(words(k))} law in ${yearOfTick(tb)}, ${a.name} never did` })
+    else if (ta !== undefined && tb !== undefined && Math.abs(ta - tb) >= 60) cands.push({ w: w * 0.6, tick: Math.min(ta, tb), run: ta < tb ? a.record.runId : b.record.runId, text: `${ta < tb ? a.name : b.name} passed ${an(words(k))} law in ${yearOfTick(Math.min(ta, tb))}, ${Math.round(Math.abs(ta - tb) / 12)} years before ${ta < tb ? b.name : a.name}` })
   }
-  const decisive = cands.sort((x, y) => y.w - x.w).slice(0, 3).map(c => c.text)
+  const top = cands.sort((x, y) => y.w - x.w).slice(0, 3)
+  const decisive = top.map(c => c.text)
+  const reasons: GapReason[] = top.map(c => c.tick !== undefined ? { text: c.text, tick: c.tick, run: c.run } : { text: c.text })
   const loss = worstLoss(b.record), lossA = worstLoss(a.record)
   const consequence = loss && (!lossA || lossA.regions < loss.regions) ? `${b.name} lost ${loss.regions} region${loss.regions > 1 ? 's' : ''} to ${loss.kind} by ${yearOfTick(loss.by)}` : null
   const body = decisive.length ? list(decisive) : `their decisions were close (no budget line more than 3 points apart, the same laws)`
-  return { vs: b.record.runId, decisive, consequence, text: `${body}${consequence ? `, and ${consequence}` : ''}.` }
+  return { vs: b.record.runId, decisive, reasons, consequence, text: `${body}${consequence ? `, and ${consequence}` : ''}.` }
 }
 
 // ---------- per-world evidence index (data/runs/evidence.json) ----------

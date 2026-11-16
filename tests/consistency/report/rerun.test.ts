@@ -56,3 +56,18 @@ for (const f of requests) {
     if (req.sim!.source !== rec!.simVersion) assert.match(req.sim!.text ?? '', /comes from changes to the sim/, `the rerun ${runId} ran on sim ${rec!.simVersion} and its source on ${req.sim!.source ?? 'an unrecorded version'}, but it never said so`)
   })
 }
+
+// a control is the source world again, unchanged, on the rerun's sim: same seed, agent and constitution, no changed
+// assumptions, and the sim it says. otherwise the clean pair would differ by more than the change
+const controls = (() => { try { return JSON.parse(fs.readFileSync(path.join(process.cwd(), 'data', 'controls.json'), 'utf8')) as Record<string, { runId: string; source: string; sim: string }> } catch { return {} } })()
+for (const c of Object.values(controls)) {
+  const rec = loadRecord(c.runId) as (ReturnType<typeof loadRecord> & { simVersion?: string; live?: boolean; assumptions?: { overridden?: Record<string, number> } }) | null
+  const src = loadRecord(c.source)
+  test(`the control ${c.runId} is ${c.source} unchanged on sim ${c.sim}`, { skip: rec?.simVersion && src ? false : `${c.runId} has not written its record yet` }, () => {
+    assert.equal(rec!.seed, src!.seed, `the control ${c.runId} ran on seed ${rec!.seed}, its source ${c.source} on ${src!.seed}`)
+    assert.equal(rec!.agentId, src!.agentId, `the control ${c.runId} was governed by ${rec!.agentId}, its source by ${src!.agentId}`)
+    assert.equal(rec!.constitution, src!.constitution, `the control ${c.runId} ran with a different constitution from its source ${c.source}`)
+    assert.deepEqual(rec!.assumptions?.overridden ?? {}, {}, `the control ${c.runId} changed assumptions: ${JSON.stringify(rec!.assumptions?.overridden)}`)
+    assert.equal(rec!.simVersion, c.sim, `the control ${c.runId} says sim ${c.sim}, but its record says ${rec!.simVersion}`)
+  })
+}
