@@ -4,6 +4,7 @@
 import type { EnvYear, LifeRecord, MonthSnap } from '@/lib/life/types'
 import type { Where } from './plan'
 import type { Present } from './day'
+import type { Occasion } from '@/lib/life/occasions'
 import { ageYears, endTick, firstName, eventsInYear, tickOfYear } from '@/lib/life/facts'
 
 const PLACE: Record<string, string> = { home: 'home', clinic: 'the clinic', school: 'school', market: 'the market', park: 'the park', square: 'the square', shrine: 'the prayer hall', office: 'the office', lab: 'the lab', factory: 'the factory', farm: 'the fields', construction: 'the building site', power_plant: 'the power plant', launch_site: 'the launch site' }
@@ -15,6 +16,7 @@ export type NarrateCtx = {
   once: (key: string, scope: string) => boolean // a clause is said in one scene a day (scope: the walk or stop it belongs to)
   where: Where; hour: number; family: Present[]; kin: Present[]; carrierId?: string | null; neighbor?: string; exactAge?: number; presentAt?: (kinId: string, lotId: number) => boolean; rain: boolean; tempC: number; canBus: boolean; busFareShare: number
   she: string; her: string // pronouns from the record's sex
+  occasion?: Occasion | null // today's first meeting, birth or funeral (src/lib/life/occasions.ts)
 }
 
 export function narrate(c: NarrateCtx): string {
@@ -48,12 +50,21 @@ export function narrate(c: NarrateCtx): string {
 
   // ---- what she is doing ----
   let doing: string
+  // an occasion, while she is at it: who it is about and who is there, by name, from the record
+  const o = c.occasion
+  const atOcc = o && !w.moving && w.stop.hour === o.start && c.hour >= o.start && c.hour < o.end
+  const named = (id: string) => c.kin.find(k => k.id === id)?.name
+  const others = o ? o.who.filter(id => id !== o.about && (c.presentAt?.(id, w.stop.lot.id) ?? true)).map(named).filter(Boolean) as string[] : []
+  const with_ = others.length ? `, with ${others.slice(0, 3).join(others.length > 2 ? ', ' : ' and ').replace(/, ([^,]*)$/, ' and $1')}` : ''
   const visiting = w.stop.at === 'visit'
   const mom = c.kin.find(k => k.relation === 'mother')
   const sibs = c.kin.filter(k => k.relation === 'sibling')
   // only the family who are actually in that house right now are named
   const there = c.kin.filter(k => k.relation === 'sibling' && c.presentAt?.(k.id, w.stop.lot.id))
-  if (visiting && !w.moving) doing = `at ${mom ? `${her} mom` : sibs[0]?.name ?? 'the family'}'s for the afternoon${there.length ? `, ${there.map(s => s.name).slice(0, 2).join(' and ')} ${there.length > 1 ? 'are' : 'is'} there too` : ''}`
+  if (atOcc && o!.kind === 'met') doing = `at ${place}, talking with ${named(o!.about) ?? 'someone new'}`
+  else if (atOcc && o!.kind === 'birth') doing = `at the clinic. ${named(o!.about) ?? 'the baby'} is born today${with_}`
+  else if (atOcc && o!.kind === 'funeral') doing = `at the funeral for ${o!.text.split('the funeral for ')[1] ?? 'the family'}${with_}`
+  else if (visiting && !w.moving) doing = `at ${mom ? `${her} mom` : sibs[0]?.name ?? 'the family'}'s for the afternoon${there.length ? `, ${there.map(s => s.name).slice(0, 2).join(' and ')} ${there.length > 1 ? 'are' : 'is'} there too` : ''}`
   else if (w.leg?.kind === 'wait') doing = `waiting for the bus to ${PLACE[w.next?.lot.kind ?? ''] ?? 'work'}`
   else if (w.onBus) doing = `on the bus to ${PLACE[w.next?.lot.kind ?? ''] ?? 'work'}`
   else if (w.leg && w.moving && w.next) {

@@ -3,6 +3,8 @@
 import type { Kin, LifeActivity, LifeRecord, MonthSnap, Workplace } from '@/lib/life/types'
 import type { Layout, Lot, V2 } from '@/components/world/city/layout'
 import { pathBetween } from '@/components/world/city/layout'
+import { occasionsOf } from '@/lib/life/occasions'
+import { captionOf } from '@/lib/life/facts'
 
 export const DAYS_PER_TICK = 30.4375
 export const SPEEDS = { day: 1, year: 365.25, decade: 3652.5 } as const
@@ -123,10 +125,14 @@ export function heightShare(age: number): number {
 export const grayShare = (age: number) => Math.max(0, Math.min(1, (age - 40) / 35))
 
 // the moments that pause the clock: their own milestones, births and deaths in the family, their death
-export type Moment = { tick: number; caption: string; kind: 'milestone' | 'family' | 'world' | 'death' | 'birth'; emotion?: string; lesson?: string; move?: boolean }
+// at: the moment (days since birth) it shows, when it is staged as an occasion: the caption comes up as the meeting,
+// the birth or the funeral begins on screen, not at midnight on the first of the month
+export type Moment = { tick: number; caption: string; kind: 'milestone' | 'family' | 'world' | 'death' | 'birth'; emotion?: string; lesson?: string; move?: boolean; at?: number }
+export const momentAt = (m: Moment) => m.at ?? m.tick * DAYS_PER_TICK
 export function momentsOf(r: LifeRecord): Moment[] {
   const out: Moment[] = []
-  for (const m of r.milestones) out.push({ tick: m.tick, caption: m.caption, kind: 'milestone', lesson: m.lessonApplied ?? undefined, move: m.kind === 'move' })
+  const occ = occasionsOf(r)
+  for (const m of r.milestones) out.push({ tick: m.tick, caption: captionOf(r, m), kind: 'milestone', lesson: m.lessonApplied ?? undefined, move: m.kind === 'move' })
   for (const e of r.events) {
     const year = yearOf(e.tick)
     if (e.kind === 'family' && e.severity >= 0.5) out.push({ tick: e.tick, caption: `${year} · ${e.text}`, kind: 'family', emotion: e.emotion })
@@ -135,5 +141,15 @@ export function momentsOf(r: LifeRecord): Moment[] {
   }
   out.sort((a, b) => a.tick - b.tick)
   // one pause per month at most, the milestone wins
-  return out.filter((m, i) => i === 0 || m.tick !== out[i - 1].tick || m.kind === 'milestone')
+  const kept = out.filter((m, i) => i === 0 || m.tick !== out[i - 1].tick || m.kind === 'milestone')
+  // each occasion's month: its moment shows when the occasion starts (the love milestone, the birth, the death),
+  // and an occasion with no moment of its own gets one
+  for (const o of occ) {
+    const at = o.day + (o.start + 0.15) / 24
+    const fit = (m: Moment) => m.tick === o.tick && (o.kind === 'met' ? m.kind === 'milestone' || /partner|met /.test(m.caption) : m.kind === 'family')
+    const m = kept.find(fit)
+    if (m) m.at = at
+    else kept.push({ tick: o.tick, caption: o.text, kind: 'family', emotion: o.kind === 'funeral' ? 'grief' : 'joy', at })
+  }
+  return kept.sort((a, b) => momentAt(a) - momentAt(b))
 }

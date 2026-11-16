@@ -1,8 +1,11 @@
 import type { Metadata } from 'next'
+import fs from 'node:fs'
+import path from 'node:path'
 import { findLife, listWorlds, readIndex } from '@/lib/life/store'
 import { placeInfo } from '@/lib/life/place'
 import type { LifeSummary } from '@/lib/life/types'
 import LiveView, { type LifeLink } from '../../components/LiveView'
+import { switchView } from '@/lib/life/views'
 
 export const metadata: Metadata = { title: 'one life · live' }
 
@@ -19,8 +22,10 @@ export default async function LivePage({ searchParams }: { searchParams: Promise
   // the real places she lived: climate, density, building height and the city grid (B's geo layer, read-only)
   const seen = new Set<string>()
   const places = [record.birthplace, ...record.places].filter(p => (seen.has(p.cityId) ? false : (seen.add(p.cityId), true))).map(p => placeInfo(p))
-  const others: LifeLink[] = all.map(l => ({ lifeId: l.lifeId, name: l.name, city: l.lastCity, age: l.deathAge ?? 0, dead: l.deathAge !== null, worldId: l.worldId }))
+  const others: LifeLink[] = all.map(l => ({ ...switchView(l), worldId: l.worldId }))
+  // the link to this moment in the world only when that world is on this server (prod carries the showcase worlds only)
+  const worldOnSite = fs.existsSync(path.join(process.cwd(), '..', 'data', 'runs', `${record.worldId}.json`)) || fs.existsSync(path.join(process.cwd(), 'data', 'runs', `${record.worldId}.json`))
   const { provenance: _p, ...client } = record
   void _p
-  return <LiveView record={{ ...client, provenance: {} }} places={places} others={others} mainSiteUrl={process.env.MAIN_SITE_URL ?? null} nextLifeHref={next ? `/live?life=${next.lifeId}` : null} />
+  return <LiveView record={{ ...client, provenance: {} }} places={places} others={others} mainSiteUrl={worldOnSite ? process.env.MAIN_SITE_URL ?? null : null} nextLifeHref={next ? `/live?life=${next.lifeId}` : null} />
 }

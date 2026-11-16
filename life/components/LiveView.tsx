@@ -5,43 +5,49 @@
 // year (her walk to work, work, lunch, evening at home) with the year's line.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useFrame } from '@react-three/fiber'
+import { PerformanceMonitor } from '@react-three/drei'
 import type { LifeRecord } from '@/lib/life/types'
 import type { PlaceInfo } from '@/lib/life/place'
 import type { Emotion } from '@/lib/types'
-import Scene, { layoutFor, type CamPreset, type WorldNow } from './Scene'
+import Scene, { type CamPreset, type WorldNow } from './Scene'
+import { BUS_FARE_MONTH, LifeWorld, newLive, newWorld, type Speed } from './lifeworld'
+export type { Speed }
 import type { LiveState } from './ChosenPerson'
-import { DAYS_PER_TICK, ageAt, householdAt, kinAliveAt, lastDay, momentsOf, moodAt, snapAt, tickOf, yearOf, type Moment } from './day'
-import { hash01, planDay, schedule, whereIn, WALK_UNITS_PER_H, BUS_UNITS_PER_H, type DayPlan, type Where } from './plan'
+import { DAYS_PER_TICK, ageAt, householdAt, kinAliveAt, lastDay, momentAt, momentsOf, moodAt, snapAt, tickOf, yearOf, type Moment } from './day'
+import { K, hash01, planDay, schedule, whereIn, type DayPlan, type Where } from './plan'
 import { feelingWords, moodToAUs } from './facs'
 import { narrate, yearLine } from './narrate'
 import Panel, { type PanelKind } from './Panels'
 import Minimap from './Minimap'
+import { headerView } from '@/lib/life/views'
+import { birthHour } from '@/lib/life/facts'
+import { mulberry32 } from '@/lib/sim/rng'
 import { lifeStory, scoreWords, pron } from '@/lib/life/story'
 
-export type Speed = 'day' | 'year' | 'decade'
-const DAY_REAL_S = 150 // a day at 1d, in real seconds, while she is at a place
-const WALK_VIS = 2.2 // units per real second while she walks on screen at 1d
-const BUS_VIS = 7
-const PER_S: Record<Speed, number> = { day: 1 / DAY_REAL_S, year: 365.25, decade: 3652.5 }
+// 1d is paced like a documentary: inside a shot, time runs at 15x real time, so anyone walking moves at a natural pace.
+// when nothing changes for a while (at work, asleep), a soft dip cuts forward to just before the next thing she does;
+// long walks show their start and end
+const REAL_X = 15
+const PER_S: Record<Speed, number> = { day: REAL_X / 86400, year: 365.25, decade: 3652.5 }
+const SHOT_STOP_S = 16 // seconds of a stop before cutting ahead
+const SHOT_WALK_S = 20 // seconds of a walk before cutting to its end
 const HOLD_MS = 3600
 const MONTAGE_S = 1.6 // each montage shot at fast speeds, real seconds
-// ESTIMATE: a minibus ride costs about $0.25 in most of the cities here; ~44 rides a month
-const BUS_FARE_MONTH = 11
 
-export type LifeLink = { lifeId: string; name: string; city: string; age: number; dead: boolean; worldId: string }
+export type LifeLink = { lifeId: string; name: string; first: string; city: string; text: string; worldId: string }
 
 export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, others }: { record: LifeRecord; places: PlaceInfo[]; mainSiteUrl: string | null; nextLifeHref: string | null; others: LifeLink[] }) {
   const moments = useMemo(() => momentsOf(record), [record])
   const end = useMemo(() => lastDay(record), [record])
   const she = record.sex === 'female' ? 'she' : 'he', her = record.sex === 'female' ? 'her' : 'his'
   const religious = useMemo(() => record.snaps.some(s => s.behavior.includes('prays')), [record])
-  const clock = useRef({ endShot: false, days: 7 / 24, speed: 'day' as Speed, playing: true, holdUntil: 0, momentIdx: 0, captionOn: false, traveling: false, onBus: false, lastPos: new THREE.Vector3(), montageT: 0 })
-  const live = useRef<LiveState>({ dead: false, pos: new THREE.Vector3(), heading: 0, walking: false, act: 'sleep', pose: 'stand', mood: {}, fatigue: 0, age: 0, heat: 0, flinch: null, gaze: null, hug: 0, head: new THREE.Vector3(0, 1.5, 0), forward: new THREE.Vector3(0, 0, 1) })
-  const world = useRef<WorldNow>({ kin: [], tick: 0, day: 0, hour: 9, speed: 'day', cityId: record.birthplace.cityId, home: record.snaps[0]?.home ?? 'family_home', indoors: true, lotId: -1, hunger: false, food: 1, protest: false, disaster: 0, law: null, rain: 0, tempC: 20, heat: 0, dead: false, family: [], arrivedAgoH: -1, busX: null, density: 0.5, kinPos: new Map(), workLotId: -1, homeLotId: -1 })
+  const clock = useRef({ endShot: false, days: birthHour(record) / 24, speed: 'day' as Speed, playing: true, holdUntil: 0, momentIdx: 0, captionOn: false, traveling: false, onBus: false, lastPos: new THREE.Vector3(), montageT: 0, shot: 0, shotT: 0, dipping: false, lastCity: '', beatKey: '', beatSeen: '', beatStart: 0, beatNext: 24, beatWalk: false })
+  const live = useRef<LiveState>(newLive())
+  const world = useRef<WorldNow>(newWorld(record))
   const focus = useRef<{ id: string; until: number } | null>(null)
 
-  const [ui, setUi] = useState({ tick: 0, day: 7 / 24, age: 0, cityId: record.birthplace.cityId, city: record.birthplace.city, home: world.current.home, playing: true, speed: 'day' as Speed, done: false })
+  const [ui, setUi] = useState({ tick: 0, day: birthHour(record) / 24, age: 0, cityId: record.birthplace.cityId, city: record.birthplace.city, home: world.current.home, playing: true, speed: 'day' as Speed, done: false })
   const [caption, setCaption] = useState<Moment | null>(null)
   const [line, setLine] = useState('')
   const [preset, setPreset] = useState<{ kind: CamPreset; at: number; user?: boolean } | null>(null)
@@ -49,43 +55,40 @@ export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, ot
   const [showFeel, setShowFeel] = useState(false)
   const [feel, setFeel] = useState<{ text: string; at: number } | null>(null)
   const [panel, setPanel] = useState<PanelKind | null>(null)
+  // adaptive quality: 2 full, 1 lighter pixels and crowd, 0 no shadows and a small crowd. drops before frames drop
+  const [q, setQ] = useState(2)
+  const budget = useRef(120)
+  useEffect(() => { budget.current = [45, 80, 120][q] }, [q])
+  // a calm loading state until the scene has really drawn, then a fade; and a short dip through bone for every jump
+  const [ready, setReady] = useState(false)
+  const veil = useRef<HTMLDivElement>(null)
+  const dip = useCallback((apply: () => void, ms = 170) => {
+    const v = veil.current, c = clock.current
+    if (!v || c.dipping) { apply(); return }
+    c.dipping = true
+    v.style.transition = `opacity ${ms}ms ease-in`
+    v.style.opacity = '1'
+    setTimeout(() => {
+      apply()
+      requestAnimationFrame(() => requestAnimationFrame(() => { v.style.transition = 'opacity 380ms ease-out'; v.style.opacity = '0'; c.dipping = false }))
+    }, ms + 10)
+  }, [])
   const lastFeel = useRef('')
-  const layouts = useRef(new Map<string, ReturnType<typeof layoutFor>>())
-  const layoutOf = useCallback((cityId: string) => { let l = layouts.current.get(cityId); if (!l) { l = layoutFor(record, cityId); layouts.current.set(cityId, l) } return l }, [record])
-  const placeOf = useCallback((cityId: string) => places.find(p => p.cityId === cityId) ?? places[0], [places])
-  const plans = useRef(new Map<string, DayPlan>())
+  const lw = useMemo(() => new LifeWorld(record, places, live.current, world.current), [record, places])
+  const layoutOf = useCallback((cityId: string) => lw.layoutOf(cityId), [lw])
+  const placeOf = useCallback((cityId: string) => lw.placeOf(cityId), [lw])
   const said = useRef({ day: -1, keys: new Map<string, string>() })
+  // the neighbor out front (crowd agent 0), named like everyone in her region
   const directorRef = useRef(director)
   useEffect(() => { directorRef.current = director }, [director])
 
   // dev only: the live state on window, for debugging
   useEffect(() => { if (process.env.NODE_ENV === 'development') (window as unknown as Record<string, unknown>).__life = { live: live.current, world: world.current, clock: clock.current } }, [])
 
-  // ---- her day, planned once per day ----
-  const planFor = useCallback((day: number, tick: number) => {
-    const snap = snapAt(record, tick)
-    const key = `${snap.cityId}:${Math.floor(day)}:${snap.activity}:${snap.workplace}`
-    let p = plans.current.get(key)
-    if (!p) {
-      const layout = layoutOf(snap.cityId)
-      const kids = householdAt(record, tick).some(f => f.relation === 'child' && f.age < 14)
-      const d = Math.floor(day)
-      const weekend = d % 7 >= 5
-      const night = snap.workplace === 'clinic' && hash01(Math.floor(d / 7) + record.seed) < 0.25 // ESTIMATE: one week in four on nights for clinic staff
-      const canBus = snap.income >= BUS_FARE_MONTH / 0.08 && hash01(d * 3 + record.seed) < 0.8 // takes the bus if fares are under ~8% of income
-      // weekends she visits her mother and siblings when she no longer lives with them
-      const visit = weekend && tick >= 240 && kinAliveAt(record, tick).some(k => k.relation === 'mother' || k.relation === 'father' || k.relation === 'sibling')
-      p = planDay(layout, layout.homes[0], schedule(snap.activity, { kids, weekend, religious, night, visit }), snap.workplace, 0, canBus)
-      plans.current.set(key, p)
-      if (plans.current.size > 60) plans.current.delete(plans.current.keys().next().value!)
-    }
-    return p
-  }, [record, layoutOf, religious])
-
   // seek from ?t=<tick>
   useEffect(() => {
     const t = Number(new URLSearchParams(window.location.search).get('t'))
-    if (Number.isFinite(t) && t > 0) { clock.current.days = Math.min(end, Math.ceil(t * DAYS_PER_TICK) + 7 / 24); clock.current.momentIdx = moments.findIndex(m => m.tick >= t); if (clock.current.momentIdx < 0) clock.current.momentIdx = moments.length }
+    if (Number.isFinite(t) && t > 0) { clock.current.days = Math.min(end, Math.ceil(t * DAYS_PER_TICK) + 7 / 24); clock.current.momentIdx = moments.findIndex(m => momentAt(m) >= clock.current.days); if (clock.current.momentIdx < 0) clock.current.momentIdx = moments.length }
   }, [end, moments])
 
   // ---- the clock ----
@@ -96,16 +99,31 @@ export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, ot
       last = now
       const c = clock.current
       if (c.playing && now > c.holdUntil && c.days < end) {
-        // at 1d, time slows to walking pace while she is out on the street, so the walk is a walk
-        let rate = PER_S[c.speed]
-        if (c.speed === 'day' && c.traveling) rate = (c.onBus ? BUS_VIS / BUS_UNITS_PER_H : WALK_VIS / WALK_UNITS_PER_H) / 24
-        c.days = Math.min(end, c.days + rate * dt)
-        if (c.speed !== 'day') c.montageT += dt
+        c.days = Math.min(end, c.days + PER_S[c.speed] * dt)
+        // documentary cuts: a beat that would run on with nothing changing cuts ahead, under a dip
+        if (c.speed === 'day' && !c.dipping) {
+          if (c.beatKey !== c.beatSeen) { c.beatSeen = c.beatKey; c.beatStart = now }
+          const realIn = (now - c.beatStart) / 1000
+          const hour = (c.days % 1) * 24
+          const realLeft = ((c.beatNext - hour) * 3600) / REAL_X
+          const lead = c.beatWalk ? 9 : 6
+          if (realIn > (c.beatWalk ? SHOT_WALK_S : SHOT_STOP_S) && realLeft > lead + 3) {
+            const to = Math.floor(c.days) + (c.beatNext - (lead * REAL_X) / 3600) / 24
+            c.beatStart = now + 1e9 // don't cut again while this one lands
+            dip(() => { c.days = Math.min(end, Math.max(c.days, to)) })
+          }
+        }
+        if (c.speed !== 'day') {
+          c.montageT += dt
+          c.shotT += dt
+          // each montage shot ends with a soft dip to the next one, never a hard cut
+          if (c.shotT > MONTAGE_S && !c.dipping) { c.shotT = -1; dip(() => { c.shot++; c.shotT = 0 }, 140) }
+        }
       }
       const tick = tickOf(c.days)
-      while (c.momentIdx < moments.length && moments[c.momentIdx].tick <= tick) {
+      while (c.momentIdx < moments.length && momentAt(moments[c.momentIdx]) <= c.days) {
         const m = moments[c.momentIdx++]
-        if (m.tick < tick - 1) continue
+        if (momentAt(m) < c.days - DAYS_PER_TICK) continue
         c.holdUntil = now + HOLD_MS
         setCaption(m)
         c.captionOn = true
@@ -116,6 +134,9 @@ export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, ot
       if (c.days >= end && !c.endShot) { c.endShot = true; setPreset({ kind: 'wide', at: now }) }
       if (c.days < end) c.endShot = false
       const where = tickWorld(c.days, c.speed, c.montageT)
+      // moving to a new city rebuilds the scene: hide the rebuild behind the veil
+      if (c.lastCity && world.current.cityId !== c.lastCity && veil.current && !c.dipping) { veil.current.style.transition = 'none'; veil.current.style.opacity = '1'; setTimeout(() => { if (veil.current) { veil.current.style.transition = 'opacity 600ms ease-out'; veil.current.style.opacity = '0' } }, 400) }
+      c.lastCity = world.current.cityId
       if (now - lastLine > 600) { lastLine = now; setLine(lineFor(c.days, c.speed, where)) }
       if (now - lastUi > 120) {
         lastUi = now
@@ -132,78 +153,29 @@ export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, ot
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [end, moments, record])
 
-  // ---- what the clock means for her and her world this frame ----
+  // ---- what the clock means for her and her world this frame (pure, in ./lifeworld) ----
   function tickWorld(days: number, speed: Speed, montageT: number): Where {
-    const c = clock.current, L = live.current, W = world.current
-    const tick = tickOf(days)
-    const snap = snapAt(record, tick)
-    const plan = planFor(days, tick)
+    const c = clock.current
+    const plan = lw.planFor(days)
     // fast speeds: cut between real moments of the day (walking to work, work, lunch, evening at home)
     let hour = (days % 1) * 24
     if (speed !== 'day') {
       const legs = plan.legs.flat().filter(l => l.kind !== 'wait' && l.total > 4)
       const shots = [legs[0] ? (legs[0].start + legs[0].end) / 2 : 8, 10.5, 12.6, 19.4]
-      const k = Math.floor(montageT / MONTAGE_S) % shots.length
-      hour = shots[k] + (montageT % MONTAGE_S) * 0.04 // a little real motion inside each shot
+      const k = c.shot % shots.length
+      hour = shots[k] + Math.max(0, c.shotT) * 0.04 // a little real motion inside each shot
+      void montageT
     }
-    const where = whereIn(plan, hour)
-    // validate her position: never let the camera chase garbage
-    if (!Number.isFinite(where.pos.x) || !Number.isFinite(where.pos.z)) {
-      console.error('[life] invalid position from the day plan, keeping her last spot', { tick, hour, stop: where.stop.at })
-      where.pos = { x: c.lastPos.x, z: c.lastPos.z }
-    }
-    c.lastPos.set(where.pos.x, 0, where.pos.z)
+    const where = lw.tick(days, hour, speed, end)
     c.traveling = where.traveling
     c.onBus = where.onBus
-    L.pos.set(where.pos.x, where.onBus ? 0.35 : 0, where.pos.z)
-    const dh = Math.atan2(Math.sin(where.heading - L.heading), Math.cos(where.heading - L.heading))
-    L.heading += dh * (where.moving ? 0.25 : 0.08)
-    L.walking = where.moving && !where.onBus
-    L.pose = where.pose
-    L.act = where.stop.act
-    L.age = ageAt(days)
-    L.mood = moodAt(record, days)
-    const lastLoss = [...record.events].reverse().find(e => e.tick <= tick && e.kind === 'family' && / died/.test(e.text))
-    const sinceLoss = lastLoss ? tick - lastLoss.tick : 999
-    L.fatigue = Math.min(1, (snap.activity === 'grieving' ? 0.5 : 0) + Math.max(0, 0.6 - snap.health) * 1.4 + (sinceLoss < 36 ? 0.45 * (1 - sinceLoss / 36) : 0) + (hour > 21.5 || hour < 5 ? 0.25 : 0))
-    // weather from the real monthly climate (worldclim normals via B's geo layer): rain days and temperature
-    const pl = placeOf(snap.cityId)
-    const month = (tick + 10) % 12
-    const d = Math.floor(days)
-    const wetDays = Math.min(25, (pl?.precMm[month] ?? 60) / 8) // ESTIMATE: ~8 mm per rainy day (same rule as B's weatherAt)
-    W.rain = hash01(d + record.seed * 7) < wetDays / 30 ? 0.75 : 0
-    const tavg = pl?.tavgC[month] ?? 22
-    W.tempC = tavg + (hash01(d * 5 + 1) - 0.5) * 5 + 4 * Math.sin(((hour - 9) / 24) * Math.PI * 2) // ESTIMATE daily noise + day/night swing
-    W.heat = Math.max(0, Math.min(1, (W.tempC - 28) / 8))
-    L.heat = W.heat
-    // the world reaching in
-    const env = [...record.env].reverse().find(e => e.tick <= tick) ?? record.env[0]
-    const evs = record.events.filter(e => e.tick === tick || e.tick === tick - 1)
-    const layout = layoutOf(snap.cityId)
-    W.tick = tick; W.day = d; W.hour = hour; W.speed = speed; W.cityId = snap.cityId; W.home = snap.home; W.indoors = where.indoors; W.lotId = where.stop.lot.id
-    W.hunger = !!snap.hunger; W.food = env?.food ?? 1
-    W.protest = evs.some(e => /protest/.test(e.text))
-    W.disaster = evs.some(e => e.worldKind === 'disaster' || e.worldKind === 'war') ? 1 : env?.damage === 'disaster' || env?.damage === 'war' ? env.damageLevel : 0
-    W.law = evs.find(e => e.worldKind === 'law')?.text.replace(/^on the news screen: /, '') ?? null
-    W.dead = days >= end
-    L.dead = W.dead
-    W.family = householdAt(record, tick)
-    W.kin = kinAliveAt(record, tick)
-    W.arrivedAgoH = where.stop.at === 'home' && !where.moving ? where.arrivedAgoH : -1
-    W.busX = where.busX
-    W.homeLotId = layout.homes[0].id
-    W.workLotId = plan.stops.find(s => s.at === 'work')?.lot.id ?? -1
-    // real density: ghsl people per km2 at her cell, 0..1 (25k/km2 is a packed city center)
-    W.density = Math.max(0.15, Math.min(1, (pl?.popPerKm2 ?? 8000) / 25000))
-    // who she looks at: whoever she is eating or sitting with at home
-    const atHome = where.stop.at === 'home' && !where.moving && where.stop.act !== 'sleep'
-    if (atHome && W.family.length) {
-      const f = W.family.find(x => x.relation === 'child') ?? W.family[0]
-      const p = W.kinPos.get(f.id)
-      L.gaze = p ? (L.gaze ?? new THREE.Vector3()).copy(p).setY(p.y + 1.1) : null
-    } else L.gaze = null
-    const hugNow = atHome && where.arrivedAgoH >= 0 && where.arrivedAgoH < 0.25 ? 1 : 0
-    L.hug += (hugNow - L.hug) * 0.1
+    // the beat she is in (a stop or a walk) and when it next changes, for the documentary cuts
+    if (where.leg) { c.beatKey = `L${where.leg.start}`; c.beatNext = where.leg.end; c.beatWalk = true }
+    else {
+      const i = plan.stops.indexOf(where.stop)
+      const nextLeg = plan.legs[i + 1]?.[0]
+      c.beatKey = `S${where.stop.hour}`; c.beatNext = nextLeg ? nextLeg.start : plan.stops[i + 1]?.hour ?? 24; c.beatWalk = false
+    }
     return where
   }
 
@@ -216,14 +188,15 @@ export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, ot
     const prevEnv = [...record.env].reverse().find(e => e.tick <= tick - 12) ?? null
     const S = said.current
     if (S.day !== Math.floor(days)) { S.day = Math.floor(days); S.keys.clear() }
-    return narrate({ once: (k, scope) => { const at = S.keys.get(k); if (at === undefined) { S.keys.set(k, scope); return true } return at === scope }, record, snap, prevYearSnap: prev, env, prevEnv, where, hour: world.current.hour, family: world.current.family, kin: world.current.kin, presentAt: (id, lotId) => { const p = world.current.kinPos.get(id); const l = layoutOf(world.current.cityId).lots.find(x => x.id === lotId); return !!p && !!l && Math.abs(p.x - l.x) < l.w && Math.abs(p.z - l.z) < l.d }, rain: world.current.rain > 0, tempC: world.current.tempC, canBus: snap.income >= BUS_FARE_MONTH / 0.08, busFareShare: snap.income > 0 ? BUS_FARE_MONTH / snap.income : 1, she, her })
+    return narrate({ once: (k, scope) => { const at = S.keys.get(k); if (at === undefined) { S.keys.set(k, scope); return true } return at === scope }, record, snap, prevYearSnap: prev, env, prevEnv, where, hour: world.current.hour, family: world.current.family, kin: world.current.kin, carrierId: live.current.carrier, exactAge: live.current.age, presentAt: (id, lotId) => { const p = world.current.kinPos.get(id); const l = layoutOf(world.current.cityId).lots.find(x => x.id === lotId); return !!p && !!l && Math.abs(p.x - l.x * K) < l.w * K && Math.abs(p.z - l.z * K) < l.d * K }, occasion: world.current.occasion, rain: world.current.rain > 0, tempC: world.current.tempC, canBus: snap.income >= BUS_FARE_MONTH / 0.08, busFareShare: snap.income > 0 ? BUS_FARE_MONTH / snap.income : 1, she, her })
   }
 
   // ---- controls ----
-  const setSpeed = (s: Speed) => { clock.current.speed = s; clock.current.montageT = 0; setUi(u => ({ ...u, speed: s })) }
-  const toggle = () => { const c = clock.current; if (c.days >= end) { c.days = 7 / 24; c.momentIdx = 0 } c.playing = !c.playing; c.holdUntil = 0; setUi(u => ({ ...u, playing: c.playing })) }
-  const seek = (frac: number) => { const c = clock.current; c.days = Math.max(0, Math.min(end, clock.current.speed === 'day' ? Math.floor(frac * end) + 7 / 24 : frac * end)); const t = tickOf(c.days); c.momentIdx = moments.findIndex(m => m.tick > t); if (c.momentIdx < 0) c.momentIdx = moments.length; c.holdUntil = 0; setCaption(null) }
-  const seekDays = (days: number) => seek(days / end)
+  const setSpeed = (s: Speed) => { if (clock.current.speed === s) return; dip(() => { const c = clock.current; c.speed = s; c.montageT = 0; c.shot = 0; c.shotT = 0; setUi(u => ({ ...u, speed: s })) }) }
+  const toggle = () => { const c = clock.current; if (c.days >= end) { c.days = birthHour(record) / 24; c.momentIdx = 0 } c.playing = !c.playing; c.holdUntil = 0; setUi(u => ({ ...u, playing: c.playing })) }
+  const seek = (frac: number) => { const c = clock.current; c.days = Math.max(0, Math.min(end, clock.current.speed === 'day' ? Math.floor(frac * end) + 7 / 24 : frac * end)); c.momentIdx = moments.findIndex(m => momentAt(m) > c.days); if (c.momentIdx < 0) c.momentIdx = moments.length; c.holdUntil = 0; setCaption(null) }
+  const seekDays = (days: number) => dip(() => seek(days / end))
+  const onUserCamera = useCallback(() => { setPreset(null); focus.current = null }, [])
   const focusKin = (id: string) => { focus.current = { id, until: performance.now() + 5000 }; setPanel(null) }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -235,7 +208,8 @@ export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, ot
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  const date = `${yearOf(ui.tick)}${ui.speed === 'day' ? ` ${['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'][(ui.tick + 10) % 12]}` : ''}`
+  const head = headerView(record, ui.tick)
+  const date = ui.speed === 'day' ? head.date : `${yearOf(ui.tick)}`
   // the main site at this exact moment, focused on her country (A: ?run=&t= are read by the main site; &place= asks it to fly there)
   const country = (record.places.find(p => p.cityId === ui.cityId) ?? record.birthplace)
   const worldLink = mainSiteUrl ? `${mainSiteUrl.replace(/\/$/, '')}/?run=${encodeURIComponent(record.worldId)}&t=${ui.tick}&place=${encodeURIComponent(country.countryId)}` : null
@@ -243,14 +217,22 @@ export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, ot
 
   return (
     <main style={{ position: 'fixed', inset: 0 }}>
-      <Canvas shadows dpr={[1, 2]} camera={{ fov: 40, near: 0.05, far: 220, position: [4, 3, 6] }} gl={{ antialias: true }}>
-        <Scene key={ui.cityId} record={record} layout={layoutOf(ui.cityId)} homeType={ui.home} live={live} world={world} preset={preset} focus={focus} place={curPlace} onUserCamera={() => { setPreset(null); focus.current = null }} />
+      <Canvas shadows={q > 0} dpr={q === 2 ? [1, 2] : q === 1 ? 1.25 : 1} camera={{ fov: 40, near: 0.05, far: 220, position: [4, 3, 6] }} gl={{ antialias: true }}>
+        <PerformanceMonitor flipflops={3} onDecline={() => setQ(x => Math.max(0, x - 1))} onIncline={() => setQ(x => Math.min(2, x + 1))} onFallback={() => setQ(0)} />
+        <Ready onReady={() => setReady(true)} />
+        <Scene key={ui.cityId} record={record} layout={layoutOf(ui.cityId)} homeType={ui.home} live={live} world={world} preset={preset} focus={focus} place={curPlace} budget={budget} onUserCamera={onUserCamera} />
       </Canvas>
+
+      {/* the veil: a calm loading screen first, then the soft dip used for every jump */}
+      <div ref={veil} data-veil aria-hidden={ready} style={{ position: 'absolute', inset: 0, background: 'var(--bone)', opacity: 1, transition: 'opacity 700ms ease-out', pointerEvents: ready ? 'none' : 'auto', display: 'grid', placeItems: 'center', zIndex: 3 }}>
+        {!ready && <div style={{ textAlign: 'center' }}><div style={{ fontSize: 22, fontWeight: 600 }}>{record.name}</div><div style={{ fontSize: 14, opacity: 0.6, marginTop: 6 }}>{record.birthplace.city.toLowerCase()}, {record.birthplace.country.toLowerCase()}</div></div>}
+      </div>
+      {ready && <VeilLift veil={veil} />}
 
       {/* top left: who and when */}
       <div style={{ position: 'absolute', top: 12, left: 12, pointerEvents: 'none', padding: '6px 10px', borderRadius: 12, background: 'color-mix(in srgb, var(--bone) 70%, transparent)' }}>
         <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em' }}>{record.name}</div>
-        <div className="mono" style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>{date} · {Math.floor(ui.age)} · {ui.city.toLowerCase()}</div>
+        <div className="mono" style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>{date} · {head.age} · {head.city}</div>
       </div>
 
       {/* top right: other lives + the place minimap */}
@@ -267,12 +249,14 @@ export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, ot
 
       {/* bottom: milestone caption above the narration line, then controls and the timeline */}
       <div style={{ position: 'absolute', left: 16, right: 16, bottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {caption && !ui.done && (
-          <div key={`${caption.tick}${caption.caption}`} className="caption-in" style={{ alignSelf: 'center', pointerEvents: 'none' }}>
-            <div className="chip" style={{ padding: '10px 18px', maxWidth: 680, fontSize: 15, lineHeight: 1.35, textAlign: 'center', borderRadius: 16 }}><Numbers text={caption.caption} /></div>
+        {/* one line at a time: a milestone caption takes the narration's place while it shows. both fade */}
+        {!ui.done && (
+          <div style={{ alignSelf: 'center', display: 'grid', placeItems: 'center', minHeight: 34, maxWidth: 720, pointerEvents: 'none' }}>
+            <div key={caption ? `c${caption.tick}${caption.caption}` : 'line'} className="caption-in" style={{ gridArea: '1 / 1', padding: caption ? '9px 16px' : '5px 12px', borderRadius: caption ? 16 : 10, background: `color-mix(in srgb, var(--bone) ${caption ? 94 : 82}%, transparent)`, border: caption ? '1px solid var(--line)' : 'none', fontSize: caption ? 15 : 14, lineHeight: 1.35, textAlign: 'center', color: caption ? 'var(--ink)' : 'color-mix(in srgb, var(--ink) 85%, transparent)' }} aria-live="polite">
+              {caption ? <Numbers text={caption.caption} /> : <LineText line={line} />}
+            </div>
           </div>
         )}
-        {!ui.done && line && <div aria-live="polite" style={{ alignSelf: 'center', fontSize: 14, textAlign: 'center', maxWidth: 720, padding: '5px 12px', borderRadius: 10, background: 'color-mix(in srgb, var(--bone) 82%, transparent)', color: 'color-mix(in srgb, var(--ink) 85%, transparent)' }}><Numbers text={line} /></div>}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <div className="chip" style={{ display: 'flex', alignItems: 'center', padding: 3, gap: 2 }}>
             <button className="icon-btn" aria-label={ui.playing ? 'pause' : 'play'} onClick={toggle}><Icon kind={ui.playing ? 'pause' : 'play'} /></button>
@@ -294,7 +278,7 @@ export default function LiveView({ record, places, mainSiteUrl, nextLifeHref, ot
           </div>
           {worldLink && <a className="chip" href={worldLink} target="_blank" rel="noreferrer" style={{ padding: '8px 14px', fontSize: 13, color: 'inherit', textDecoration: 'none', display: 'flex', gap: 6, alignItems: 'center' }} title={`what the core was doing to ${country.country} in ${yearOf(ui.tick)}`}><Icon kind="globe" /> world</a>}
         </div>
-        <Timeline record={record} moments={moments} day={ui.day} end={end} onSeek={seek} />
+        <Timeline record={record} moments={moments} day={ui.day} end={end} onSeek={seek} onScrub={on => { const v = veil.current; if (!v) return; v.style.transition = on ? 'opacity 150ms ease-in' : 'opacity 450ms ease-out'; v.style.opacity = on ? '0.9' : '0' }} />
       </div>
     </main>
   )
@@ -317,8 +301,8 @@ function Switcher({ current, others }: { current: string; others: LifeLink[] }) 
         <div className="chip panel-in" style={{ position: 'absolute', right: 0, top: 40, borderRadius: 16, padding: 6, minWidth: 230, zIndex: 5 }}>
           {others.map(o => (
             <a key={o.lifeId} href={`/live?life=${o.lifeId}`} aria-current={o.lifeId === current} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '8px 10px', borderRadius: 10, color: 'inherit', textDecoration: 'none', background: o.lifeId === current ? 'color-mix(in srgb, var(--ink) 7%, transparent)' : 'none' }}>
-              <span style={{ fontSize: 14 }}>{o.name.split(' ')[0]} <span style={{ opacity: 0.55 }}>· {o.city.toLowerCase()}</span></span>
-              <span className="mono" style={{ fontSize: 12, opacity: 0.6 }}>{o.dead ? `died ${Math.floor(o.age)}` : Math.floor(o.age)}</span>
+              <span style={{ fontSize: 14 }}>{o.first} <span style={{ opacity: 0.55 }}>· {o.city.toLowerCase()}</span></span>
+              <span className="mono" style={{ fontSize: 12, opacity: 0.6 }}>{o.text}</span>
             </a>
           ))}
         </div>
@@ -327,12 +311,12 @@ function Switcher({ current, others }: { current: string; others: LifeLink[] }) 
   )
 }
 
-function Timeline({ record, moments, day, end, onSeek }: { record: LifeRecord; moments: Moment[]; day: number; end: number; onSeek: (f: number) => void }) {
+function Timeline({ record, moments, day, end, onSeek, onScrub }: { record: LifeRecord; moments: Moment[]; day: number; end: number; onSeek: (f: number) => void; onScrub: (on: boolean) => void }) {
   const ref = useRef<HTMLDivElement>(null)
   const drag = (e: React.PointerEvent) => { const r = ref.current!.getBoundingClientRect(); onSeek((e.clientX - r.left) / r.width) }
   return (
     <div ref={ref} role="slider" aria-label="life timeline" aria-valuemin={2026} aria-valuemax={yearOf(record.deathTick ?? 0)} aria-valuenow={yearOf(tickOf(day))} tabIndex={0}
-      onPointerDown={e => { (e.target as Element).setPointerCapture?.(e.pointerId); drag(e) }} onPointerMove={e => { if (e.buttons) drag(e) }}
+      onPointerDown={e => { (e.target as Element).setPointerCapture?.(e.pointerId); onScrub(true); drag(e) }} onPointerMove={e => { if (e.buttons) drag(e) }} onPointerUp={() => onScrub(false)} onPointerCancel={() => onScrub(false)}
       style={{ position: 'relative', height: 22, cursor: 'pointer', touchAction: 'none' }}>
       <div style={{ position: 'absolute', left: 0, right: 0, top: 10, height: 2, background: 'var(--line)', borderRadius: 2 }} />
       <div style={{ position: 'absolute', left: 0, width: `${(day / end) * 100}%`, top: 10, height: 2, background: 'var(--ink)', borderRadius: 2 }} />
@@ -389,4 +373,22 @@ function Icon({ kind }: { kind: string }) {
     case 'globe': return <svg {...p}><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.5 2.6 2.5 14.4 0 17M12 3.5c-2.5 2.6-2.5 14.4 0 17" /></svg>
     default: return null
   }
+}
+
+// the narration line: the clock ticks in place; the rest of the line only crossfades when what she is doing changes
+function LineText({ line }: { line: string }) {
+  const m = /^(\d{1,2}:\d{2}(?:am|pm)|\d{4}, age \d+)\.? ?(.*)$/.exec(line)
+  const time = m?.[1] ?? '', rest = m?.[2] ?? line
+  return <><span className="mono">{time}{time ? '. ' : ''}</span><span key={rest} className="line-in"><Numbers text={rest} /></span></>
+}
+
+// the scene counts as drawn after a few real frames (shaders compiled, first shadows), not when react mounts
+function Ready({ onReady }: { onReady: () => void }) {
+  const n = useRef(0), done = useRef(false)
+  useFrame(() => { if (!done.current && ++n.current > 12) { done.current = true; onReady() } })
+  return null
+}
+function VeilLift({ veil }: { veil: React.RefObject<HTMLDivElement | null> }) {
+  useEffect(() => { const v = veil.current; if (v) { v.style.transition = 'opacity 900ms ease-out'; v.style.opacity = '0' } }, [veil])
+  return null
 }

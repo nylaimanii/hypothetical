@@ -13,6 +13,7 @@ import type { PlaceInfo } from '@/lib/life/place'
 import type { LiveState } from './ChosenPerson'
 import type { WorldNow } from './Scene'
 import { layoutFor } from './Scene'
+import { K } from './plan'
 
 const S = 132
 type Level = 'street' | 'city' | 'globe'
@@ -45,10 +46,11 @@ function Street({ record, tick, world, live }: { record: LifeRecord; tick: numbe
     let raf = 0
     const loop = () => {
       const L = live.current, W = world.current
-      if (L && her.current) { her.current.setAttribute('cx', String(o + L.pos.x * k)); her.current.setAttribute('cy', String(o + L.pos.z * k)) }
+      // world positions are layout positions scaled by K (see plan.ts)
+      if (L && her.current) { her.current.setAttribute('cx', String(o + L.pos.x / K * k)); her.current.setAttribute('cy', String(o + L.pos.z / K * k)) }
       if (W && fam.current) {
         const dots = [...W.kinPos.values()]
-        fam.current.innerHTML = dots.map(p => `<circle cx="${o + p.x * k}" cy="${o + p.z * k}" r="2.2" fill="#5F7FA0" />`).join('')
+        fam.current.innerHTML = dots.map(p => `<circle cx="${o + p.x / K * k}" cy="${o + p.z / K * k}" r="2.2" fill="#5F7FA0" />`).join('')
       }
       raf = requestAnimationFrame(loop)
     }
