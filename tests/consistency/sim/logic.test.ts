@@ -208,3 +208,11 @@ test('more health and social spending, taken evenly from every other line, leave
   const base = pop({ ...BASELINE_BUDGET }), more = pop(even)
   assert.ok(more > base, `+5 points of welfare: ${((more - base) / 1e6).toFixed(1)}M people`)
 })
+
+test('a pandemic hits the same regions just as hard when a region has a few thousand people more or less', async () => {
+  const { startPandemic } = await import('../../../src/lib/sim/events')
+  const a = initWorld(99, false), b = initWorld(99, false)
+  for (const rs of b.regions) rs.r.population += 1234
+  startPandemic(a, a.regions[0], 0.6); startPandemic(b, b.regions[0], 0.6)
+  a.regions.forEach((ra, i) => { const rb = b.regions[i]; assert.ok(Math.abs(rb.pandemicMort / Math.max(ra.pandemicMort, 1e-12) - 1) < 0.02, `${ra.r.id}: pandemic mortality ${ra.pandemicMort.toExponential(2)} vs ${rb.pandemicMort.toExponential(2)}`) })
+})

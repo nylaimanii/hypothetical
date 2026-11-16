@@ -2,6 +2,7 @@
 // policy, so the ai world and its no-ai twin face the same disasters on the same dates.
 // rates are rough ESTIMATEs anchored to the cited references.
 import { A } from './assumptions'
+import { hashString } from './rng'
 import type { WorldEvent } from '../types'
 import { clamp, event, regionPop, type RegionState, type World } from './state'
 import { fmt } from './physics'
@@ -49,7 +50,9 @@ export function startPandemic(w: World, origin: RegionState, sev: number, inject
   event(w, { regionId: origin.r.id, kind: 'pandemic', text: `${injected ? 'injected: ' : ''}a new pandemic emerges in ${origin.r.name}`, severity: sev })
   const researchShare = w.budget.research
   for (const rs of w.regions) {
-    const local = rs === origin ? 1 : 0.6 + 0.4 * ((rs.r.population % 97) / 97) // deterministic per-region spread
+    // per-region spread, drawn from (seed, region, month): fixed by the world, never by its state (it used population
+    // mod 97, so a few thousand people more or less could more than double a region's pandemic deaths)
+    const local = rs === origin ? 1 : 0.6 + 0.4 * ((hashString(`${w.seed}:spread:${rs.r.id}:${w.tick}`) % 100003) / 100003)
     // ESTIMATE: excess mortality per year = 1% x severity^1.5 (sev 1 ~ 1918, about 1.5% of people over 18 months;
     // sev 0.3 ~ covid, about 0.15%/yr). welfare and research blunt it up to 40%.
     // misinformation above 2026 weakens distancing and vaccination (people.ts)
