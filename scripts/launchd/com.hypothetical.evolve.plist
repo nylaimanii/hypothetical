@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.hypothetical.evolve</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string><string>-c</string>
+    <string>cd "__ROOT__" &amp;&amp; exec /usr/bin/caffeinate -i scripts/run-evolve.sh --gens 50 --concurrency 1 &gt;&gt; data/evolve.log 2&gt;&amp;1</string>
+  </array>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>__PATH__</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ThrottleInterval</key><integer>120</integer>
+  <key>StandardOutPath</key><string>__ROOT__/data/launchd-evolve.log</string>
+  <key>StandardErrorPath</key><string>__ROOT__/data/launchd-evolve.log</string>
+</dict>
+</plist>

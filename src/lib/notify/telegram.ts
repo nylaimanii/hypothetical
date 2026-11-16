@@ -1,7 +1,12 @@
 // telegram notifications. missing env logs once and every call becomes a no-op. never throws.
+import fs from 'node:fs'
+import path from 'node:path'
 import type { HallEntry, Lesson, RunRecord, RunSummary } from '../types'
 import { readAgents } from '../evolve/agents'
 import { epitaphOf } from './epitaph'
+import { deathStory, hallStory } from './story'
+import { readLessons } from '../evolve/lessons'
+import { yearOfTick } from '../evolve/facts'
 
 let warned = false
 export function telegramEnv(): { token: string; chatId: string } | null {
@@ -30,7 +35,24 @@ export async function tg<T = unknown>(method: string, body: Record<string, unkno
 export async function send(text: string): Promise<boolean> {
   const env = telegramEnv()
   if (!env) return false
-  return !!(await tg('sendMessage', { chat_id: env.chatId, text: text.slice(0, 4000), disable_web_page_preview: true }))
+  const ok = !!(await tg('sendMessage', { chat_id: env.chatId, text: text.slice(0, 4000), disable_web_page_preview: true }))
+  logSent(text, ok)
+  return ok
+}
+
+// the last 50 messages (text only, never the token or chat id) for the local status page
+export const sentLogFile = () => path.join(process.cwd(), 'data', 'telegram-log.json')
+export type SentMessage = { at: string; ok: boolean; text: string; from: string }
+function logSent(text: string, ok: boolean) {
+  try {
+    let list: SentMessage[] = []
+    try { list = JSON.parse(fs.readFileSync(sentLogFile(), 'utf8')) as SentMessage[] } catch { /* first one */ }
+    const from = path.basename(process.argv[1] ?? 'node').replace(/\.ts$/, '')
+    list = [...list, { at: new Date().toISOString(), ok, text: text.slice(0, 1200), from }].slice(-50)
+    const tmp = `${sentLogFile()}.${process.pid}.tmp`
+    fs.writeFileSync(tmp, JSON.stringify(list))
+    fs.renameSync(tmp, sentLogFile())
+  } catch { /* logging must never break a message */ }
 }
 
 export const fmtPop = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(0)}k` : String(Math.round(n))
@@ -56,8 +78,9 @@ export function deathMessage(s: RunSummary, ctx: DeathContext): string {
   return lines.filter(Boolean).join('\n')
 }
 
-export async function notifyWorldDied(s: RunSummary, _record: RunRecord | null, ctx: DeathContext) {
-  await send(deathMessage(s, ctx))
+// deaths are told by the narrator (story.ts): the irony first, the turning point in the core's own words
+export async function notifyWorldDied(s: RunSummary, record: RunRecord | null, ctx: DeathContext) {
+  await send(deathStory(record, s, { ...ctx, lessonsKnown: readLessons().length }))
 }
 
 export async function notifyGoal(s: RunSummary, record: RunRecord, ctx: { generation: number; agentName: string }) {
@@ -79,14 +102,9 @@ export async function notifyGeneration(line: string) {
   await send(line)
 }
 
-// one message per generation for all its new hall of history entries, e.g. "🏆 first mars city ever: halcyon ii, 2071"
-export async function notifyHallBatch(generation: number, entries: HallEntry[]) {
+// one message per generation for its new hall of history entries: the biggest one leads, the rest in one line
+export async function notifyHallBatch(_generation: number, entries: HallEntry[]) {
   if (!entries.length) return
   const names = new Map(readAgents().map(a => [a.id, a.name]))
-  const lines = entries.map(e => {
-    const year = 2026 + Math.floor((e.tick + 10) / 12)
-    const icon = e.kind === 'catastrophe' ? '💀' : e.kind === 'milestone' ? '🌍' : '🏆'
-    return `${icon} ${e.kind === 'record' ? `new record, ${e.title}` : e.title}: ${names.get(e.agentId) ?? e.agentId}, ${year}`
-  })
-  await send([`hall of history, gen ${generation}:`, ...lines].join('\n'))
+  await send(hallStory(entries.map(e => ({ title: e.title, agentName: names.get(e.agentId) ?? e.agentId, year: yearOfTick(e.tick), text: e.text, kind: e.kind }))))
 }

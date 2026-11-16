@@ -3,6 +3,9 @@
 // space assets, atmosphere, flows, epitaphs. no llm calls.
 import type { Epitaph, Flow, Frame, Law, Mood, RegionVisual, SpaceAsset } from '../types'
 import { reqProgress } from './requirements'
+import { CITY_SEEDS } from './places'
+import { link } from './causes'
+import type { InfraDiff } from '../types-v5'
 import { EMOTIONS, clamp, incomeIdx, popWeighted, regionPop, type RegionState, type World } from './state'
 
 export type Source = 'solar' | 'wind' | 'nuclear' | 'fossil' | 'hydro'
@@ -95,7 +98,7 @@ const REFOREST_USD_PER_HA = 2000
 
 // ---------- rail ----------
 // region pairs with a land route. islands (oceania, carib_pac) get none.
-const ADJ: [string, string][] = [['na', 'latam'], ['europe', 'rus_ca'], ['europe', 'mideast'], ['mideast', 'nafrica'], ['mideast', 'rus_ca'], ['mideast', 'sasia'], ['nafrica', 'ssa'], ['sasia', 'easia'], ['sasia', 'seasia'], ['easia', 'seasia'], ['easia', 'rus_ca'], ['rus_ca', 'sasia']]
+export const ADJ: [string, string][] = [['na', 'latam'], ['europe', 'rus_ca'], ['europe', 'mideast'], ['mideast', 'nafrica'], ['mideast', 'rus_ca'], ['mideast', 'sasia'], ['nafrica', 'ssa'], ['sasia', 'easia'], ['sasia', 'seasia'], ['easia', 'seasia'], ['easia', 'rus_ca'], ['rus_ca', 'sasia']]
 // existing long-distance rail across region borders in 2026 (Trans-Siberian, China-Laos railway, Turkey, US-Mexico)
 const START_RAIL = new Set(['europe|rus_ca', 'easia|rus_ca', 'easia|seasia', 'europe|mideast', 'na|latam'])
 
@@ -153,11 +156,25 @@ export function stepVisuals(w: World, transit: number) {
     rs.forest += dForest
     rs.farmland = clamp(rs.farmland - dForest * (dForest < 0 ? 1 : 0.5), 0.02, 0.9)
   }
-  // rail links
+  // rail links: once a cross-border line is built it stays (track does not vanish); a seceded region is cut off.
+  // every new line is an infra diff between the biggest real cities on each side
+  w.railBuilt ??= []
   for (const rs of w.regions) rs.railLinks = []
   for (const [a, b] of ADJ) {
     const ra = w.regions.find(r => r.r.id === a)!, rb = w.regions.find(r => r.r.id === b)!
-    const has = START_RAIL.has(`${a}|${b}`) || START_RAIL.has(`${b}|${a}`) || Math.min(railScore(w, ra, transit), railScore(w, rb, transit)) >= 0.35
+    const key = `${a}|${b}`
+    const start = START_RAIL.has(key) || START_RAIL.has(`${b}|${a}`)
+    const sa = railScore(w, ra, transit), sb = railScore(w, rb, transit)
+    if (!start && !w.railBuilt.includes(key) && Math.min(sa, sb) >= 0.35) {
+      w.railBuilt.push(key)
+      const lawC = w.laws.filter(l => !l.vetoed && /rail|train|transit/.test(`${l.title} ${l.text}`.toLowerCase()))
+      const law = lawC.sort((x, y) => (rb.lawCompliance[y.id] ?? 0) - (rb.lawCompliance[x.id] ?? 0))[0]
+      const because = law ? `${law.title} (${law.id})` : reqProgress(w, 'high_speed_rail') > 0.5 ? 'high-speed rail research' : 'transit demand'
+      const from = biggestCity(w, a), to = biggestCity(w, b)
+      w.infraAcc.push({ tick: w.tick, kind: 'rail', op: 'built', id: `rail-${a}-${b}`, from, to, because, ...(law ? { lawId: law.id } : {}) } as InfraDiff)
+      link(w, { placeId: a, what: `a rail line opened from ${cityName(from)} to ${cityName(to)}`, value: 0.5, because, lawId: law?.id, byWhom: 'core' })
+    }
+    const has = start || w.railBuilt.includes(key)
     if (has && !ra.seceded && !rb.seceded) { ra.railLinks.push(b); rb.railLinks.push(a) }
   }
   // space assets: dark without money (ESTIMATE: under ~$15B/yr nothing beyond the ground gets operated)
@@ -313,3 +330,12 @@ export const initMix = (regionId: string, capacityTWh: number): Mix => {
   return Object.fromEntries(SOURCES.map(k => [k, m[k] * capacityTWh])) as Mix
 }
 void popWeighted
+
+// biggest real city (by current population) in a region, for drawing rail lines
+function biggestCity(w: World, regionId: string): string {
+  const inRegion = new Set(w.countries.filter(c => c.regionId === regionId).map(c => c.id))
+  let best = -1
+  w.realCities.forEach((cs, i) => { if (inRegion.has(CITY_SEEDS[i].countryId) && (best < 0 || cs.pop > w.realCities[best].pop)) best = i })
+  return best < 0 ? regionId : CITY_SEEDS[best].id
+}
+function cityName(id: string): string { return CITY_SEEDS.find(c => c.id === id)?.name ?? id }

@@ -11,11 +11,12 @@
 // - social identity (Tajfel & Turner 1979): groups judge laws by who they think wins and loses.
 //   https://en.wikipedia.org/wiki/Social_identity_theory
 // magnitudes are ESTIMATE calibrations of those findings.
+import { A } from './assumptions'
 import type { Archetype, Behavior, Citizen, Emotion, GroupKey, Mood } from '../types'
 import { HEDONIC_DECAY, LOSS_AVERSION, PROTEST_TIPPING_SHARE, SURVIVAL_KCAL } from './constants'
 import { pick, pickWeighted } from './rng'
 import { link, ppl } from './causes'
-import { BEHAVIORS, EMOTIONS, MOOD_BASELINE, clamp, event, incomeIdx, popWeighted, regionPop, why, type CrowdInternal, type RegionState, type World } from './state'
+import { BEHAVIORS, EMOTIONS, MOOD_BASELINE, clamp, event, incomeIdx, popWeighted, regionPop, why, type RegionState, type World } from './state'
 
 // ---------- archetypes ----------
 // ESTIMATE population mix of archetypes (adults). sharp_kid only for kids, elder mostly 65+.
@@ -180,7 +181,7 @@ export function stepRegionBehavior(w: World, rs: RegionState, lawBacklash: numbe
   const alarmed = Math.min(1, rs.crowds.reduce((a, c) => a + (c.phase === 'alarmed' ? c.intensity : 0), 0))
   const bored = rs.crowds.filter(c => c.phase === 'bored').length / 4
   const kcal = r.foodKcalPerCapita
-  const foodIdx = clamp((kcal - SURVIVAL_KCAL) / 900)
+  const foodIdx = clamp((kcal - A(w, 'survival_kcal')) / 900)
   const foodStress = clamp((2300 - kcal) / 500)
   const pandemic = w.tick < rs.pandemicUntil ? clamp(rs.pandemicMort * 100) : 0
   const relIncome = clamp((r.gdpUsd / pop) / Math.max(popWeighted(w, x => x.r.gdpUsd / Math.max(regionPop(x), 1)), 1))
@@ -238,7 +239,7 @@ export function stepRegionBehavior(w: World, rs: RegionState, lawBacklash: numbe
   // preference falsification: people say they approve until visible dissent passes the tipping share
   const privateApproval = clamp(0.5 + (valence(m) - 0.5) * 1.3 - 0.25 * (r.unrest - 0.3))
   rs.privateApproval = privateApproval
-  if (!rs.flipped && (b.protesting >= PROTEST_TIPPING_SHARE || (privateApproval < 0.3 && outrage > 0.5))) {
+  if (!rs.flipped && (b.protesting >= A(w, 'protest_tipping_share') || (privateApproval < 0.3 && outrage > 0.5))) {
     rs.flipped = true
     const lastProtest = w.causes.slice().reverse().find(x => x.placeId === r.id && /protested/.test(x.what) && w.tick - x.tick <= 12)
     event(w, { regionId: r.id, kind: 'revolt', text: `in ${r.name} public approval collapses almost overnight: people now say out loud what they said in private`, severity: 0.5 },
@@ -256,9 +257,11 @@ export function stepRegionBehavior(w: World, rs: RegionState, lawBacklash: numbe
 }
 
 // economic drag from behavior: strikes, protests and riots cut output (ESTIMATE, as annual growth points)
+// ordinary background levels (0.1% striking, 0.2% protesting, 0.03% rioting) are already in normal growth;
+// only the excess costs output
 export function behaviorDrag(rs: RegionState): number {
   const b = rs.behavior
-  return 6 * (b.striking + 0.3 * b.protesting + 2 * b.rioting)
+  return 6 * (Math.max(0, b.striking - 0.001) + 0.3 * Math.max(0, b.protesting - 0.002) + 2 * Math.max(0, b.rioting - 0.0003))
 }
 // hoarding and panic buying make food scarce for everyone else (ESTIMATE)
 export function hoardingFactor(rs: RegionState): number {
@@ -346,7 +349,7 @@ export function addLifeEvent(w: World, c: Citizen, text: string) {
   const arc = (w.lifeArchive[c.id] ??= { name: c.name, regionId: c.regionId, events: [] })
   arc.events.push({ tick: w.tick, text })
   arc.regionId = c.regionId
-  c.lifeEvents = [...c.lifeEvents, { tick: w.tick, text }].slice(-10)
+  c.lifeEvents = [...c.lifeEvents, { tick: w.tick, text }].slice(-4) // the full story lives in w.lifeArchive
   const m = w.citizenMeta[c.id]
   if (m) m.affectedTick = w.tick
 }

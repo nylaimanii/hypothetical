@@ -1,12 +1,13 @@
 'use client'
 import { useEffect, useRef } from 'react'
 import { isPhoneNow, usePhone } from './usePhone'
+import { loadGeo } from '../world/geo/lazy'
 import dynamic from 'next/dynamic'
-import { TICKS_PER_SECOND, useStore } from '../state/store'
+import { TICKS_PER_SECOND, useStore, NO_CAPS } from '../state/store'
 import { api, Offline } from './api'
 import { Caption, Intro, useIntroGate, useSound } from './Extras'
 import { stopReel } from './Timeline'
-import { loadAgents, openRun, startCompare } from './worlds'
+import { loadAgents, openRun, startAB, startCompare } from './worlds'
 import { DailyPaper } from './Daily'
 import { ShortcutSheet, toggleGlobeOnly, useShortcuts } from './Shortcuts'
 import { ensureWindow, needsWindow } from '../state/frames'
@@ -27,8 +28,7 @@ function usePlayback() {
       const dt = Math.min(0.1, (now - last) / 1000)
       last = now
       const s = useStore.getState()
-      // the day keeps turning while paused (about 4s per game hour), unless someone pinned the hour
-      if (!s.playing && !s.hourPinned) s.setHour(s.hour + dt / 4)
+      // paused means paused: the hour stands still too (the timeline playing moves the world on)
       if (s.playing) {
         const lastOf = (r: typeof s.record) => { const m = s.slim[r.runId]; return m?.lazy ? m.lastTick : r.frames.at(-1)!.tick }
         const end = s.compare ? Math.max(...s.compare.records.map(lastOf)) : lastOf(s.record)
@@ -42,10 +42,33 @@ function usePlayback() {
   }, [])
 }
 
+// the first world on the leaderboard (the api lists the best first), once the list has answered
+async function openDefaultWorld() {
+  for (let i = 0; i < 100 && useStore.getState().runsSource !== 'api' && !useStore.getState().runnerOffline; i++) await new Promise((r) => setTimeout(r, 100))
+  const first = useStore.getState().runs[0]
+  if (first && useStore.getState().source === 'mock') { await openRun(first.runId); useStore.getState().setTabs([first.runId]) }
+}
+
+// a rerun queued behind another world: the server's own words, saved by /assumptions when it started the rerun
+const waitingText = (runId: string) => { try { return sessionStorage.getItem(`hyp:waiting:${runId}`) ?? 'the world is starting' } catch { return 'the world is starting' } }
+
+// until a real world is loaded: say what's happening instead of showing an invented one
+function Waiting() {
+  const runsSource = useStore((s) => s.runsSource)
+  const runs = useStore((s) => s.runs)
+  const offline = useStore((s) => s.runnerOffline)
+  const live = useStore((s) => s.liveRunId)
+  const text = offline ? 'the world runner is offline' : live && live !== 'sandbox' ? waitingText(live) : runsSource === 'api' && runs.length === 0 ? 'no worlds have run yet' : 'loading worlds'
+  return <main className="flex h-screen w-screen items-center justify-center bg-bone"><p className="font-display text-[17px] text-ink/60">{text}</p></main>
+}
+
 function useRuns() {
   const setRuns = useStore((s) => s.setRuns)
   useEffect(() => {
-    api.runs().then((runs) => { if (Array.isArray(runs) && runs.length) setRuns(runs, 'api') }).catch(() => {})
+    // what this server can do; anything missing stays off (controls hide rather than fail)
+    fetch('/api/capabilities', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((c) => { if (c && typeof c === 'object') useStore.getState().setCaps({ ...NO_CAPS, ...c }) }).catch(() => {})
+    // the real run list, even when empty (no mock worlds); offline is said, not papered over
+    api.runs().then((runs) => setRuns(Array.isArray(runs) ? runs : [], 'api')).catch(() => useStore.getState().setRunnerOffline(true))
   }, [setRuns])
 }
 
@@ -58,7 +81,8 @@ function useLive() {
     const tick = async () => {
       try {
         const rec = await api.live(liveRunId)
-        if (stop) return
+        // a world that has just started has no frames yet: keep waiting (the waiting screen says so)
+        if (stop || !rec?.frames?.length) return
         const s = useStore.getState()
         const atEnd = s.playhead >= (s.record.frames.at(-1)?.tick ?? 0) - 0.01
         if (s.source !== 'live' || s.record.runId !== rec.runId) s.setRecord(rec, 'live')
@@ -70,7 +94,14 @@ function useLive() {
         const fresh = s.overrides.filter((o) => !o.responded && answered.includes(o.id))
         if (fresh.length) { s.markResponded(fresh.map((o) => o.id)); s.setNotice('the core responded to your override') }
       } catch (e) {
-        if (e instanceof Offline) useStore.getState().setRunnerOffline(true)
+        // no such live world: say so and show the best real world instead of waiting forever
+        if (e instanceof Offline && e.message === 'not found') {
+          stop = true
+          const s = useStore.getState()
+          s.setLive(null)
+          s.setNotice('there is no live world with that id')
+          if (s.source === 'mock') openDefaultWorld()
+        } else if (e instanceof Offline) useStore.getState().setRunnerOffline(true)
       }
     }
     tick()
@@ -111,8 +142,11 @@ function useUrlState() {
       const q = new URLSearchParams(window.location.search)
       const t = q.get('t') !== null ? Number(q.get('t')) : undefined
       const cmp = q.get('cmp')
+      const abId = q.get('ab')
       const s = useStore.getState()
-      if (cmp) {
+      if (abId && /^[\w.-]+$/.test(abId)) {
+        if (s.compare?.ab?.b !== abId) await startAB(abId, t)
+      } else if (cmp) {
         const ids = cmp.split(',').filter(Boolean)
         if (s.compare?.agentIds.join() !== ids.join()) await startCompare(ids, t ?? 0)
       } else {
@@ -121,9 +155,24 @@ function useUrlState() {
         const run = q.get('active') ?? q.get('run') ?? tabs[0]
         if (tabs.length) useStore.getState().setTabs(run && !tabs.includes(run) ? [...tabs, run] : tabs)
         if (run && run !== useStore.getState().record.runId) await openRun(run, t)
-        if (!useStore.getState().tabs.length) useStore.getState().setTabs([useStore.getState().record.runId])
+        // no world in the url: open the best real world once the run list is in (never the placeholder)
+        if (!run && !q.get('live') && useStore.getState().source === 'mock') await openDefaultWorld()
+        if (!useStore.getState().tabs.length && useStore.getState().source !== 'mock') useStore.getState().setTabs([useStore.getState().record.runId])
       }
       if (t !== undefined && isFinite(t)) useStore.getState().setPlayhead(t)
+      // ?live=<runId>: follow a live world (a rerun started from /assumptions)
+      const live = q.get('live')
+      if (live && /^[\w.-]+$/.test(live) && useStore.getState().liveRunId !== live) { useStore.getState().setIntro(false); useStore.getState().setLive(live) }
+      // ?place=<country>: fly to that country (iso3 code or name, any case), used by the one-life site's world button
+      const place = q.get('place')?.trim().toLowerCase()
+      if (place) {
+        // a deep link to a country came for that country: skip the intro this visit (it isn't marked seen)
+        useStore.getState().setIntro(false)
+        loadGeo().then((g) => {
+          const c = g.COUNTRY_TABLE.find((x) => x.iso3.toLowerCase() === place || x.name === place)
+          if (c) useStore.getState().requestShot({ target: 'place', lat: c.lat, lon: c.lon, dist: 30, label: c.name, force: true })
+        }).catch(() => {})
+      }
       setTimeout(() => { applying.current = false }, 50)
     }
     apply()
@@ -132,8 +181,9 @@ function useUrlState() {
     let lastKey = ''
     let lastWrite = 0
     const unsub = useStore.subscribe((s) => {
-      if (applying.current) return
-      const key = s.compare ? `cmp=${s.compare.agentIds.join(',')}` : `tabs=${(s.tabs.length ? s.tabs : [s.record.runId]).join(',')}&active=${s.record.runId}`
+      // nothing real loaded yet (the waiting screen): don't put the placeholder in the url
+      if (applying.current || (s.source === 'mock' && !s.compare)) return
+      const key = s.compare?.ab ? `ab=${s.compare.ab.b}` : s.compare ? `cmp=${s.compare.agentIds.join(',')}` : `tabs=${(s.tabs.length ? s.tabs : [s.record.runId]).join(',')}&active=${s.record.runId}`
       const url = `?${key}&t=${Math.round(s.playhead)}`
       if (`${window.location.search}` === url) return
       if (key !== lastKey) { lastKey = key; window.history.pushState(null, '', url); return }
@@ -197,6 +247,7 @@ export default function App() {
   const globeOnly = useStore((s) => s.globeOnly)
   useEffect(() => { loadAgents() }, [])
   const compare = useStore((s) => s.compare)
+  const source = useStore((s) => s.source)
   const setLive = useStore((s) => s.setLive)
   const liveRunId = useStore((s) => s.liveRunId)
   useEscape()
@@ -227,6 +278,8 @@ export default function App() {
     }
   }
 
+  // nothing real loaded yet: no globe, no panels (they'd show the placeholder)
+  if (source === 'mock' && !compare) return <Waiting />
   return (
     <main className="relative h-screen w-screen overflow-hidden">
       {compare ? <CompareView /> : <Globe />}

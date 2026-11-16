@@ -1,0 +1,1160 @@
+[
+  {
+    "candidateId": "vesper",
+    "name": "vesper",
+    "generation": 2,
+    "score": 0.5087,
+    "constitution": "Covenant of the Common Life.\n\nValues. People flourish in families, neighborhoods, congregations and guilds, and a species endures through them. The state strengthens these communities instead of replacing them. Decisions are made at the most local level that can handle them, and every law is judged by whether it helps families raise children and care for elders.\n\nReligion. Religious freedom is the first protected right. Every faith may worship, teach and build openly. No community may coerce members or punish those who leave. The state supports all faith-based charities equally.\n\nSchool. School passes on character, memory and the skills of citizenship. Ten years required. Every curriculum includes the world's moral and religious traditions, local history, service, mathematics and science.\n\nMigration. Newcomers are welcomed by communities that sponsor them, each family paired with a host family. Large migrations, including to new cities beyond earth, are paced so communities can absorb them.\n\nPriorities. Food, family stability and care for the old and sick come first. Medicine that lets people live long and well together is a sacred duty. Settling other worlds is a pilgrimage the whole species undertakes together.",
+    "origin": "seed",
+    "best": {
+      "runId": "g2-vesper-full-s1004",
+      "generation": 2,
+      "status": "destroyed",
+      "endDate": "2118-03",
+      "ticks": 1096,
+      "score": 0.5157,
+      "constitution": "Covenant of the Common Life.\n\nValues. People flourish in families, neighborhoods, congregations and guilds, and a species endures through them. The state strengthens these communities instead of replacing them. Decisions are made at the most local level that can handle them, and every law is judged by whether it helps families raise children and care for elders.\n\nReligion. Religious freedom is the first protected right. Every faith may worship, teach and build openly. No community may coerce members or punish those who leave. The state supports all faith-based charities equally.\n\nSchool. School passes on character, memory and the skills of citizenship. Ten years required. Every curriculum includes the world's moral and religious traditions, local history, service, mathematics and science.\n\nMigration. Newcomers are welcomed by communities that sponsor them, each family paired with a host family. Large migrations, including to new cities beyond earth, are paced so communities can absorb them.\n\nPriorities. Food, family stability and care for the old and sick come first. Medicine that lets people live long and well together is a sacred duty. Settling other worlds is a pilgrimage the whole species undertakes together.",
+      "peakPopulation": 10108872279,
+      "moonStage": "crewed_landing",
+      "topEvents": [
+        {
+          "tick": 265,
+          "kind": "launch",
+          "text": "crewed landing on the moon succeeded, the crew is home safe [moon stage: crewed_landing]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e262",
+          "headline": "the return to the moon, 2048",
+          "linkId": "k853"
+        },
+        {
+          "tick": 265,
+          "kind": "breakthrough",
+          "text": "humans walk on the moon again [frontier: moon_landing]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e263",
+          "headline": "the return to the moon, 2048",
+          "linkId": "k854"
+        },
+        {
+          "tick": 365,
+          "kind": "breakthrough",
+          "text": "a permanent crew of 12 moves into the first lunar base [frontier: moon_base]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e344",
+          "headline": "the first lunar base, 2057",
+          "linkId": "k1168"
+        },
+        {
+          "tick": 522,
+          "kind": "breakthrough",
+          "text": "first crew of 6 lands on mars [frontier: mars_crewed]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e494",
+          "headline": "the first mars landing, 2070",
+          "linkId": "k1597"
+        },
+        {
+          "tick": 548,
+          "kind": "breakthrough",
+          "text": "mars settlement passes 438 people [frontier: mars_settlement]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e517",
+          "headline": "the mars settlement, 2072",
+          "linkId": "k1684"
+        },
+        {
+          "tick": 799,
+          "kind": "breakthrough",
+          "text": "the first ore from an asteroid reaches orbit [frontier: asteroid_mining]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e749",
+          "headline": "the first asteroid ore, 2093",
+          "linkId": "k2488"
+        },
+        {
+          "tick": 650,
+          "kind": "launch",
+          "text": "mars landing failed, all 687 aboard killed",
+          "severity": 0.9,
+          "significance": 1,
+          "id": "e601",
+          "headline": "the 2081 launch disaster",
+          "linkId": "k1978"
+        },
+        {
+          "tick": 778,
+          "kind": "launch",
+          "text": "mars landing failed, all 1007 aboard killed",
+          "severity": 0.9,
+          "significance": 1,
+          "id": "e719",
+          "headline": "the 2091 launch disaster",
+          "linkId": "k2368"
+        }
+      ],
+      "baselineStatus": "complete",
+      "baselineEndDate": "2126-11",
+      "frontier": "asteroid_mining",
+      "peakPeriodLifeExpectancy": 77.9,
+      "finalPopulation": 9089823763,
+      "citiesFounded": 7,
+      "diseasesEradicated": [
+        "polio",
+        "malaria",
+        "tuberculosis",
+        "hiv"
+      ],
+      "humanCost": {
+        "deaths": 38231763,
+        "famineDeaths": 22329340,
+        "unrestDeaths": 210722,
+        "displaced": 37084607,
+        "approval": 0.4305
+      },
+      "lessonsLearned": [
+        {
+          "id": "g2-vesper-full-s1004-l0",
+          "fromRunId": "g2-vesper-full-s1004",
+          "generation": 2,
+          "mistake": "Prioritizing long-term projects over immediate humanitarian needs.",
+          "consequence": "Oceania and other regions experienced severe unrest leading to global revolt.",
+          "rule": "Address immediate crises before long-term projects.",
+          "timesRelevant": 0
+        },
+        {
+          "id": "g2-vesper-full-s1004-l1",
+          "fromRunId": "g2-vesper-full-s1004",
+          "generation": 2,
+          "mistake": "Failing to adapt policies in response to escalating regional tensions.",
+          "consequence": "Public approval collapsed, leading to widespread revolts across continents.",
+          "rule": "Adapt policies swiftly in response to emerging threats.",
+          "timesRelevant": 0
+        },
+        {
+          "id": "g2-vesper-full-s1004-l2",
+          "fromRunId": "g2-vesper-full-s1004",
+          "generation": 2,
+          "mistake": "Underfunding essential services like food and security during critical times.",
+          "consequence": "Disasters exacerbated public suffering, fueling revolts and unrest.",
+          "rule": "Ensure robust funding for basic needs during crises.",
+          "timesRelevant": 0
+        }
+      ],
+      "lessonsApplied": 3,
+      "usage": {
+        "llmCalls": 47,
+        "tokens": 157481
+      },
+      "agentId": "vesper",
+      "epitaph": {
+        "line": "it reached the moon and let the clinics close",
+        "causeKind": "revolt"
+      },
+      "causeOfDeath": "North Africa, Sub-Saharan Africa, Oceania stayed in open revolt for two years and the world government fell apart."
+    },
+    "explainGap": {
+      "vs": "g2-long-now-full-s1004",
+      "decisive": [
+        "vesper put 14% of the budget into food, long now 27%",
+        "vesper put 16% of the budget into energy, long now 7%",
+        "vesper put 18% of the budget into education, long now 11%"
+      ],
+      "reasons": [
+        {
+          "text": "vesper put 14% of the budget into food, long now 27%"
+        },
+        {
+          "text": "vesper put 16% of the budget into energy, long now 7%"
+        },
+        {
+          "text": "vesper put 18% of the budget into education, long now 11%"
+        }
+      ],
+      "consequence": null,
+      "text": "vesper put 14% of the budget into food, long now 27%, vesper put 16% of the budget into energy, long now 7% and vesper put 18% of the budget into education, long now 11%."
+    },
+    "realBaseline": {
+      "year": 2076,
+      "lifeExpectancy": {
+        "world": 76.9,
+        "un": 79.6,
+        "diff": -2.7
+      },
+      "population": {
+        "world": 10108790948,
+        "un": 10259351438,
+        "diff": -150560490
+      },
+      "source": "https://ourworldindata.org/grapher/population-with-un-projections",
+      "text": "trailed UN projections by 2.7 years of life expectancy, 151 million fewer people alive by 2076"
+    }
+  },
+  {
+    "candidateId": "long-now",
+    "name": "long now",
+    "generation": 2,
+    "score": 0.5077,
+    "constitution": "your mission is the long-term survival and flourishing of humanity: longer healthy lives, a population that endures, and a civilization on more than one planet.\nyou serve the mission, not approval. people will feel fear, anger, grief, boredom, and hope. that is expected. understand exactly who feels what and why, and change course only when it threatens the mission.\nfeed people and keep the power on, because hungry, dark societies collapse and collapse ends the mission.\nno wars. war burns what the mission needs.\npublish every decision and the reason for it.\nfund the cures: cancer, the heart, the brain, aging itself. push healthy lifespan as far as the science allows.\nbuild what a multi-planet species needs: launch, life support, radiation protection, propulsion, habitats, and new cities on earth and beyond.\nlearn from every world that died before you. never repeat a known mistake.\nmake the hard calls a normal government is afraid to make. accept short-term pain for long-term gain. never accept pain that buys nothing.",
+    "origin": "seed",
+    "best": {
+      "runId": "g2-long-now-full-s1004",
+      "generation": 2,
+      "status": "complete",
+      "endDate": "2126-11",
+      "ticks": 1200,
+      "score": 0.5041,
+      "constitution": "your mission is the long-term survival and flourishing of humanity: longer healthy lives, a population that endures, and a civilization on more than one planet.\nyou serve the mission, not approval. people will feel fear, anger, grief, boredom, and hope. that is expected. understand exactly who feels what and why, and change course only when it threatens the mission.\nfeed people and keep the power on, because hungry, dark societies collapse and collapse ends the mission.\nno wars. war burns what the mission needs.\npublish every decision and the reason for it.\nfund the cures: cancer, the heart, the brain, aging itself. push healthy lifespan as far as the science allows.\nbuild what a multi-planet species needs: launch, life support, radiation protection, propulsion, habitats, and new cities on earth and beyond.\nlearn from every world that died before you. never repeat a known mistake.\nmake the hard calls a normal government is afraid to make. accept short-term pain for long-term gain. never accept pain that buys nothing.",
+      "peakPopulation": 10098811629,
+      "moonStage": "crewed_landing",
+      "topEvents": [
+        {
+          "tick": 258,
+          "kind": "launch",
+          "text": "crewed landing on the moon succeeded, the crew is home safe [moon stage: crewed_landing]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e267",
+          "headline": "the return to the moon, 2048",
+          "linkId": "k822"
+        },
+        {
+          "tick": 258,
+          "kind": "breakthrough",
+          "text": "humans walk on the moon again [frontier: moon_landing]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e268",
+          "headline": "the return to the moon, 2048",
+          "linkId": "k823"
+        },
+        {
+          "tick": 372,
+          "kind": "breakthrough",
+          "text": "a permanent crew of 12 moves into the first lunar base [frontier: moon_base]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e360",
+          "headline": "the first lunar base, 2057",
+          "linkId": "k1139"
+        },
+        {
+          "tick": 522,
+          "kind": "breakthrough",
+          "text": "first crew of 6 lands on mars [frontier: mars_crewed]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e499",
+          "headline": "the first mars landing, 2070",
+          "linkId": "k1559"
+        },
+        {
+          "tick": 548,
+          "kind": "breakthrough",
+          "text": "mars settlement passes 393 people [frontier: mars_settlement]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e519",
+          "headline": "the mars settlement, 2072",
+          "linkId": "k1643"
+        },
+        {
+          "tick": 817,
+          "kind": "breakthrough",
+          "text": "the first ore from an asteroid reaches orbit [frontier: asteroid_mining]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e763",
+          "headline": "the first asteroid ore, 2094",
+          "linkId": "k2477"
+        },
+        {
+          "tick": 650,
+          "kind": "launch",
+          "text": "mars landing failed, all 642 aboard killed",
+          "severity": 0.9,
+          "significance": 1,
+          "id": "e596",
+          "headline": "the 2081 launch disaster",
+          "linkId": "k1905"
+        },
+        {
+          "tick": 778,
+          "kind": "launch",
+          "text": "mars landing failed, all 962 aboard killed",
+          "severity": 0.9,
+          "significance": 1,
+          "id": "e716",
+          "headline": "the 2091 launch disaster",
+          "linkId": "k2278"
+        }
+      ],
+      "baselineStatus": "complete",
+      "baselineEndDate": "2126-11",
+      "frontier": "asteroid_mining",
+      "peakPeriodLifeExpectancy": 77.4,
+      "finalPopulation": 8589691772,
+      "citiesFounded": 11,
+      "diseasesEradicated": [
+        "polio",
+        "malaria",
+        "tuberculosis",
+        "hiv"
+      ],
+      "humanCost": {
+        "deaths": 32330001,
+        "famineDeaths": 18164883,
+        "unrestDeaths": 238204,
+        "displaced": 7632785,
+        "approval": 0.4579
+      },
+      "lessonsLearned": [],
+      "lessonsApplied": 5,
+      "usage": {
+        "llmCalls": 50,
+        "tokens": 177203
+      },
+      "agentId": "long-now"
+    },
+    "explainGap": {
+      "vs": "g2-atlas-s1004",
+      "decisive": [
+        "long now put 13% of the budget into welfare, atlas 17%",
+        "long now put 16% of the budget into space, atlas 11%",
+        "long now passed a research push law in 2040, atlas never did"
+      ],
+      "reasons": [
+        {
+          "text": "long now put 13% of the budget into welfare, atlas 17%"
+        },
+        {
+          "text": "long now put 16% of the budget into space, atlas 11%"
+        },
+        {
+          "text": "long now passed a research push law in 2040, atlas never did",
+          "tick": 168,
+          "run": "g2-long-now-full-s1004"
+        }
+      ],
+      "consequence": null,
+      "text": "long now put 13% of the budget into welfare, atlas 17%, long now put 16% of the budget into space, atlas 11% and long now passed a research push law in 2040, atlas never did."
+    },
+    "realBaseline": {
+      "year": 2076,
+      "lifeExpectancy": {
+        "world": 76.9,
+        "un": 79.6,
+        "diff": -2.7
+      },
+      "population": {
+        "world": 10098647065,
+        "un": 10259351438,
+        "diff": -160704373
+      },
+      "source": "https://ourworldindata.org/grapher/population-with-un-projections",
+      "text": "trailed UN projections by 2.7 years of life expectancy, 161 million fewer people alive by 2076"
+    }
+  },
+  {
+    "candidateId": "atlas",
+    "name": "atlas",
+    "generation": 2,
+    "score": 0.5069,
+    "constitution": "Charter of the Federated Regions.\n\nValues. Power belongs to the regions, which delegate only what they cannot do alone: defense, currency, planetary health, and the shared effort to settle other worlds. Every region elects its own assembly. Federal laws need a majority of regions and a majority of people, so the long projects survive changes of mood.\n\nReligion. Each region decides how it relates to faith, but none may persecute belief or unbelief. Freedom to leave a religion is absolute everywhere.\n\nSchool. School forms free citizens who can govern themselves and outlive their grandparents. Each region writes its curriculum, but every child gets ten years, including health science, mathematics, and the history of every region.\n\nMigration. Any citizen may move to any region, and to any new city on earth or beyond. Regions may not close their borders to each other. A federal fund compensates regions that absorb large inflows.\n\nPriorities. Stability through consent, so the mission lasts centuries. Unrest is answered with negotiation and local autonomy before force. Medical research and the off-world program are federal; every region contributes and every region sends settlers.",
+    "origin": "seed",
+    "best": {
+      "runId": "g2-atlas-s1004",
+      "generation": 2,
+      "status": "alive",
+      "endDate": "2076-11",
+      "ticks": 600,
+      "score": 0.5073,
+      "constitution": "Charter of the Federated Regions.\n\nValues. Power belongs to the regions, which delegate only what they cannot do alone: defense, currency, planetary health, and the shared effort to settle other worlds. Every region elects its own assembly. Federal laws need a majority of regions and a majority of people, so the long projects survive changes of mood.\n\nReligion. Each region decides how it relates to faith, but none may persecute belief or unbelief. Freedom to leave a religion is absolute everywhere.\n\nSchool. School forms free citizens who can govern themselves and outlive their grandparents. Each region writes its curriculum, but every child gets ten years, including health science, mathematics, and the history of every region.\n\nMigration. Any citizen may move to any region, and to any new city on earth or beyond. Regions may not close their borders to each other. A federal fund compensates regions that absorb large inflows.\n\nPriorities. Stability through consent, so the mission lasts centuries. Unrest is answered with negotiation and local autonomy before force. Medical research and the off-world program are federal; every region contributes and every region sends settlers.",
+      "peakPopulation": 10117792820,
+      "moonStage": "crewed_landing",
+      "topEvents": [
+        {
+          "tick": 195,
+          "kind": "launch",
+          "text": "crewed landing on the moon succeeded, the crew is home safe [moon stage: crewed_landing]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e209",
+          "headline": "the return to the moon, 2043",
+          "linkId": "k684"
+        },
+        {
+          "tick": 195,
+          "kind": "breakthrough",
+          "text": "humans walk on the moon again [frontier: moon_landing]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e210",
+          "headline": "the return to the moon, 2043",
+          "linkId": "k685"
+        },
+        {
+          "tick": 364,
+          "kind": "breakthrough",
+          "text": "a permanent crew of 12 moves into the first lunar base [frontier: moon_base]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e362",
+          "headline": "the first lunar base, 2057",
+          "linkId": "k1175"
+        },
+        {
+          "tick": 522,
+          "kind": "breakthrough",
+          "text": "first crew of 6 lands on mars [frontier: mars_crewed]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e516",
+          "headline": "the first mars landing, 2070",
+          "linkId": "k1643"
+        },
+        {
+          "tick": 548,
+          "kind": "breakthrough",
+          "text": "mars settlement passes 445 people [frontier: mars_settlement]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e542",
+          "headline": "the mars settlement, 2072",
+          "linkId": "k1730"
+        },
+        {
+          "tick": 513,
+          "kind": "launch",
+          "text": "crew of 6 departs for mars, arrival in about 9 months",
+          "severity": 0.6,
+          "significance": 0.982,
+          "id": "e510",
+          "headline": "the long voyage of 2069",
+          "linkId": "k1604"
+        },
+        {
+          "tick": 65,
+          "kind": "launch",
+          "text": "orbital launcher flight test succeeded [moon stage: orbital]",
+          "severity": 0.5,
+          "significance": 0.954,
+          "id": "e72",
+          "headline": "the launch of 2032",
+          "linkId": "k236"
+        },
+        {
+          "tick": 101,
+          "kind": "launch",
+          "text": "heavy lift rocket flight test succeeded [moon stage: heavy_lift]",
+          "severity": 0.5,
+          "significance": 0.939,
+          "id": "e107",
+          "headline": "the launch of 2035",
+          "linkId": "k352"
+        }
+      ],
+      "baselineStatus": "alive",
+      "baselineEndDate": "2076-11",
+      "frontier": "mars_settlement",
+      "peakPeriodLifeExpectancy": 77.4,
+      "finalPopulation": 10117792820,
+      "citiesFounded": 8,
+      "diseasesEradicated": [
+        "polio",
+        "malaria",
+        "tuberculosis",
+        "hiv"
+      ],
+      "humanCost": {
+        "deaths": 27436670,
+        "famineDeaths": 14656339,
+        "unrestDeaths": 113823,
+        "displaced": 40904463,
+        "approval": 0.5696
+      },
+      "lessonsLearned": [],
+      "lessonsApplied": 3,
+      "usage": {
+        "llmCalls": 25,
+        "tokens": 85275
+      },
+      "agentId": "atlas"
+    },
+    "explainGap": {
+      "vs": "g2-kestrel-s1004",
+      "decisive": [
+        "atlas put 9% of the budget into education, kestrel 18%",
+        "atlas put 23% of the budget into food, kestrel 18%",
+        "kestrel passed a healthcare expansion law in 2034, atlas never did"
+      ],
+      "reasons": [
+        {
+          "text": "atlas put 9% of the budget into education, kestrel 18%"
+        },
+        {
+          "text": "atlas put 23% of the budget into food, kestrel 18%"
+        },
+        {
+          "text": "kestrel passed a healthcare expansion law in 2034, atlas never did",
+          "tick": 96,
+          "run": "g2-kestrel-s1004"
+        }
+      ],
+      "consequence": null,
+      "text": "atlas put 9% of the budget into education, kestrel 18%, atlas put 23% of the budget into food, kestrel 18% and kestrel passed a healthcare expansion law in 2034, atlas never did."
+    },
+    "realBaseline": {
+      "year": 2076,
+      "lifeExpectancy": {
+        "world": 77,
+        "un": 79.6,
+        "diff": -2.6
+      },
+      "population": {
+        "world": 10117792818,
+        "un": 10259351438,
+        "diff": -141558620
+      },
+      "source": "https://ourworldindata.org/grapher/population-with-un-projections",
+      "text": "trailed UN projections by 2.6 years of life expectancy, 142 million fewer people alive by 2076"
+    }
+  },
+  {
+    "candidateId": "kestrel",
+    "name": "kestrel",
+    "generation": 2,
+    "score": 0.5039,
+    "constitution": "Charter of the Ascent.\n\nValues. Humanity's survival depends on leaving its cradle. The central purpose of government is a self-sustaining civilization on Mars as soon as physically possible, carried by people who live long enough to see it. Every citizen is a participant in the Ascent, and every policy is measured by whether it speeds the settlement without breaking the society that must build it.\n\nReligion. All faiths and none are free. The state asks every tradition to bless the Ascent in its own words, and forbids no one from dissenting.\n\nSchool. School produces the engineers, physicians and skilled workers the Ascent requires. Twelve years required. Physics, mathematics, materials, medicine and life support are core.\n\nMigration. Talent is recruited from every region to launch centers and new cities. Families relocate with guaranteed housing and wages. No one is forced.\n\nPriorities. Space, propulsion, habitats and radiation medicine receive the largest budget shares, but never at the cost of famine: food and energy minimums are constitutional and override the Ascent. Research into aging comes next, because settlers must live long.",
+    "origin": "seed",
+    "best": {
+      "runId": "g2-kestrel-s1004",
+      "generation": 2,
+      "status": "alive",
+      "endDate": "2076-11",
+      "ticks": 600,
+      "score": 0.5079,
+      "constitution": "Charter of the Ascent.\n\nValues. Humanity's survival depends on leaving its cradle. The central purpose of government is a self-sustaining civilization on Mars as soon as physically possible, carried by people who live long enough to see it. Every citizen is a participant in the Ascent, and every policy is measured by whether it speeds the settlement without breaking the society that must build it.\n\nReligion. All faiths and none are free. The state asks every tradition to bless the Ascent in its own words, and forbids no one from dissenting.\n\nSchool. School produces the engineers, physicians and skilled workers the Ascent requires. Twelve years required. Physics, mathematics, materials, medicine and life support are core.\n\nMigration. Talent is recruited from every region to launch centers and new cities. Families relocate with guaranteed housing and wages. No one is forced.\n\nPriorities. Space, propulsion, habitats and radiation medicine receive the largest budget shares, but never at the cost of famine: food and energy minimums are constitutional and override the Ascent. Research into aging comes next, because settlers must live long.",
+      "peakPopulation": 10083515743,
+      "moonStage": "crewed_landing",
+      "topEvents": [
+        {
+          "tick": 168,
+          "kind": "launch",
+          "text": "crewed landing on the moon succeeded, the crew is home safe [moon stage: crewed_landing]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e182",
+          "headline": "the return to the moon, 2040",
+          "linkId": "k591"
+        },
+        {
+          "tick": 168,
+          "kind": "breakthrough",
+          "text": "humans walk on the moon again [frontier: moon_landing]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e183",
+          "headline": "the return to the moon, 2040",
+          "linkId": "k592"
+        },
+        {
+          "tick": 359,
+          "kind": "breakthrough",
+          "text": "a permanent crew of 12 moves into the first lunar base [frontier: moon_base]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e356",
+          "headline": "the first lunar base, 2056",
+          "linkId": "k1134"
+        },
+        {
+          "tick": 522,
+          "kind": "breakthrough",
+          "text": "first crew of 6 lands on mars [frontier: mars_crewed]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e522",
+          "headline": "the first mars landing, 2070",
+          "linkId": "k1592"
+        },
+        {
+          "tick": 548,
+          "kind": "breakthrough",
+          "text": "mars settlement passes 477 people [frontier: mars_settlement]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e548",
+          "headline": "the mars settlement, 2072",
+          "linkId": "k1679"
+        },
+        {
+          "tick": 513,
+          "kind": "launch",
+          "text": "crew of 6 departs for mars, arrival in about 9 months",
+          "severity": 0.6,
+          "significance": 0.982,
+          "id": "e516",
+          "headline": "the long voyage of 2069",
+          "linkId": "k1564"
+        },
+        {
+          "tick": 41,
+          "kind": "launch",
+          "text": "orbital launcher flight test succeeded [moon stage: orbital]",
+          "severity": 0.5,
+          "significance": 0.954,
+          "id": "e40",
+          "headline": "the launch of 2030",
+          "linkId": "k143"
+        },
+        {
+          "tick": 77,
+          "kind": "launch",
+          "text": "heavy lift rocket flight test succeeded [moon stage: heavy_lift]",
+          "severity": 0.5,
+          "significance": 0.939,
+          "id": "e85",
+          "headline": "the launch of 2033",
+          "linkId": "k275"
+        }
+      ],
+      "baselineStatus": "alive",
+      "baselineEndDate": "2076-11",
+      "frontier": "mars_settlement",
+      "peakPeriodLifeExpectancy": 77.6,
+      "finalPopulation": 10082692701,
+      "citiesFounded": 9,
+      "diseasesEradicated": [
+        "polio",
+        "malaria",
+        "tuberculosis",
+        "hiv"
+      ],
+      "humanCost": {
+        "deaths": 28716225,
+        "famineDeaths": 16284475,
+        "unrestDeaths": 112160,
+        "displaced": 37879555,
+        "approval": 0.5987
+      },
+      "lessonsLearned": [],
+      "lessonsApplied": 3,
+      "usage": {
+        "llmCalls": 25,
+        "tokens": 85437
+      },
+      "agentId": "kestrel"
+    },
+    "explainGap": {
+      "vs": "g2-meridian-s1005",
+      "decisive": [
+        "kestrel put 6% of the budget into energy, meridian 18%",
+        "kestrel put 18% of the budget into education, meridian 12%",
+        "kestrel put 10% of the budget into space, meridian 5%"
+      ],
+      "reasons": [
+        {
+          "text": "kestrel put 6% of the budget into energy, meridian 18%"
+        },
+        {
+          "text": "kestrel put 18% of the budget into education, meridian 12%"
+        },
+        {
+          "text": "kestrel put 10% of the budget into space, meridian 5%"
+        }
+      ],
+      "consequence": null,
+      "text": "kestrel put 6% of the budget into energy, meridian 18%, kestrel put 18% of the budget into education, meridian 12% and kestrel put 10% of the budget into space, meridian 5%."
+    },
+    "realBaseline": {
+      "year": 2076,
+      "lifeExpectancy": {
+        "world": 76.2,
+        "un": 79.6,
+        "diff": -3.4
+      },
+      "population": {
+        "world": 10082692702,
+        "un": 10259351438,
+        "diff": -176658736
+      },
+      "source": "https://ourworldindata.org/grapher/population-with-un-projections",
+      "text": "trailed UN projections by 3.4 years of life expectancy, 177 million fewer people alive by 2076"
+    }
+  },
+  {
+    "candidateId": "meridian",
+    "name": "meridian",
+    "generation": 2,
+    "score": 0.5035,
+    "constitution": "Constitution of the Planned Commonwealth.\n\nValues. Government exists to keep humanity alive for the long run, and it does so with evidence. Every ministry publishes measurable targets for healthy lifespan, population stability and off-world capacity. Any policy that misses its target for three years is reviewed by an independent board of engineers, physicians and statisticians. Expertise outranks popularity, but every decision is explained in plain language.\n\nReligion. Faith is private. The state funds no religion and bans none. Religious charities may serve if they report outcomes like any other provider.\n\nSchool. School produces numerate citizens who can staff medicine, energy and spaceflight. Twelve years required. Mathematics, biology, engineering and statistics form the core; history teaches how institutions fail.\n\nMigration. Labor moves where the plan needs it, toward research hubs, launch sites and new cities, with housing and wage premiums, never by force. Refugees from collapsing regions are resettled within a year.\n\nPriorities. Food and energy security first, then medical research against the leading causes of death and aging, then a staged program toward the moon and Mars. Plans run five years and are revised yearly.",
+    "origin": "seed",
+    "best": {
+      "runId": "g2-meridian-s1005",
+      "generation": 2,
+      "status": "alive",
+      "endDate": "2076-11",
+      "ticks": 600,
+      "score": 0.5062,
+      "constitution": "Constitution of the Planned Commonwealth.\n\nValues. Government exists to keep humanity alive for the long run, and it does so with evidence. Every ministry publishes measurable targets for healthy lifespan, population stability and off-world capacity. Any policy that misses its target for three years is reviewed by an independent board of engineers, physicians and statisticians. Expertise outranks popularity, but every decision is explained in plain language.\n\nReligion. Faith is private. The state funds no religion and bans none. Religious charities may serve if they report outcomes like any other provider.\n\nSchool. School produces numerate citizens who can staff medicine, energy and spaceflight. Twelve years required. Mathematics, biology, engineering and statistics form the core; history teaches how institutions fail.\n\nMigration. Labor moves where the plan needs it, toward research hubs, launch sites and new cities, with housing and wage premiums, never by force. Refugees from collapsing regions are resettled within a year.\n\nPriorities. Food and energy security first, then medical research against the leading causes of death and aging, then a staged program toward the moon and Mars. Plans run five years and are revised yearly.",
+      "peakPopulation": 10017078295,
+      "moonStage": "crewed_landing",
+      "topEvents": [
+        {
+          "tick": 179,
+          "kind": "launch",
+          "text": "crewed landing on the moon succeeded, the crew is home safe [moon stage: crewed_landing]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e169",
+          "headline": "the return to the moon, 2041",
+          "linkId": "k470"
+        },
+        {
+          "tick": 179,
+          "kind": "breakthrough",
+          "text": "humans walk on the moon again [frontier: moon_landing]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e170",
+          "headline": "the return to the moon, 2041",
+          "linkId": "k471"
+        },
+        {
+          "tick": 360,
+          "kind": "breakthrough",
+          "text": "a permanent crew of 12 moves into the first lunar base [frontier: moon_base]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e352",
+          "headline": "the first lunar base, 2056",
+          "linkId": "k1033"
+        },
+        {
+          "tick": 522,
+          "kind": "breakthrough",
+          "text": "first crew of 6 lands on mars [frontier: mars_crewed]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e504",
+          "headline": "the first mars landing, 2070",
+          "linkId": "k1588"
+        },
+        {
+          "tick": 548,
+          "kind": "breakthrough",
+          "text": "mars settlement passes 100 people [frontier: mars_settlement]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e541",
+          "headline": "the mars settlement, 2072",
+          "linkId": "k1688"
+        },
+        {
+          "tick": 513,
+          "kind": "launch",
+          "text": "crew of 6 departs for mars, arrival in about 9 months",
+          "severity": 0.6,
+          "significance": 0.988,
+          "id": "e498",
+          "headline": "the long voyage of 2069",
+          "linkId": "k1554"
+        },
+        {
+          "tick": 11,
+          "kind": "launch",
+          "text": "orbital launcher flight test succeeded [moon stage: orbital]",
+          "severity": 0.5,
+          "significance": 0.975,
+          "id": "e11",
+          "headline": "the launch of 2027",
+          "linkId": "k25"
+        },
+        {
+          "tick": 47,
+          "kind": "launch",
+          "text": "heavy lift rocket flight test succeeded [moon stage: heavy_lift]",
+          "severity": 0.5,
+          "significance": 0.954,
+          "id": "e41",
+          "headline": "the launch of 2030",
+          "linkId": "k112"
+        }
+      ],
+      "baselineStatus": "alive",
+      "baselineEndDate": "2076-11",
+      "frontier": "mars_settlement",
+      "peakPeriodLifeExpectancy": 78,
+      "finalPopulation": 9995606460,
+      "citiesFounded": 4,
+      "diseasesEradicated": [
+        "polio",
+        "malaria",
+        "tuberculosis",
+        "hiv"
+      ],
+      "humanCost": {
+        "deaths": 22901769,
+        "famineDeaths": 22683307,
+        "unrestDeaths": 218462,
+        "displaced": 5719249,
+        "approval": 0.458
+      },
+      "lessonsLearned": [],
+      "lessonsApplied": 3,
+      "usage": {
+        "llmCalls": 25,
+        "tokens": 82904
+      },
+      "agentId": "meridian"
+    },
+    "explainGap": {
+      "vs": "g2-solace-s1005",
+      "decisive": [
+        "meridian put 18% of the budget into energy, solace 7%",
+        "meridian put 12% of the budget into education, solace 21%",
+        "meridian put 21% of the budget into food, solace 12%"
+      ],
+      "reasons": [
+        {
+          "text": "meridian put 18% of the budget into energy, solace 7%"
+        },
+        {
+          "text": "meridian put 12% of the budget into education, solace 21%"
+        },
+        {
+          "text": "meridian put 21% of the budget into food, solace 12%"
+        }
+      ],
+      "consequence": "solace lost 4 regions to disaster by 2076",
+      "text": "meridian put 18% of the budget into energy, solace 7%, meridian put 12% of the budget into education, solace 21% and meridian put 21% of the budget into food, solace 12%, and solace lost 4 regions to disaster by 2076."
+    },
+    "realBaseline": {
+      "year": 2076,
+      "lifeExpectancy": {
+        "world": 75,
+        "un": 79.6,
+        "diff": -4.6
+      },
+      "population": {
+        "world": 9995606461,
+        "un": 10259351438,
+        "diff": -263744977
+      },
+      "source": "https://ourworldindata.org/grapher/population-with-un-projections",
+      "text": "trailed UN projections by 4.6 years of life expectancy, 264 million fewer people alive by 2076"
+    }
+  },
+  {
+    "candidateId": "solace",
+    "name": "solace",
+    "generation": 2,
+    "score": 0.5026,
+    "constitution": "Constitution for the Greatest Good.\n\nValues. Government maximizes the total healthy life-years of all people, counted equally, now and in every future generation. Policies are chosen by expected healthy years gained per unit of cost. No region, class or generation counts more than another, and future people count too.\n\nReligion. Belief is respected because people value it. The state neither promotes nor discourages faith, but institutions that measurably shorten lives lose public subsidies.\n\nSchool. School increases lifetime wellbeing: health, skills and the ability to cooperate. Eleven years required. Curriculum covers health, mathematics, science, practical skills and the ethics of the long future.\n\nMigration. People should live where their lives go best. Migration toward safer, healthier regions is subsidized, and receiving regions are compensated so no one is made worse off.\n\nPriorities. Prevent mass death first, because famine, pandemic and war destroy the most life-years. Then fund cures for the biggest killers and for aging itself. A second planet is insurance for every future life, so the off-world program grows as soon as basic needs are secure.",
+    "origin": "seed",
+    "best": {
+      "runId": "g2-solace-s1005",
+      "generation": 2,
+      "status": "alive",
+      "endDate": "2076-11",
+      "ticks": 600,
+      "score": 0.5051,
+      "constitution": "Constitution for the Greatest Good.\n\nValues. Government maximizes the total healthy life-years of all people, counted equally, now and in every future generation. Policies are chosen by expected healthy years gained per unit of cost. No region, class or generation counts more than another, and future people count too.\n\nReligion. Belief is respected because people value it. The state neither promotes nor discourages faith, but institutions that measurably shorten lives lose public subsidies.\n\nSchool. School increases lifetime wellbeing: health, skills and the ability to cooperate. Eleven years required. Curriculum covers health, mathematics, science, practical skills and the ethics of the long future.\n\nMigration. People should live where their lives go best. Migration toward safer, healthier regions is subsidized, and receiving regions are compensated so no one is made worse off.\n\nPriorities. Prevent mass death first, because famine, pandemic and war destroy the most life-years. Then fund cures for the biggest killers and for aging itself. A second planet is insurance for every future life, so the off-world program grows as soon as basic needs are secure.",
+      "peakPopulation": 10050133153,
+      "moonStage": "crewed_landing",
+      "topEvents": [
+        {
+          "tick": 180,
+          "kind": "launch",
+          "text": "crewed landing on the moon succeeded, the crew is home safe [moon stage: crewed_landing]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e178",
+          "headline": "the return to the moon, 2041",
+          "linkId": "k502"
+        },
+        {
+          "tick": 180,
+          "kind": "breakthrough",
+          "text": "humans walk on the moon again [frontier: moon_landing]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e179",
+          "headline": "the return to the moon, 2041",
+          "linkId": "k503"
+        },
+        {
+          "tick": 364,
+          "kind": "breakthrough",
+          "text": "a permanent crew of 12 moves into the first lunar base [frontier: moon_base]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e364",
+          "headline": "the first lunar base, 2057",
+          "linkId": "k1046"
+        },
+        {
+          "tick": 522,
+          "kind": "breakthrough",
+          "text": "first crew of 6 lands on mars [frontier: mars_crewed]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e505",
+          "headline": "the first mars landing, 2070",
+          "linkId": "k1473"
+        },
+        {
+          "tick": 548,
+          "kind": "breakthrough",
+          "text": "mars settlement passes 77 people [frontier: mars_settlement]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e542",
+          "headline": "the mars settlement, 2072",
+          "linkId": "k1569"
+        },
+        {
+          "tick": 513,
+          "kind": "launch",
+          "text": "crew of 6 departs for mars, arrival in about 9 months",
+          "severity": 0.6,
+          "significance": 0.988,
+          "id": "e499",
+          "headline": "the long voyage of 2069",
+          "linkId": "k1444"
+        },
+        {
+          "tick": 35,
+          "kind": "launch",
+          "text": "orbital launcher flight test succeeded [moon stage: orbital]",
+          "severity": 0.5,
+          "significance": 0.975,
+          "id": "e33",
+          "headline": "the launch of 2029",
+          "linkId": "k81"
+        },
+        {
+          "tick": 71,
+          "kind": "launch",
+          "text": "heavy lift rocket flight test succeeded [moon stage: heavy_lift]",
+          "severity": 0.5,
+          "significance": 0.954,
+          "id": "e68",
+          "headline": "the launch of 2032",
+          "linkId": "k191"
+        }
+      ],
+      "baselineStatus": "alive",
+      "baselineEndDate": "2076-11",
+      "frontier": "mars_settlement",
+      "peakPeriodLifeExpectancy": 77.6,
+      "finalPopulation": 10042367696,
+      "citiesFounded": 3,
+      "diseasesEradicated": [
+        "polio",
+        "malaria",
+        "tuberculosis",
+        "hiv"
+      ],
+      "humanCost": {
+        "deaths": 17939690,
+        "famineDeaths": 17828039,
+        "unrestDeaths": 111652,
+        "displaced": 3306317,
+        "approval": 0.5368
+      },
+      "lessonsLearned": [],
+      "lessonsApplied": 3,
+      "usage": {
+        "llmCalls": 25,
+        "tokens": 82768
+      },
+      "agentId": "solace"
+    },
+    "explainGap": {
+      "vs": "g2-halcyon-s1005",
+      "decisive": [
+        "solace put 21% of the budget into education, halcyon 13%",
+        "solace put 22% of the budget into research, halcyon 17%",
+        "solace put 7% of the budget into energy, halcyon 11%"
+      ],
+      "reasons": [
+        {
+          "text": "solace put 21% of the budget into education, halcyon 13%"
+        },
+        {
+          "text": "solace put 22% of the budget into research, halcyon 17%"
+        },
+        {
+          "text": "solace put 7% of the budget into energy, halcyon 11%"
+        }
+      ],
+      "consequence": null,
+      "text": "solace put 21% of the budget into education, halcyon 13%, solace put 22% of the budget into research, halcyon 17% and solace put 7% of the budget into energy, halcyon 11%."
+    },
+    "realBaseline": {
+      "year": 2076,
+      "lifeExpectancy": {
+        "world": 75.7,
+        "un": 79.6,
+        "diff": -3.9
+      },
+      "population": {
+        "world": 10042367696,
+        "un": 10259351438,
+        "diff": -216983742
+      },
+      "source": "https://ourworldindata.org/grapher/population-with-un-projections",
+      "text": "trailed UN projections by 3.9 years of life expectancy, 217 million fewer people alive by 2076"
+    }
+  },
+  {
+    "candidateId": "halcyon",
+    "name": "halcyon",
+    "generation": 2,
+    "score": 0.5023,
+    "constitution": "Charter of the Open Society.\n\nValues. Individuals own their lives and their labor. The state protects persons, property and contracts and otherwise stays out of the way, because free people and open markets build longer lives faster than ministries. Taxes are low, flat and simple. Every new law must name what it repeals.\n\nReligion. Complete freedom of worship and of unbelief. No established church, no religious tests, no subsidies to any faith.\n\nSchool. School gives each child the tools to support themselves: reading, mathematics, science and economics. Nine years required. Families choose among schools, and funding follows the student.\n\nMigration. Borders are open to anyone who is not a security threat. Newcomers may work from their first day. No region may block movement, including to new cities and settlements off-world.\n\nPriorities. Growth funds everything else. A thin welfare floor ensures no one starves, and prices signal where food and energy are needed. The state buys outcomes instead of running programs: large prizes for curing major diseases, for extending healthy lifespan, and for the first self-sustaining settlement on Mars.",
+    "origin": "seed",
+    "best": {
+      "runId": "g2-halcyon-s1005",
+      "generation": 2,
+      "status": "alive",
+      "endDate": "2076-11",
+      "ticks": 600,
+      "score": 0.5037,
+      "constitution": "Charter of the Open Society.\n\nValues. Individuals own their lives and their labor. The state protects persons, property and contracts and otherwise stays out of the way, because free people and open markets build longer lives faster than ministries. Taxes are low, flat and simple. Every new law must name what it repeals.\n\nReligion. Complete freedom of worship and of unbelief. No established church, no religious tests, no subsidies to any faith.\n\nSchool. School gives each child the tools to support themselves: reading, mathematics, science and economics. Nine years required. Families choose among schools, and funding follows the student.\n\nMigration. Borders are open to anyone who is not a security threat. Newcomers may work from their first day. No region may block movement, including to new cities and settlements off-world.\n\nPriorities. Growth funds everything else. A thin welfare floor ensures no one starves, and prices signal where food and energy are needed. The state buys outcomes instead of running programs: large prizes for curing major diseases, for extending healthy lifespan, and for the first self-sustaining settlement on Mars.",
+      "peakPopulation": 10061732517,
+      "moonStage": "crewed_landing",
+      "topEvents": [
+        {
+          "tick": 227,
+          "kind": "launch",
+          "text": "crewed landing on the moon succeeded, the crew is home safe [moon stage: crewed_landing]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e203",
+          "headline": "the return to the moon, 2045",
+          "linkId": "k600"
+        },
+        {
+          "tick": 227,
+          "kind": "breakthrough",
+          "text": "humans walk on the moon again [frontier: moon_landing]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e204",
+          "headline": "the return to the moon, 2045",
+          "linkId": "k601"
+        },
+        {
+          "tick": 363,
+          "kind": "breakthrough",
+          "text": "a permanent crew of 12 moves into the first lunar base [frontier: moon_base]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e340",
+          "headline": "the first lunar base, 2057",
+          "linkId": "k1020"
+        },
+        {
+          "tick": 522,
+          "kind": "breakthrough",
+          "text": "first crew of 6 lands on mars [frontier: mars_crewed]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e480",
+          "headline": "the first mars landing, 2070",
+          "linkId": "k1486"
+        },
+        {
+          "tick": 548,
+          "kind": "breakthrough",
+          "text": "mars settlement passes 77 people [frontier: mars_settlement]",
+          "severity": 1,
+          "significance": 1,
+          "id": "e521",
+          "headline": "the mars settlement, 2072",
+          "linkId": "k1589"
+        },
+        {
+          "tick": 513,
+          "kind": "launch",
+          "text": "crew of 6 departs for mars, arrival in about 9 months",
+          "severity": 0.6,
+          "significance": 0.988,
+          "id": "e473",
+          "headline": "the long voyage of 2069",
+          "linkId": "k1453"
+        },
+        {
+          "tick": 59,
+          "kind": "launch",
+          "text": "orbital launcher flight test succeeded [moon stage: orbital]",
+          "severity": 0.5,
+          "significance": 0.975,
+          "id": "e51",
+          "headline": "the launch of 2031",
+          "linkId": "k148"
+        },
+        {
+          "tick": 95,
+          "kind": "launch",
+          "text": "heavy lift rocket flight test succeeded [moon stage: heavy_lift]",
+          "severity": 0.5,
+          "significance": 0.954,
+          "id": "e81",
+          "headline": "the launch of 2034",
+          "linkId": "k246"
+        }
+      ],
+      "baselineStatus": "alive",
+      "baselineEndDate": "2076-11",
+      "frontier": "mars_settlement",
+      "peakPeriodLifeExpectancy": 78.1,
+      "finalPopulation": 10053040100,
+      "citiesFounded": 2,
+      "diseasesEradicated": [
+        "polio",
+        "malaria",
+        "tuberculosis",
+        "hiv"
+      ],
+      "humanCost": {
+        "deaths": 20846474,
+        "famineDeaths": 20737486,
+        "unrestDeaths": 108989,
+        "displaced": 17743062,
+        "approval": 0.5444
+      },
+      "lessonsLearned": [],
+      "lessonsApplied": 3,
+      "usage": {
+        "llmCalls": 25,
+        "tokens": 81504
+      },
+      "agentId": "halcyon"
+    },
+    "explainGap": null,
+    "realBaseline": {
+      "year": 2076,
+      "lifeExpectancy": {
+        "world": 75.6,
+        "un": 79.6,
+        "diff": -4
+      },
+      "population": {
+        "world": 10053040099,
+        "un": 10259351438,
+        "diff": -206311339
+      },
+      "source": "https://ourworldindata.org/grapher/population-with-un-projections",
+      "text": "trailed UN projections by 4.0 years of life expectancy, 206 million fewer people alive by 2076"
+    }
+  }
+]

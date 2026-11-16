@@ -1,0 +1,45 @@
+[
+ {
+  "lifeId": "g3-kestrel-ii-s1006-life-1",
+  "worldId": "g3-kestrel-ii-s1006",
+  "lifeNo": 1,
+  "name": "semisi taufa",
+  "sex": "male",
+  "look": {
+   "skinTone": 7,
+   "hair": "afro",
+   "hairColor": "dark_brown",
+   "adultHeightCm": 171,
+   "build": "average"
+  },
+  "birthplace": {
+   "cityId": "port_moresby",
+   "city": "Port Moresby",
+   "countryId": "PNG",
+   "country": "Papua New Guinea",
+   "regionId": "carib_pac",
+   "lat": -9.44,
+   "lon": 147.18,
+   "fromTick": 0
+  },
+  "deathTick": 19,
+  "deathAge": 1.6,
+  "deathCause": "pneumonia",
+  "epitaph": "semisi taufa · 2026–2028 · port moresby",
+  "status": "done",
+  "score": 0.0732,
+  "twinScore": 0.0732,
+  "parts": {
+   "healthyYears": 0.0158,
+   "relationships": 0.1739,
+   "contribution": 0,
+   "meaning": 0,
+   "wellbeing": 0.1716
+  },
+  "lastCity": "Port Moresby",
+  "job": null,
+  "kids": 0,
+  "lessonsLeft": [],
+  "createdAt": "2026-11-16T21:35:26.957Z"
+ }
+]

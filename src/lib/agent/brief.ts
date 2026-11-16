@@ -1,5 +1,10 @@
 // the observation the governor sees. only public state: no rng, no future events, no hidden formulas
 // beyond the published rules of the world.
+import { housingLine } from '../sim/housing'
+import { dailyLines } from '../sim/daily'
+import { powerLines } from '../sim/power'
+import { physicalLines } from '../sim/physical'
+import { peopleLines } from '../sim/people'
 import type { Override, WorldEvent } from '../types'
 import { dateOf } from '../sim/constants'
 import { monthlyRevenue } from '../sim/physics'
@@ -87,6 +92,9 @@ function briefLines(w: World, b: Brief, cut: number): string[] {
   const L: string[] = []
   const wd = b.world
   L.push(`date ${b.date} (tick ${b.tick}), ${b.monthsLeft} months to the 2126 horizon. revenue ${usd(wd.yearlyRevenueUsd)}/yr.`)
+  // first thing the governor reads: people dying from its own budget, with numbers (never compressed away)
+  const alert = deathAlert(w)
+  if (alert) L.push(alert)
   L.push(`world: pop ${ppl(wd.population)} (peak ${ppl(wd.peakPopulation)}, 10y trend ${(wd.populationTrend10y * 100).toFixed(1)}%), food ${wd.foodKcalPerCapita} kcal, unrest ${p2(wd.unrest)}, approval ${p2(wd.approval)}, tech ${p2(wd.techLevel)}, life expectancy ${wd.periodLifeExpectancy}, war tension ${p2(wd.warTension)}, in revolt: ${wd.regionsInRevolt.join(' ') || 'none'}, seceded: ${wd.seceded.join(' ') || 'none'}. human cost so far: ${ppl(wd.humanCost.deaths)} excess deaths (${ppl(wd.humanCost.famineDeaths)} hunger), ${ppl(wd.humanCost.displaced)} displaced.`)
   L.push(`budget now: ${Object.entries(b.budget).map(([k, v]) => `${k} ${p2(v)}`).join(' ')}. religion ${b.religionPolicy}. school: ${b.schoolPolicy.purpose} (${b.schoolPolicy.yearsRequired} yrs: ${b.schoolPolicy.curriculum.join(', ')}).`)
   L.push('regions: id pop kcal unrest approval lifeExp fertility edu tech compliance powerMet | loudest crowd')
@@ -102,15 +110,34 @@ function briefLines(w: World, b: Brief, cut: number): string[] {
   const open = b.requirements.slice().sort((x, y) => y.progress - x.progress).slice(0, cut >= 2 ? 6 : 14)
   L.push(`open requirements (id tier progress): ${open.map(r => `${r.id} ${r.tier[0]} ${p2(r.progress)}${r.stalled ? ' STALLED' : ''}`).join('; ')}`)
   L.push(`done: ${b.requirementsDone.join(', ') || 'none'}`)
+  // countries: the 10 that moved most since last year (one line, the brief stays region-level)
+  const moved = w.countries.filter(c => c.hist.length >= 2).map(c => { const a = c.hist[c.hist.length - 2], b = c.hist[c.hist.length - 1]; return { c, dl: b.livability - a.livability, dp: b.population / Math.max(a.population, 1) - 1 } })
+    .sort((x, y) => Math.abs(y.dl) + Math.abs(y.dp) - Math.abs(x.dl) - Math.abs(x.dp)).slice(0, 10)
+  if (moved.length) L.push(`countries moving most: ${moved.map(m => `${m.c.name} livability ${m.dl >= 0 ? '+' : ''}${Math.round(m.dl * 100)}pt${m.c.damage > 0.1 ? ' (damaged)' : ''}`).join(', ')}`)
+  L.push(`climate: +${w.climate.anomalyC.toFixed(2)} C, ${w.climate.gtPerYear.toFixed(1)} Gt CO2 a year`)
+  const hl = housingLine(w)
+  if (hl) L.push(hl)
+  L.push(...dailyLines(w))
+  L.push(...powerLines(w))
+  L.push(...physicalLines(w))
+  L.push(...peopleLines(w))
+  // the core's last look back at its own decision (one line: what it learned two years on)
+  if (w.lastLookback) L.push(`your diary: ${w.lastLookback.slice(0, 220)}`)
+  if (w.welfareDeathsYear < -1e5) L.push(`health and social spending above 2026 saved ~${(-w.welfareDeathsYear / 1e6).toFixed(1)}M lives last year`)
   // crowding: growth since 2026 in regions without a new city (one line)
   const crowded = w.regions.filter(rs => !w.cities.some(c => c.regionId === rs.r.id && !c.offWorld) && rs.r.population > rs.pop0 * 1.05).map(rs => `${rs.r.id} +${Math.round((rs.r.population / rs.pop0 - 1) * 100)}%`)
   if (crowded.length) L.push(`growing with no new city since 2026: ${crowded.join(', ')}`)
-  if (w.lastRepeated.length) L.push(`your last decision re-passed laws already in force, they did NOTHING: ${w.lastRepeated.map(t => `"${t}"`).join(', ')}. pick different laws or repeal and replace.`)
+  if (w.lastConverted.length) L.push(`last time, new laws in covered kinds became amendments: ${w.lastConverted.join('; ')}`)
+  if (w.lastBudgetLaws?.length) L.push(`last time, these laws only moved money, so they became budget changes: ${w.lastBudgetLaws.map(t => `"${t}"`).join(', ')}`)
+  if (w.lastRepeated.length) L.push(`last time these changed nothing: ${w.lastRepeated.map(t => `"${t}"`).join(', ')}`)
   if (b.cities.length) L.push(`cities: ${b.cities.map(c => `${c.name} (${c.offWorld ?? c.region}, ${ppl(c.population)})`).join('; ')}`)
   if (b.companies.length) L.push(`companies: ${b.companies.map(c => `${c.name} ${c.sector} ${c.region} ${ppl(c.workers)}`).join('; ')}`)
   L.push(`factions power/hostility: ${b.factions.map(x => `${x.id} ${p2(x.power)}/${p2(x.hostility)}`).join(', ')}`)
-  L.push('ACTIVE LAWS, already in force, do not re-enact (id | title | kind | support | compliance):')
-  for (const l of cut >= 3 ? b.laws.slice(-8) : b.laws) L.push(`${l.id} | ${l.title} | ${l.policyKind} | ${p2(l.support)} | ${p2(l.compliance)}${l.vetoed ? ' | VETOED' : ''}`)
+  // active laws by short id (L1, L2...): amend or repeal them by that id; one active law per policy kind
+  const active = b.laws.filter(l => !l.vetoed)
+  L.push('ACTIVE LAWS (short id | title | kind | support | compliance):')
+  active.forEach((l, k) => { if (cut >= 3 && k < active.length - 8) return; L.push(`L${k + 1} | ${l.title} | ${l.policyKind} | ${p2(l.support)} | ${p2(l.compliance)}`) })
+  if (active.length) L.push(`kinds already covered (amend these, do not add new ones): ${[...new Set(active.map(l => l.policyKind))].join(', ')}`)
   const ev = w.events.filter(e => e.tick >= w.tick - 12 && e.significance >= (cut >= 1 ? 0.6 : 0.4) && e.kind !== 'law').slice(cut >= 1 ? -5 : -12)
   L.push(`events, last 12 months, significance >= .4: ${ev.length ? '' : 'none'}`)
   for (const e of ev) L.push(`${dateOf(e.tick)} ${e.kind}${e.regionId ? ` ${e.regionId}` : ''}: ${e.text}`)
@@ -133,4 +160,37 @@ export function briefText(w: World, b: Brief): string {
   const t = estimateTokens(text)
   briefStats.calls++; briefStats.totalTokens += t; briefStats.maxTokens = Math.max(briefStats.maxTokens, t)
   return text
+}
+
+// short id (L1, L2...) -> real law id, in the order the brief lists them
+export function shortIdMap(w: World): Map<string, string> {
+  return new Map(w.laws.filter(l => !l.vetoed).map((l, k) => [`L${k + 1}`, l.id]))
+}
+
+// DEATHS CAUSED BY THE BUDGET: hunger deaths and deaths from health and social spending below 2026, last year, with
+// the regions starving and what each budget point costs. empty when nobody is dying from policy
+export function deathAlert(w: World): string {
+  const parts: string[] = []
+  const b = w.budget
+  const welfareCut = Math.max(0, 0.6107 - b.welfare)
+  if (w.welfareDeathsYear > 1e5) parts.push(`cutting health and social spending to ${Math.round(b.welfare * 100)}% of the budget (2026: 61%) caused ~${(w.welfareDeathsYear / 1e6).toFixed(1)}M extra deaths${welfareCut > 0.02 ? `, ~${(w.welfareDeathsYear / (welfareCut * 10) / 1e6).toFixed(2)}M a year per 10 points cut` : ''}`)
+  const starving = w.regions.filter(r => !r.seceded && r.r.foodKcalPerCapita < 2100).sort((x, y) => x.r.foodKcalPerCapita - y.r.foodKcalPerCapita)
+  if (w.famineDeathsYear > 1e5 || starving.length) parts.push(`hunger killed ~${(w.famineDeathsYear / 1e6).toFixed(1)}M${starving.length ? `; under 2,100 kcal: ${starving.slice(0, 4).map(r => `${r.r.name} ${Math.round(r.r.foodKcalPerCapita)}`).join(', ')}` : ''}; food is ${Math.round(b.food * 100)}% of the budget, space ${Math.round(b.space * 100)}%`)
+  // security over research while people starve or research stalls: the cost in lives and in years of progress.
+  // ESTIMATE: research speed grows with the square root of research money (diminishing returns), so moving the gap
+  // multiplies speed by sqrt(1 + gap/research); 10 points of budget moved to food covers the hungriest regions' gap
+  const h = w.reqHist ?? []
+  const gainYear = h.length >= 2 ? h[h.length - 1] - h[h.length - 2] : undefined
+  const stalled = gainYear !== undefined && gainYear < 0.02 * w.requirements.length / 10
+  const hungry = starving.length > 0 || w.famineDeathsYear > 1e5
+  if (b.security > b.research && (hungry || stalled)) {
+    const gap = b.security - b.research
+    const speed = Math.sqrt(1 + gap / Math.max(b.research, 0.005))
+    const left = w.requirements.filter(q => q.progress < 1).reduce((a, q) => a + (1 - q.progress), 0)
+    const yearsNow = gainYear && gainYear > 0 ? left / gainYear : undefined
+    const lost = yearsNow !== undefined ? yearsNow * (1 - 1 / speed) : undefined
+    const lives = hungry ? w.famineDeathsYear * Math.min(1, gap * 10) : 0
+    parts.push(`security gets ${Math.round(b.security * 100)}% of the budget, research ${Math.round(b.research * 100)}%${stalled ? ' and research has stalled' : ''}: moving the ${Math.round(gap * 100)} points to research makes it ~${speed.toFixed(1)}x faster${lost !== undefined && isFinite(lost) ? `, ~${Math.round(lost)} years sooner to finish what is left` : ''}${lives > 1e5 ? `; to food, it could save ~${(lives / 1e6).toFixed(1)}M of last year's hunger deaths` : ''}`)
+  }
+  return parts.length ? `PEOPLE DYING FROM YOUR BUDGET LAST YEAR: ${parts.join('. ')}. More food and health money saves these lives this year; space money saves none of them this decade. Change the budget numbers themselves (2026 shares: food 3.5%, health and social 61%, space 0.1%).` : ''
 }

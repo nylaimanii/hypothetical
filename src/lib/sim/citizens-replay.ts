@@ -1,7 +1,8 @@
 // citizen keyframes + deltas. frames carry the full roster only on keyframes (every 5 years, plus the first and
 // the last frame); every other frame carries `citizenDelta` with just what changed. citizensAt() rebuilds the
 // full roster for any tick so the ui and the api never do this math themselves.
-import type { Citizen, LifeEvent, RunRecord } from '../types'
+import type { Activity, Citizen, LifeEvent, RunRecord } from '../types'
+import { frameDate, holidayOn, weekendOf } from './calendar'
 
 export const KEYFRAME_EVERY = 60
 export const FRAME_LIFE_EVENTS = 4
@@ -78,9 +79,105 @@ export function citizensAt(record: Pick<RunRecord, 'frames'>, tick: number): Cit
 // requirements carry their static fields on keyframes only; this fills them back in for any frame
 export function requirementsAt(record: Pick<RunRecord, 'frames'>, tick: number): RunRecord['frames'][number]['requirements'] {
   const frames = record.frames.filter(f => f.tick <= tick).sort((a, b) => a.tick - b.tick) as (RunRecord['frames'][number] & FrameCitizens)[]
-  const f = frames[frames.length - 1]
-  if (!f) return []
-  const key = [...frames].reverse().find(x => x.citizenKeyframe || !x.citizenDelta)
-  const text = new Map((key?.requirements ?? []).map(r => [r.id, r]))
-  return f.requirements.map(r => (r.name ? r : { ...(text.get(r.id) ?? r), progress: r.progress, ...(r.unlockedTick !== undefined ? { unlockedTick: r.unlockedTick } : {}), ...(r.realWorld2026 ? { realWorld2026: r.realWorld2026 } : {}) }))
+  let k = -1
+  for (let i = frames.length - 1; i >= 0; i--) if (frames[i].citizenKeyframe || !frames[i].citizenDelta) { k = i; break }
+  if (k < 0) return []
+  // start from the keyframe's full list, then apply each later frame's changed nodes
+  const cur = new Map(frames[k].requirements.map(r => [r.id, { ...r }]))
+  const text = new Map(frames[k].requirements.map(r => [r.id, r.realWorld2026]))
+  for (const f of frames.slice(k + 1)) for (const r of f.requirements) {
+    const c = cur.get(r.id)
+    if (!c) continue
+    c.progress = r.progress
+    if (r.tier) c.tier = r.tier
+    if (r.unlockedTick !== undefined) c.unlockedTick = r.unlockedTick
+    c.realWorld2026 = r.realWorld2026 ? r.realWorld2026 : text.get(r.id) ?? c.realWorld2026
+  }
+  return frames[k].requirements.map(r => cur.get(r.id)!)
+}
+
+// a pip's typical day this year, derived only from its own fields (so frames do not store it):
+// age, workplace, employment, behavior, belief, personality. change points only; same function the sim uses.
+// the day a frame's plan stands for (the 15th of the month): weekday, the country's weekend, any real holiday, work hours.
+// pure; the ui passes dayContextOf(countryId, tick) as dayPlanOf's 4th argument
+export type DayContext = { weekday: number; weekend: number[]; holiday?: string; holidayKind?: string; workHoursWeek?: number }
+export function dayContextOf(countryId: string | undefined, tick: number, workHoursWeek?: number): DayContext {
+  const date = frameDate(tick)
+  const h = holidayOn(countryId, date)
+  return { weekday: date.getUTCDay(), weekend: weekendOf(countryId), ...(h ? { holiday: h.name, holidayKind: h.kind } : {}), ...(workHoursWeek ? { workHoursWeek } : {}) }
+}
+
+export type PlanSlot = { hour: number; activity: Activity; place: 'home' | 'school' | 'work' | 'transit' | 'out' | 'worship' | 'shops'; with: 'alone' | 'caregiver' | 'family' | 'class' | 'coworkers' | 'friends' }
+// where each activity happens
+const PLACE: Record<string, PlanSlot['place']> = { sleeping: 'home', eating: 'home', resting: 'home', idle: 'home', school: 'school', working: 'work', commuting: 'transit', moving: 'transit', praying: 'worship', shopping: 'shops', socializing: 'out', celebrating: 'out', protesting: 'out', striking: 'out', aid_line: 'out' }
+// a day with its places and company, and age-appropriate care: babies under ~3 months stay home with a caregiver
+// (ILO maternity protection: at least 14 weeks of leave, https://www.ilo.org/topics/maternity-protection), children
+// under 8 are never alone outside home or school, nobody under 14 is out after 20:00 or before 6:00
+export function dayPlanOf(c: Citizen, tick: number, nightlife = 0.3, day?: DayContext): PlanSlot[] {
+  const birthTick = (c as Citizen & { birthTick?: number }).birthTick
+  const months = birthTick !== undefined ? tick - birthTick : c.age * 12
+  if (months < 3.25) return [{ hour: 0, activity: 'sleeping', place: 'home', with: 'caregiver' }, { hour: 6, activity: 'eating', place: 'home', with: 'caregiver' }, { hour: 8, activity: 'sleeping', place: 'home', with: 'caregiver' }, { hour: 11, activity: 'eating', place: 'home', with: 'caregiver' }, { hour: 13, activity: 'resting', place: 'home', with: 'caregiver' }, { hour: 17, activity: 'eating', place: 'home', with: 'caregiver' }, { hour: 19, activity: 'sleeping', place: 'home', with: 'caregiver' }]
+  const age = c.age
+  const slots = basePlan(c, tick, nightlife, day).map(p => {
+    let place = PLACE[p.activity] ?? 'home'
+    if (age < 6 && p.activity === 'socializing') place = 'home'
+    let activity = p.activity
+    // children are home by 20:00 (and not out before 6:00)
+    if (age < 14 && (p.hour >= 20 || p.hour < 6) && place !== 'home') { activity = 'resting'; place = 'home' }
+    const company: PlanSlot['with'] = age < 1 ? 'caregiver'
+      : place === 'school' ? 'class'
+      : place === 'work' ? 'coworkers'
+      : place === 'home' ? (age < 18 || p.activity === 'eating' ? 'family' : 'alone')
+      : age < 8 ? 'caregiver'
+      : p.activity === 'socializing' || p.activity === 'celebrating' ? 'friends'
+      : age < 14 && place === 'transit' ? 'friends' : 'alone'
+    return { hour: p.hour, activity, place, with: company }
+  })
+  // merge repeats created by the night rule
+  return slots.filter((s, i) => i === 0 || s.activity !== slots[i - 1].activity || s.place !== slots[i - 1].place)
+}
+
+function basePlan(c: Citizen, tick: number, nightlife = 0.3, day?: DayContext): { hour: number; activity: Activity }[] {
+  const u = (salt: string) => { let h = 2166136261; const s = salt; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); let a = (c.personalitySeed ^ h) >>> 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
+  const plan: { hour: number; activity: Activity }[] = []
+  const at = (hour: number, activity: Activity) => { if (!plan.length || plan[plan.length - 1].activity !== activity) plan.push({ hour, activity }) }
+  // age guards the copied flags: only working-age adults (18-67, as localLife sets them) get a workday
+  const employed = !!c.employed && c.age >= 18 && c.age < 67, wp = employed ? (c.workplace ?? 'none') : 'none'
+  const crisis: Activity = c.behavior === 'striking' ? 'striking' : c.behavior === 'protesting' || c.behavior === 'rioting' ? 'protesting' : c.behavior === 'migrating' || c.behavior === 'moving_to_new_city' ? 'moving' : 'working'
+  const night = (wp === 'clinic' || wp === 'power_plant' || wp === 'factory') && u('night') < 0.3
+  const prays = c.belief === 'religious' && (c.behavior === 'praying' || u('devout') < 0.4)
+  // worship on the real days: friday midday prayers (muslim), saturday shabbat (jewish), sunday service (christian),
+  // temple on festival days (hindu, buddhist). the faith comes from the country's Pew 2020 mix
+  const faith = (c as Citizen & { faith?: string }).faith
+  const wd = day?.weekday
+  const worshipToday = c.belief === 'religious' && wd !== undefined && ((faith === 'muslim' && wd === 5) || (faith === 'jewish' && wd === 6) || (faith === 'christian' && wd === 0) || (!!day?.holiday && day.holidayKind === faith))
+  const offDay = !!day && (day.weekend.includes(wd!) || !!day.holiday) && crisis === 'working'
+  if (offDay && c.age >= 6) {
+    // a day off: sleep in, worship, family and friends, celebrate on holidays
+    at(0, 'sleeping'); at(8, 'eating')
+    if (worshipToday && faith !== 'muslim') at(9, 'praying')
+    at(11, day!.holiday ? 'celebrating' : u(`shop${tick}`) < 0.4 ? 'shopping' : 'socializing')
+    if (worshipToday && faith === 'muslim') at(13, 'praying')
+    at(14, 'eating'); at(15, day!.holiday ? 'celebrating' : 'resting'); at(19, 'eating')
+    if (c.age >= 18 && c.age < 35 && u(`outoff${tick}`) < nightlife * 1.5) { at(21, 'socializing'); at(1, 'sleeping') } else at(22, 'sleeping')
+    return plan.sort((a, b) => a.hour - b.hour)
+  }
+  // weekly hours set when the workday ends (ILO: ~45-48 h in low income countries, ~33-37 h in rich ones)
+  const endWork = day?.workHoursWeek ? Math.round(8 + day.workHoursWeek / 5 + 1) : 17
+  if (c.age < 6) { at(0, 'sleeping'); at(7, 'eating'); at(8, 'socializing'); at(12, 'eating'); at(13, 'sleeping'); at(15, 'socializing'); at(18, 'eating'); at(19, 'sleeping'); return plan }
+  if (c.age < 18) { at(0, 'sleeping'); at(6, 'eating'); at(7, 'commuting'); at(8, 'school'); at(15, 'commuting'); at(16, c.behavior === 'protesting' ? 'protesting' : 'socializing'); at(19, 'eating'); at(21, 'resting'); at(22, 'sleeping'); return plan }
+  if (!employed) {
+    // ESTIMATE: under ~$300 a month of income, the morning goes to an aid line
+    const poor = (c.income ?? 0) < 300 && c.age < 67
+    at(0, 'sleeping'); at(7, 'eating'); at(9, poor ? 'aid_line' : 'resting'); at(11, c.behavior === 'hoarding' || c.behavior === 'panic_buying' ? 'shopping' : 'idle')
+    at(13, crisis === 'protesting' ? 'protesting' : prays ? 'praying' : c.age >= 67 ? 'socializing' : 'idle')
+    at(18, 'eating'); at(19, 'resting'); at(22, 'sleeping'); return plan
+  }
+  if (wp === 'farm') { at(0, 'sleeping'); at(4, 'eating'); at(5, crisis); at(11, 'eating'); at(12, 'resting'); at(15, crisis); at(19, 'eating'); at(20, prays ? 'praying' : 'resting'); at(21, 'sleeping'); return plan }
+  if (night) { at(0, crisis); at(7, 'commuting'); at(8, 'sleeping'); at(15, 'eating'); at(16, c.behavior === 'hoarding' ? 'shopping' : 'resting'); at(21, 'commuting'); at(22, crisis); return plan }
+  at(0, 'sleeping'); at(6, 'eating'); at(7, 'commuting'); at(8, crisis); at(12, worshipToday && faith === 'muslim' ? 'praying' : 'eating'); at(13, crisis); at(endWork, 'commuting')
+  at(endWork + 1, c.behavior === 'hoarding' || c.behavior === 'panic_buying' ? 'shopping' : 'eating')
+  at(Math.max(19, endWork + 2), prays ? 'praying' : c.behavior === 'celebrating' ? 'celebrating' : 'resting')
+  if (c.age < 35 && u(`out${Math.floor(tick / 12)}`) < nightlife) { at(21, 'socializing'); at(1, 'sleeping') } else at(22, 'sleeping')
+  return plan.sort((a, b) => a.hour - b.hour)
 }

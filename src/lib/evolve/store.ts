@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
 import type { Frontier, HallEntry, Lesson, RunRecord, RunSummary } from '../types'
+import type { GapExplanation, RealBaseline } from './evidence'
 
 export const DATA = path.join(process.cwd(), 'data')
 // paths resolve at call time (statically scoped under data/ so deploy file tracing stays narrow)
@@ -71,6 +72,10 @@ export type LeaderboardEntry = {
   constitution: string
   origin: Candidate['origin']
   best: RunSummary
+  // the evidence layer: why it beat the entry ranked below it (the 3 decisive decisions, from the records) and its
+  // best world against UN projections at the same year
+  explainGap?: GapExplanation | null
+  realBaseline?: RealBaseline | null
 }
 
 export function readLeaderboard(): LeaderboardEntry[] {
@@ -85,8 +90,9 @@ export function listShowcase(): (RunSummary & { seed?: number })[] {
   const idx = readJson<(RunSummary & { seed?: number })[]>(showcaseIndexFile())
   if (idx) return idx
   try {
-    return fs.readdirSync(path.join(process.cwd(), 'data', 'showcase')).filter(f => f.endsWith('.json') && f !== 'index.json')
-      .map(f => readJson<RunRecord>(path.join(process.cwd(), 'data', 'showcase', f))?.summary)
+    // no index (an older copy): read the summaries from the worlds themselves, gzipped or not
+    return fs.readdirSync(path.join(process.cwd(), 'data', 'showcase')).filter(f => /\.json(\.gz)?$/.test(f) && f !== 'index.json')
+      .map(f => readShowcase(f.replace(/\.json(\.gz)?$/, ''))?.summary)
       .filter((s): s is RunSummary => !!s)
   } catch { return [] }
 }

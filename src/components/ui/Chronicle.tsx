@@ -1,9 +1,11 @@
 'use client'
 import { useMemo, useState } from 'react'
-import type { WorldEvent } from '@/lib/types'
+import type { Frame, WorldEvent } from '@/lib/types'
 import { useCurrentFrame, useStore } from '../state/store'
 import { Num } from './bits'
 import { isDanger } from './events'
+import { frontierLabel } from './Chrome'
+import { dateOfTick, eventDate, eventsBetween } from './truth'
 
 // small chunky glyphs per event kind, no letters
 export function KindIcon({ kind, danger = false }: { kind: WorldEvent['kind']; danger?: boolean }) {
@@ -33,7 +35,23 @@ export default function Chronicle() {
   const select = useStore((s) => s.select)
   const playhead = useStore((s) => s.playhead)
   const [off, setOff] = useState<Set<string>>(new Set())
-  const items = useMemo(() => record.frames.flatMap((f) => f.newEvents.map((e, index) => ({ e, index, f })).filter(({ e }) => (e.significance ?? e.severity) >= 0.6)), [record])
+  // only what has happened by the playhead (never the future). the frontier stage comes from frame.frontier, the
+  // same field the hud reads, labelled the same way; the sim's own [frontier: ...] event lines are left out so the
+  // two can't disagree (frames are often yearly, so those lines can be missing)
+  const items = useMemo(() => {
+    const out: { e: WorldEvent; index: number; f: Frame; frontier?: boolean }[] = []
+    let stage = record.frames[0]?.frontier
+    for (const f of record.frames) {
+      if (f.tick > playhead + 1e-6) break
+      if (f.frontier !== stage) {
+        stage = f.frontier
+        out.push({ e: { tick: f.tick, kind: 'breakthrough', severity: 1, significance: 1, text: `frontier: ${frontierLabel(f.frontier)}`, headline: `frontier: ${frontierLabel(f.frontier)}` } as WorldEvent, index: -1, f, frontier: true })
+      }
+    }
+    // events by their own tick (the frame that carries one can be a year later)
+    for (const x of eventsBetween(record, 0, playhead)) if ((x.e.significance ?? x.e.severity) >= 0.6 && !/\[frontier: /.test(x.e.text)) out.push(x)
+    return out.sort((a, b) => a.e.tick - b.e.tick)
+  }, [record, playhead])
   const present = KINDS.filter((k) => items.some((x) => x.e.kind === k))
   const shown = items.filter((x) => !off.has(x.e.kind))
   const regions = record.frames[0].regions
@@ -51,16 +69,15 @@ export default function Chronicle() {
         </div>
       )}
       <ol className="scroll-thin min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        {shown.map(({ e, index, f }) => {
+        {shown.map(({ e, index, f, frontier }) => {
           const danger = isDanger(e.kind, e.severity, e.text)
-          const past = f.tick <= playhead + 1e-6
           return (
-            <li key={`${f.tick}-${index}`}>
-              <button onClick={() => { setPlayhead(f.tick); requestShot(e.regionId ? { target: 'region', regionId: e.regionId, force: true } : { target: 'core', force: true }); select({ kind: 'event', tick: f.tick, index }) }}
-                className={`flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-ink/5 ${past ? '' : 'opacity-45'}`}>
+            <li key={`${f.tick}-${index}-${e.tick}`}>
+              <button onClick={() => { setPlayhead(e.tick); requestShot(e.regionId ? { target: 'region', regionId: e.regionId, force: true } : { target: 'core', force: true }); if (!frontier) select({ kind: 'event', tick: f.tick, index }) }}
+                className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-ink/5">
                 <span className="mt-0.5"><KindIcon kind={e.kind} danger={danger} /></span>
                 <span className="min-w-0">
-                  <span className="flex gap-2 text-[10px] text-ink/50"><Num>{f.date}</Num><span className="truncate">{regions.find((r) => r.id === e.regionId)?.name}</span></span>
+                  <span className="flex gap-2 text-[10px] text-ink/50"><Num>{frontier ? dateOfTick(f.tick) : eventDate(e)}</Num><span className="truncate">{regions.find((r) => r.id === e.regionId)?.name}</span></span>
                   <span className={`block text-[12px] leading-snug ${danger ? 'text-ember' : ''}`}>{e.headline ?? e.text}</span>
                 </span>
               </button>

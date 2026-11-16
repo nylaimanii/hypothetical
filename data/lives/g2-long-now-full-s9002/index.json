@@ -1,0 +1,49 @@
+[
+ {
+  "lifeId": "g2-long-now-full-s9002-life-1",
+  "worldId": "g2-long-now-full-s9002",
+  "lifeNo": 1,
+  "name": "kadiatou kone",
+  "sex": "female",
+  "look": {
+   "skinTone": 8,
+   "hair": "bun",
+   "hairColor": "black",
+   "adultHeightCm": 162.5,
+   "build": "broad"
+  },
+  "birthplace": {
+   "cityId": "niamey",
+   "city": "Niamey",
+   "countryId": "NER",
+   "country": "Niger",
+   "regionId": "ssa",
+   "lat": 13.51,
+   "lon": 2.11,
+   "fromTick": 0
+  },
+  "deathTick": 847,
+  "deathAge": 70.6,
+  "deathCause": "heart disease",
+  "epitaph": "kadiatou kone · 2026–2097 · niamey · rural clinic nurse",
+  "status": "done",
+  "score": 0.6545,
+  "twinScore": 0.5141,
+  "parts": {
+   "healthyYears": 0.6857,
+   "relationships": 0.5092,
+   "contribution": 0.8014,
+   "meaning": 0.7041,
+   "wellbeing": 0.5988
+  },
+  "lastCity": "Niamey",
+  "job": "rural clinic nurse",
+  "kids": 0,
+  "lessonsLeft": [
+   "always keep at least one close friend through every busy decade. they will be there when you need them most.",
+   "listen to your body and stay active. physical activity keeps the mind and body strong for years to come.",
+   "when you experience loss, turn it into service. helping others can ease your own pain and make a lasting impact."
+  ],
+  "createdAt": "2026-11-16T10:27:33.097Z"
+ }
+]

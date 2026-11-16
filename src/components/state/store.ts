@@ -1,11 +1,12 @@
 'use client'
+import type { AB } from '../ui/ab'
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import type { Agent, BaselineFrame, DecisionRow, Divergence, Frame, Override, RunRecord, RunSummary, WorldEvent, Layer, YearRow } from '@/lib/types'
+import type { Agent, BaselineFrame, DecisionRow, Divergence, Frame, Override, RunRecord, RunSummary, WorldEvent, Layer, YearRow, Country } from '@/lib/types'
 import { mockRuns, stageFor } from '@/lib/mock/run'
-import { moodFrom } from '@/lib/mock/mood'
 import { normalizeRecord } from './normalize'
-import { citizensAt, requirementsAt } from '@/lib/sim/citizens-replay'
+import { citizensAt, requirementsAt } from '@/lib/sim/replay-pure'
+import { useCountriesYear } from './usePlaces'
 
 export type Selection =
   | { kind: 'pip'; id: string }
@@ -28,10 +29,14 @@ export type Selection =
 export type Zoom = 'far' | 'mid' | 'close'
 export type Quality = 'high' | 'fast'
 export type Source = 'mock' | 'api' | 'live'
+// what this server can do (GET /api/capabilities): on the deployed site these are all off, and the controls hide
+export type Caps = { readOnly: boolean; playLive: boolean; petitions: boolean; whatIf: boolean; rerun: boolean; branch: boolean; override: boolean; ask: boolean; evolveNow: boolean }
+export const NO_CAPS: Caps = { readOnly: true, playLive: false, petitions: false, whatIf: false, rerun: false, branch: false, override: false, ask: false, evolveNow: false }
 // a visual effect trigger, from frame events or local injections
-export type Juice = { id: number; kind: WorldEvent['kind']; regionId?: string; severity: number; text: string; at: number }
+export type Juice = { id: number; kind: WorldEvent['kind']; regionId?: string; severity: number; text: string; at: number; tick?: number }
 // a camera shot: a region or the core, asked for by the director, the feed, or the user
-export type ShotRequest = { id: number; target: 'region' | 'core'; regionId?: string; force?: boolean }
+// target 'place': fly to a point (lat/lon, optional distance), e.g. a country from ?place= in the url
+export type ShotRequest = { id: number; target: 'region' | 'core' | 'place'; regionId?: string; force?: boolean; lat?: number; lon?: number; dist?: number; label?: string }
 export type Caption = { id: number; parts: { t: string; mono?: boolean }[]; danger?: boolean }
 // what is known about a run without its frames. lazy runs load frames around the scrubber
 export type SlimMeta = { firstTick: number; lastTick: number; years: YearRow[]; decisions: DecisionRow[]; lazy: boolean }
@@ -43,13 +48,16 @@ export type Tip = { title: string; text: string; x: number; y: number }
 // minimal shell: one panel at a time. sheets are the panels that live in the side menu's world
 export type Sheet = 'worlds' | 'chronicle' | 'live' | 'layers' | 'epitaph' | null
 export type Panel = 'offworld' | 'longevity' | 'agents' | 'hall' | null
-export type Compare = { agentIds: string[]; records: RunRecord[]; divergences: Divergence[] }
+// ab: set when the two worlds are an a/b pair (same seed, one change); see ui/ab.ts
+export type Compare = { agentIds: string[]; records: RunRecord[]; divergences: Divergence[]; ab?: AB }
 // a highlight reel: the top events by significance, played back to back
 export type Reel = { stops: { tick: number; regionId?: string; kind: WorldEvent['kind'] }[]; i: number; returnTo: number; wasPlaying: boolean }
 export type SentOverride = Override & { tick: number; responded?: boolean; local?: boolean }
 
 type State = {
   record: RunRecord
+  caps: Caps
+  setCaps: (c: Caps) => void
   source: Source
   runs: RunSummary[]
   runsSource: 'mock' | 'api'
@@ -165,11 +173,17 @@ function closed(s: State): Partial<State> {
 let juiceId = 1
 let shotId = 1
 export const TICKS_PER_SECOND = 3
+// what each speed really is: sim time per real second at TICKS_PER_SECOND ticks (months) per second times the speed
+export const speedLabel = (speed: number) => { const months = TICKS_PER_SECOND * speed; return months < 12 ? `${months} mo/s` : `${months / 12} y/s` }
 
 export const useStore = create<State>((set) => ({
+  // a placeholder until a real world loads (source 'mock' means "nothing loaded yet": the app shows no world
+  // until a real record arrives, see App). runsSource 'mock' means the run list hasn't answered yet
   record: mockRuns()[0],
+  caps: NO_CAPS,
+  setCaps: (caps) => set({ caps }),
   source: 'mock',
-  runs: mockRuns().map((r) => r.summary),
+  runs: [],
   runsSource: 'mock',
   playhead: 0,
   playing: false,
@@ -303,10 +317,8 @@ export function baselineAsFrame(rec: RunRecord, idx: number): Frame {
     const br = b?.regions.find((x) => x.id === r.id)
     return br ? { ...r, ...br } : r
   })
-  const citizens = withRoster(rec, f0).citizens.map((c) => {
-    const reg = regions.find((r) => r.id === c.regionId)
-    return reg ? { ...c, mood: moodFrom(Math.max(0, Math.min(1, 0.85 - reg.unrest * 0.9 + ((c.personalitySeed % 100) / 100 - 0.5) * 0.3))) } : c
-  })
+  // the twin has no recorded people: show none (the old tick-0 roster with made-up moods contradicted the real one)
+  const citizens: Frame['citizens'] = []
   const progress = b?.moonProgress ?? 0
   return { ...f0, tick: f.tick, date: f.date, regions, citizens, moonProgress: progress, moonStage: stageFor(progress), status: b?.status ?? 'alive', newEvents: [], decision: undefined }
 }
@@ -333,6 +345,9 @@ export function useCurrentFrame() {
   const record = useStore((s) => (s.compare && s.compareFocus !== null ? s.compare.records[s.compareFocus] ?? s.record : s.compare ? s.compare.records[0] ?? s.record : s.record))
   const mode = useStore((s) => (s.compare ? 'ai' : s.mode))
   const idx = useStore((s) => frameIndexAt(record.frames, s.playhead))
-  const frame = useMemo(() => (mode === 'baseline' ? baselineAsFrame(record, idx) : withRoster(record, record.frames[idx])), [record, idx, mode])
+  const base = useMemo(() => (mode === 'baseline' ? baselineAsFrame(record, idx) : withRoster(record, record.frames[idx])), [record, idx, mode])
+  // B's frames carry countries only on the first and last frame; any other year comes from the places file
+  const year = useCountriesYear(record.runId, base.tick, !!base.countries?.length)
+  const frame = useMemo(() => (!base.countries?.length && year ? { ...base, countries: year.countries.map((c): Country => ({ ...c, provenance: {} })) } : base), [base, year])
   return { frame, idx, record, mode }
 }

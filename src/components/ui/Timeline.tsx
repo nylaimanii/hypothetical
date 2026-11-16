@@ -1,7 +1,9 @@
 'use client'
+import { abName } from './ab'
 import { useRef, useState } from 'react'
+import { dateOfTick, eventsBetween } from './truth'
 import type { Divergence } from '@/lib/types'
-import { useCurrentFrame, useStore } from '../state/store'
+import { useCurrentFrame, useStore, speedLabel } from '../state/store'
 import { Num } from './bits'
 import Emblem from './Emblem'
 import { Offline } from './api'
@@ -11,7 +13,8 @@ export function startReel() {
   const s = useStore.getState()
   if (s.reel) { stopReel(); return }
   const rec = s.compare ? s.compare.records[s.compareFocus ?? 0] : s.record
-  const stops = rec.frames.flatMap((f) => f.newEvents.filter((e) => e.kind !== 'law').map((e) => ({ tick: f.tick, regionId: e.regionId, kind: e.kind, sig: e.significance ?? e.severity })))
+  // the highlight reel replays what has happened so far, never the future
+  const stops = rec.frames.filter((f) => f.tick <= s.playhead + 1e-6).flatMap((f) => f.newEvents.filter((e) => e.kind !== 'law').map((e) => ({ tick: f.tick, regionId: e.regionId, kind: e.kind, sig: e.significance ?? e.severity })))
     .sort((a, b) => b.sig - a.sig).slice(0, 10).sort((a, b) => a.tick - b.tick).map(({ tick, regionId, kind }) => ({ tick, regionId, kind }))
   if (!stops.length) { s.setNotice('nothing big has happened in this world yet'); return }
   s.setReel({ stops, i: 0, returnTo: s.playhead, wasPlaying: s.playing })
@@ -86,16 +89,21 @@ export default function Timeline() {
     const r = bar.current!.getBoundingClientRect()
     setPlayhead(t0 + Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * (t1 - t0))
   }
-  const decisions = meta?.lazy
+  // the governor's decisions so far (a future decision's reasoning would be a spoiler)
+  const decisions = (meta?.lazy
     ? meta.decisions.map((d) => ({ tick: d.tick, date: d.date, text: record.frames.find((f) => f.tick === d.tick)?.decision?.rationale ?? (d.lawsEnacted.length ? `enacted ${d.lawsEnacted.join(', ')}` : 'the core decides') }))
-    : record.frames.filter((f) => f.decision).map((f) => ({ tick: f.tick, date: f.date, text: f.decision!.rationale }))
+    : record.frames.filter((f) => f.decision).map((f) => ({ tick: f.tick, date: dateOfTick(f.tick), text: f.decision!.rationale }))).filter((d) => d.tick <= playhead + 1e-6)
   const compare = useStore((s) => s.compare)
   const reel = useStore((s) => s.reel)
   const agents = useStore((s) => s.agents)
   const [split, setSplit] = useState<Divergence | null>(null)
   const [branching, setBranching] = useState(false)
-  const name = (runId: string) => { const r = compare?.records.find((x) => x.runId === runId); return agents.find((a) => a.id === r?.agentId)?.name ?? r?.agentId ?? runId }
-  const dangers = record.frames.filter((f) => f.newEvents.some((e) => e.severity >= 0.7 && ['famine', 'revolt', 'war', 'disaster', 'pandemic'].includes(e.kind)))
+  const canBranch = useStore((s) => s.caps.branch)
+  const ab = compare?.ab
+  const name = (runId: string) => { if (ab) return abName(ab, runId); const r = compare?.records.find((x) => x.runId === runId); return agents.find((a) => a.id === r?.agentId)?.name ?? r?.agentId ?? runId }
+  // marks on the track only up to the playhead (the timeline shouldn't give away what's coming)
+  // danger marks where the event happened (its own tick), never past the playhead
+  const dangers = eventsBetween(record, 0, playhead).map((x) => x.e).filter((e) => e.severity >= 0.7 && ['famine', 'revolt', 'war', 'disaster', 'pandemic'].includes(e.kind)).filter((e, i, all) => all.findIndex((o) => o.tick === e.tick) === i)
   return (
     // minimal shell: thin, translucent, icons instead of words
     <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-bone/85 px-2 py-1 shadow-sm">
@@ -108,7 +116,7 @@ export default function Timeline() {
       </button>
       <div className="hidden shrink-0 whitespace-nowrap rounded-full p-0.5 font-mono text-[10px] sm:flex">
         {([1, 4, 16] as const).map((s) => (
-          <button key={s} onClick={() => setSpeed(s)} className={`rounded-full px-2 py-0.5 ${speed === s ? 'bg-ink text-bone' : 'text-ink/60'}`}>{s}x</button>
+          <button key={s} onClick={() => setSpeed(s)} className={`rounded-full px-2 py-0.5 ${speed === s ? 'bg-ink text-bone' : 'text-ink/60'}`} title={`${speedLabel(s)} of world time per real second`}>{speedLabel(s)}</button>
         ))}
       </div>
       <Num className="hidden shrink-0 whitespace-nowrap text-[11px] text-ink/50 sm:block">{firstDate}</Num>
@@ -130,6 +138,16 @@ export default function Timeline() {
           <button key={`${d.runB}-${d.tick}`} onPointerDown={(e) => e.stopPropagation()} onClick={() => setSplit(split === d ? null : d)} title="where they split"
             className="absolute top-0 h-3 w-3 -translate-x-1/2 -translate-y-1 rotate-45 border-2 border-ink bg-dusk" style={{ left: `${x(d.tick)}%` }} />
         ))}
+        {ab && (
+          <div title={`the change: ${ab.change}`} className="pointer-events-none absolute -top-1 bottom-[-0.25rem] w-0.5 -translate-x-1/2 bg-ink" style={{ left: `${x(ab.splitTick)}%` }}>
+            <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap font-mono text-[9px] uppercase tracking-[0.12em] text-ink/70">change</span>
+          </div>
+        )}
+        {ab?.firstDiff && ab.firstDiff.tick !== ab.splitTick && (
+          <div title={ab.firstDiff.text} className="pointer-events-none absolute -top-1 bottom-[-0.25rem] w-px -translate-x-1/2 bg-ink/50" style={{ left: `${x(ab.firstDiff.tick)}%` }}>
+            <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap font-mono text-[9px] uppercase tracking-[0.12em] text-ink/50">differ</span>
+          </div>
+        )}
         {split && (
           <div onPointerDown={(e) => e.stopPropagation()} className="absolute bottom-full z-20 mb-3 w-80 -translate-x-1/2 rounded-xl bg-ink px-3 py-2 text-[12px] leading-snug text-bone shadow-lg" style={{ left: `${Math.max(14, Math.min(86, x(split.tick)))}%` }}>
             <div className="flex justify-between text-[10px] text-bone/60"><span>where {name(split.runA)} and {name(split.runB)} split</span><button onClick={() => setSplit(null)}>×</button></div>
@@ -155,7 +173,7 @@ export default function Timeline() {
         <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden><rect x="1.5" y="3" width="11" height="8" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.3" /><path d="M6 5.3v3.4l3-1.7z" fill="currentColor" /></svg>
         {reel && <Num>{reel.i + 1}/{reel.stops.length}</Num>}
       </button>
-      {!compare && (
+      {!compare && canBranch && (
         <div className="relative shrink-0">
           <button onClick={() => setBranching(!branching)} title="branch: hand this world to another agent from here" aria-label="branch" className={`flex h-7 w-7 items-center justify-center rounded-full ${branching ? 'bg-ink text-bone' : 'text-ink/60 hover:bg-ink/5 hover:text-ink'}`}>
             <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden><circle cx="4" cy="3" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.3" /><circle cx="4" cy="11" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.3" /><circle cx="10.5" cy="5" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.3" /><path d="M4 4.6v4.8M10.5 6.6c0 2-2.5 2.2-5.5 3.4" fill="none" stroke="currentColor" strokeWidth="1.3" /></svg>

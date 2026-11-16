@@ -1,6 +1,7 @@
 'use client'
 // v3: every open world is a tab. a live mini globe, the agent, the world number, the year it reached and how it is doing.
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { yearOfTick } from './truth'
 import * as THREE from 'three'
 import type { Agent, Frame, RunRecord, RunSummary } from '@/lib/types'
 import { useStore } from '../state/store'
@@ -36,7 +37,8 @@ export const WORLD_COLORS = ['#1D1B19', '#3E7CB1', '#C27C2C', '#5E8C4A', '#8A5FB
 
 // ---- the mini globe: a tiny orthographic render on a 2d canvas, refreshed every few seconds ----
 const BIOME_RGB = [0x79, 0xa8, 0x5e]
-function Thumb({ frame, dead }: { frame: Frame | undefined; dead: boolean }) {
+// also used by the report pages for snapshots at key moments (size in css px)
+export function Thumb({ frame, dead, size = 24 }: { frame: Frame | undefined; dead: boolean; size?: number }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const [spin, setSpin] = useState(0)
   useEffect(() => { const id = setInterval(() => setSpin((s) => s + 1), 3000); return () => clearInterval(id) }, [])
@@ -91,8 +93,9 @@ function Thumb({ frame, dead }: { frame: Frame | undefined; dead: boolean }) {
     }
     g.putImageData(img, 0, 0)
   }, [frame, tiles, spin, dead])
-  if (!frame) return <span className="skel inline-block h-6 w-6 rounded-full" />
-  return <canvas ref={ref} width={48} height={48} className="h-6 w-6 shrink-0 rounded-full" aria-hidden />
+  if (!frame) return <span className="skel inline-block shrink-0 rounded-full" style={{ width: size, height: size }} />
+  const px = Math.min(256, Math.round(size * 2))
+  return <canvas ref={ref} width={px} height={px} className="shrink-0 rounded-full" style={{ width: size, height: size }} aria-hidden />
 }
 
 // load every tab's record so tabs, graphs and the daily can compare them
@@ -221,17 +224,19 @@ export default function WorldTabs({ onLive }: { onLive: () => void }) {
           const status = on ? playFrame.status : rec?.summary.status
           const tone = statusTone(status)
           const a = agentOf(rec, agents)
-          const year = f ? tickToDate(f.tick).getUTCFullYear() : undefined
+          // the open world shows the playhead's year (the clock's), the others the year they reached
+          const year = on ? yearOfTick(playhead) : f ? yearOfTick(f.tick) : undefined
           return (
             <div key={id} draggable onDragStart={() => { drag.current = id }} onDragOver={(e) => e.preventDefault()} onDrop={() => drop(id)}
               className={`group flex h-7 shrink-0 items-center gap-1.5 rounded-full pl-0.5 pr-1.5 text-[12px] transition ${on ? 'bg-ink/90 text-bone' : 'bg-bone/80 text-ink/75 hover:bg-bone/95'} ${tone.ring}`}>
               <button onClick={() => switchTab(id)} className="flex items-center gap-1.5" title={`${a?.name ?? prettyAgent(rec?.agentId)} · world #${worldNumber(id, runs)}${year ? ` · ${year}` : ''} · ${tone.word} · ctrl+${i + 1}`}>
                 <Thumb frame={f} dead={status === 'destroyed'} />
-                <span className="max-w-[8rem] truncate font-display text-[12.5px]">{a?.name ?? (rec ? prettyAgent(rec.agentId) : 'loading')}</span>
-                <span className={`text-[10.5px] ${on ? 'text-bone/60' : 'text-ink/45'}`}>#<Num>{worldNumber(id, runs)}</Num>{year && <> · <Num>{year}</Num></>}</span>
+                <span className="max-w-[5.5rem] truncate font-display text-[12.5px] sm:max-w-[8rem]">{a?.name ?? (rec ? prettyAgent(rec.agentId) : 'loading')}</span>
+                {/* phones: name only, so two worlds fit beside the + (the number and year are in the tooltip) */}
+                <span className={`hidden text-[10.5px] sm:inline ${on ? 'text-bone/60' : 'text-ink/45'}`}>#<Num>{worldNumber(id, runs)}</Num>{year && <> · <Num>{year}</Num></>}</span>
                 <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
               </button>
-              {tabs.length > 1 && <button onClick={() => closeTab(id)} aria-label="close world" className={`ml-0.5 rounded-full px-1 text-[13px] leading-none opacity-0 transition group-hover:opacity-100 ${on ? 'text-bone/70 hover:text-bone' : 'text-ink/50 hover:text-ink'}`}>×</button>}
+              {tabs.length > 1 && <button onClick={() => closeTab(id)} aria-label="close world" className={`ml-0.5 rounded-full px-1 text-[13px] leading-none opacity-0 transition group-hover:opacity-100 ${on ? 'max-sm:opacity-100' : ''} ${on ? 'text-bone/70 hover:text-bone' : 'text-ink/50 hover:text-ink'}`}>×</button>}
             </div>
           )
         })}

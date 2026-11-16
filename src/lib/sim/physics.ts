@@ -1,20 +1,25 @@
 // energy, food, economy, migration. hard limits: consumption never exceeds production, capacity costs
 // money and takes years, migrants cost money and take months.
+import { A } from './assumptions'
 import type { Budget, Migration } from '../types'
 import {
+  BASELINE_BUDGET,
   BUILD_MONTHS, CAPEX_USD_PER_GW, ELEC_INCOME_ELASTICITY, KCAL_CAP, MIGRATION_MAX_SHARE_YEAR, MIGRATION_MONTHS,
   MIGRATION_USD_PER_PERSON, OM_USD_PER_TWH, RETIRE_PER_YEAR, SURVIVAL_KCAL, TWH_PER_GW_YEAR, YIELD_BASE_GROWTH,
 } from './constants'
-import { allocShares, clamp, effectiveBudget, event, incomeIdx, regionPop, sum, why, type RegionState, type World } from './state'
+import { allocShares, clamp, effectiveBudget, event, incomeIdx, regionPop, sum, why, type World } from './state'
 import { behaviorDrag, hoardingFactor } from './behavior'
 import { addFlow, buildShares, settleMix } from './visuals'
+import { addToRegion, removeFromRegion } from './places'
+import { climateYield } from './world-layer'
 import { reqProgress } from './requirements'
 import type { LawEffects } from './society'
 
 const KEYS: (keyof Budget)[] = ['food', 'energy', 'education', 'space', 'security', 'welfare', 'research']
 
 export function monthlyRevenue(w: World): number {
-  return w.revenueShare * sum(w.regions.filter(r => !r.seceded).map(r => r.r.gdpUsd)) / 12
+  // wealth hidden offshore beyond 2026 levels is not taxed (power.ts)
+  return w.revenueShare * sum(w.regions.filter(r => !r.seceded).map(r => r.r.gdpUsd)) / 12 * (1 - (w.hiddenLoss ?? 0))
 }
 
 // splits this month's revenue into per-region spending. space and research are central programs and
@@ -27,10 +32,18 @@ export function allocate(w: World): { revenue: number; space: number; research: 
   w.migrationCostMonthly = w.migrationCostMonthly.filter(m => m.until > w.tick)
   const migBill = sum(w.migrationCostMonthly.map(m => m.usd))
   w.regions.forEach((rs, i) => {
-    for (const k of KEYS) rs.spend[k] = b[k] * revenue * shares[i]
+    // corruption: a share of what reaches the region leaks before it is spent; 2026 leakage is already in the
+    // 2026 calibration, so only the change counts (power.ts)
+    for (const k of KEYS) rs.spend[k] = b[k] * revenue * shares[i] * (1 - (rs.leak ?? 0)) / (1 - (rs.leak0 ?? 0))
     rs.spend.welfare = Math.max(0, rs.spend.welfare - migBill * shares[i])
   })
-  return { revenue, space: b.space * revenue, research: b.research * revenue }
+  // research: ~70% of the world's R&D is private (business enterprise R&D, OECD MSTI / UNESCO UIS) and goes on whatever
+  // the budget says; the world government's research line is the other ~30%. at the 2026 budget the total equals the
+  // 2026 research effort exactly; cutting the line to 0 keeps the private 70% (shrinking with unrest)
+  const unrest = w.regions.reduce((a, r) => a + r.r.unrest * r.r.population, 0) / Math.max(w.regions.reduce((a, r) => a + r.r.population, 0), 1)
+  const research0 = BASELINE_BUDGET.research * revenue
+  const research = A(w, 'research_private_share') * research0 * clamp(1 - 0.5 * Math.max(0, unrest - 0.3)) + (1 - A(w, 'research_private_share')) * b.research * revenue
+  return { revenue, space: b.space * revenue, research }
 }
 
 export function stepEnergy(w: World, fx: Record<string, LawEffects>, sectors: Record<string, number> = {}) {
@@ -39,7 +52,13 @@ export function stepEnergy(w: World, fx: Record<string, LawEffects>, sectors: Re
     // retirement and maintenance
     rs.capacityTWh *= 1 - RETIRE_PER_YEAR / 12
     const om = rs.capacityTWh * OM_USD_PER_TWH / 12
-    let capex = rs.spend.energy - om
+    // most power investment is private: ~$1.4T/yr worldwide, ~1.2% of GDP (IEA World Energy Investment 2024,
+    // https://www.iea.org/reports/world-energy-investment-2024). it shrinks with unrest; government money adds on top
+    const privateCapex = 0.012 * rs.r.gdpUsd / 12 * clamp(1 - rs.r.unrest)
+    // only part of a public energy budget builds new capacity; the rest is subsidies, fuel, grids and upkeep
+    // (ESTIMATE energy_capex_share; with all of it as capex the world built ~1,000 GW a year, vs ~600 GW real in 2024:
+    // https://www.iea.org/reports/renewables-2024)
+    let capex = A(w, 'energy_capex_share') * rs.spend.energy + privateCapex - om
     if (capex < 0) {
       // unfunded maintenance: plants fall out of service
       const unfunded = -capex / om
@@ -49,7 +68,7 @@ export function stepEnergy(w: World, fx: Record<string, LawEffects>, sectors: Re
     if (rs.seceded) capex = 0
     // energy laws, energy companies and storage/fission/fusion progress cut the cost per GW (ESTIMATE, max ~45%)
     const costMult = 1 - 0.1 * (fx[rs.r.id]?.energy ?? 0) - 0.15 * (sectors.energy ?? 0) - 0.08 * reqProgress(w, 'grid_storage') - 0.07 * reqProgress(w, 'advanced_fission') - 0.05 * reqProgress(w, 'fusion_power')
-    const gw = capex / (CAPEX_USD_PER_GW * costMult)
+    const gw = capex / (A(w, 'capex_per_gw') * costMult)
     // each tranche of new capacity is tagged with the source mix it was funded under
     if (gw > 0) rs.pipeline.push({ readyTick: w.tick + BUILD_MONTHS, twh: gw * TWH_PER_GW_YEAR, mix: buildShares(w, rs) })
     const ready = rs.pipeline.filter(p => p.readyTick <= w.tick)
@@ -62,7 +81,8 @@ export function stepEnergy(w: World, fx: Record<string, LawEffects>, sectors: Re
     const consumption = Math.min(demand, rs.capacityTWh)
     why(rs, 'energyTWh', 'demand met by capacity', consumption - rs.r.energyTWh)
     rs.r.energyTWh = consumption
-    rs.energyRatio = demand > 0 ? consumption / demand : 1
+    // a closed chokepoint takes LNG away from gas-fired power (physical.ts)
+    rs.energyRatio = (demand > 0 ? consumption / demand : 1) * (1 - (rs.chokeEnergy ?? 0))
   }
 }
 
@@ -75,14 +95,20 @@ export function stepFood(w: World, fx: Record<string, LawEffects>, sectors: Reco
     // ESTIMATE: annual yield growth = base + spending (diminishing, ~$80/person/yr half-saturation)
     //   + tech + closing the yield gap where supply is low, minus unrest disruption
     const kcalNow = rs.r.foodKcalPerCapita
-    const gy = YIELD_BASE_GROWTH + 0.01 * (1 - Math.exp(-spendPC / 80)) + 0.003 * rs.r.techLevel
+    // collectivization: output falls as it is enforced (Great Leap Forward grain output fell ~30%, 200 to 143 Mt,
+    // 1958-1961; https://en.wikipedia.org/wiki/Great_Leap_Forward). target harvest x(1 - 0.3 x compliance), over ~2 years
+    const coll = Math.max(0, ...w.laws.filter(l => !l.vetoed && l.policyKind === 'collectivization').map(l => rs.lawCompliance[l.id] ?? 0))
+    rs.collectiveMult += ((1 - A(w, 'collectivization_cut') * coll) - rs.collectiveMult) / 24
+    rs.collC = coll
+    const gy = A(w, 'yield_base_growth') + 0.01 * (1 - Math.exp(-spendPC / 80)) + 0.003 * rs.r.techLevel
       + 0.012 * Math.max(0, (2900 - kcalNow) / 1000) * rs.r.compliance
       + 0.003 * (fx[rs.r.id]?.food ?? 0) - 0.01 * Math.max(0, rs.r.unrest - 0.5)
       + 0.004 * (sectors.food ?? 0) + 0.003 * (reqProgress(w, 'drought_crops') + reqProgress(w, 'precision_fermentation') + reqProgress(w, 'vertical_farming'))
     rs.yieldIdx *= 1 + gy / 12
     const drought = (w.tick < rs.droughtUntil ? rs.droughtSev : 0) * (1 - 0.4 * reqProgress(w, 'drought_crops'))
     // ESTIMATE: farm output scales with energy availability^0.25 (fertilizer, irrigation, transport)
-    const p = rs.foodBase * rs.yieldIdx * Math.pow(rs.energyRatio, 0.25) * (1 - drought) * (rs.inRevolt ? 0.92 : 1)
+    // climate: staple yields fall ~5% per C of warming above 2026 (Zhao et al. 2017)
+    const p = rs.foodBase * rs.yieldIdx * Math.pow(rs.energyRatio, 0.25) * (1 - drought) * (rs.inRevolt ? 0.92 : 1) * climateYield(w) * rs.collectiveMult * (rs.physFood ?? 1)
     prod.push(Math.min(p, KCAL_CAP * pop))
   }
   // the world government pools part of every surplus above 2,700 kcal and ships it to regions under 2,400.
@@ -109,15 +135,18 @@ export function stepFood(w: World, fx: Record<string, LawEffects>, sectors: Reco
   if (pool > 0 && contribSum > 0) w.regions.forEach((_, i) => { avail[i] += pool * contrib[i] / contribSum })
   w.regions.forEach((rs, i) => {
     // hoarding and panic buying pull food off the shelves for everyone else
-    const kcal = avail[i] / Math.max(pops[i], 1) * hoardingFactor(rs)
+    // collectivized farms deliver quotas to the state (cities, reserves, export) before the farmers eat: the
+    // countryside loses ~15% more at full enforcement (ESTIMATE; china kept exporting grain through 1959-61 and
+    // ukraine's 1932 quotas took seed grain: https://en.wikipedia.org/wiki/Holodomor)
+    const kcal = avail[i] / Math.max(pops[i], 1) * hoardingFactor(rs) * (1 - A(w, 'collectivization_procurement') * (rs.collC ?? 0))
     rs.priceIdx = Math.pow(rs.foodBase / Math.max(rs.pop0, 1) / Math.max(kcal, 300), 1.5) * (1 + rs.behavior.hoarding + 2 * rs.behavior.panic_buying)
     why(rs, 'foodKcalPerCapita', 'harvest and yields', prod[i] / Math.max(pops[i], 1) - rs.r.foodKcalPerCapita)
     if (avail[i] !== prod[i]) why(rs, 'foodKcalPerCapita', avail[i] > prod[i] ? 'world food pool (received)' : 'world food pool (given)', (avail[i] - prod[i]) / Math.max(pops[i], 1))
     if (hoardingFactor(rs) < 0.99) why(rs, 'foodKcalPerCapita', 'hoarding and panic buying', kcal - avail[i] / Math.max(pops[i], 1))
     rs.r.foodKcalPerCapita = kcal
-    if (kcal < SURVIVAL_KCAL) rs.foodMonthsUnder++
+    if (kcal < A(w, 'survival_kcal')) rs.foodMonthsUnder++
     else rs.foodMonthsUnder = Math.max(0, rs.foodMonthsUnder - 2)
-    if (kcal < SURVIVAL_KCAL && rs.foodMonthsUnder === 3) {
+    if (kcal < A(w, 'survival_kcal') && rs.foodMonthsUnder === 3) {
       event(w, { regionId: rs.r.id, kind: 'famine', text: `famine in ${rs.r.name}: food supply ${Math.round(kcal)} kcal per person per day`, severity: (SURVIVAL_KCAL - kcal) / SURVIVAL_KCAL * 3 })
     }
   })
@@ -131,15 +160,36 @@ export function stepEconomy(w: World, popBefore: number[]) {
     const inc = incomeIdx(gdppc)
     const kcal = rs.r.foodKcalPerCapita
     // ESTIMATE: catch-up growth (poorer regions grow faster when institutions work) + tech, minus stress
-    let g = 0.006 + 0.03 * (1 - inc) * rs.r.compliance + 0.012 * rs.r.techLevel
+    // investment lever: education + energy + research spending above the 2026 share (23.3%), averaged over ~5 years
+    // (it takes years to show), pays most in poor, well-governed economies. calibrated so a sustained, near-total
+    // push in a poor region with working institutions reaches ~4-5%/yr per capita region-wide (developing asia
+    // 1990-2020 ~5%/yr, World Bank WDI NY.GDP.PCAP.KD), below the single-country record of the asian tigers:
+    // south korea grew ~6%/yr per capita 1960-1990 (Maddison Project, https://www.rug.nl/ggdc/historicaldevelopment/maddison/)
+    const b = effectiveBudget(w)
+    // cuts below the 2026 share hurt far less than a sustained push helps poor economies catch up: the IMF finds public
+    // investment moves output by ~1.5% per 1% of GDP over 4 years (Abiad et al. 2016, https://doi.org/10.1016/j.jmacro.2016.07.005), a level shift, not a lasting
+    // growth rate (ESTIMATE: the downside at invest_cut_weight of the upside)
+    const raw = clamp((b.education + b.energy + b.research - 0.233) / 0.25, -1, 1)
+    const invest = raw < 0 ? raw * A(w, 'invest_cut_weight') : raw
+    rs.investAvg += (invest - rs.investAvg) / 60
+    const boost = A(w, 'invest_growth') * rs.investAvg * (1 - inc) * Math.sqrt(rs.r.compliance)
+    // ESTIMATE baseline: ~0.6% + catch-up for poorer regions with working institutions + tech (rich regions ~1.2%/yr)
+    let g = 0.006 + 0.03 * (1 - inc) * rs.r.compliance + 0.008 * rs.r.techLevel + boost
+    why(rs, 'gdpUsd', 'investment in schools, power and research', boost * rs.r.gdpUsd / 12)
     g -= 0.1 * Math.max(0, rs.r.unrest - 0.4)
-    g -= 0.5 * (1 - rs.energyRatio)
+    // unmet power demand costs growth: African outages cut growth per head ~2.9 points a year at ~30% shortfalls
+    // (Andersen & Dalgaard 2013, https://doi.org/10.1016/j.eneco.2013.02.016), about 0.1 x the shortfall
+    g -= A(w, 'power_shortage_growth_cost') * (1 - rs.energyRatio)
     g -= 0.6 * Math.max(0, (2100 - kcal) / 2100)
     if (rs.inRevolt) g -= 0.04
     g -= 0.1 * Math.max(0, w.revenueShare - 0.3)
     // strikes, protests and riots cost output; new cities add a little agglomeration growth (ESTIMATE)
     const drag = behaviorDrag(rs)
     g -= drag
+    // automation productivity and capital flight (power.ts)
+    g += (rs.autoGrowth ?? 0) - (rs.flightDrag ?? 0)
+    // closed chokepoints (oil shock, rerouting) and the working-age share beyond its 2026 trend (physical.ts)
+    g += (rs.demoGrowth ?? 0) - (rs.chokeDrag ?? 0)
     const agglom = 0.2 * clamp(rs.newCityPop / Math.max(pop, 1) * 10)
     g += 0.01 * agglom
     why(rs, 'gdpUsd', 'strikes and protests', -drag * rs.r.gdpUsd / 12)
@@ -177,7 +227,7 @@ export function scheduleMigrations(w: World, list: Migration[], monthlyRevenue: 
     const wts = from.bands.map((b, i) => b * (i >= 3 && i <= 9 ? 2 : 1))
     const wsum = sum(wts)
     const bands = wts.map(x => actual * x / wsum)
-    from.bands = from.bands.map((b, i) => Math.max(0, b - bands[i]))
+    removeFromRegion(w, from, bands)
     w.transit.push({ from: m.from, to: m.to, people: actual, bands, arriveTick: w.tick + MIGRATION_MONTHS })
     // ESTIMATE: unrest shock both sides, scaled by share of population moved plus a flat cost of forced relocation
     from.migrationShock += 3 * actual / pop + 0.02
@@ -197,7 +247,7 @@ export function stepArrivals(w: World) {
     const from = w.regions.find(r => r.r.id === t.from)
     if (!to || !from) continue
     const before = regionPop(to)
-    to.bands = to.bands.map((b, i) => b + t.bands[i])
+    addToRegion(w, to, t.bands)
     // arrivals bring their origin mix; regions mix over time
     const after = before + t.people
     for (const k of Object.keys(to.originMix)) to.originMix[k] *= before / after

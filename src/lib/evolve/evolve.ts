@@ -12,7 +12,7 @@ import { LONG_NOW_TEXT, SEEDS } from './seeds'
 import { crossover, mutate } from './mutate'
 import { crossoverName, mutationName, slug } from './names'
 import {
-  dirs, indexRun, isWin, leaderboardFile, placeholderSummary, readJson, readLeaderboard, readRunIndex, writeJson,
+  dirs, indexRun, isWin, leaderboardFile, placeholderSummary, readJson, readLeaderboard, readRunIndex, readRunRecord, writeJson,
   type Candidate, type GenerationFile, type LeaderboardEntry,
 } from './store'
 import { lessonsForPrompt, matchesKnownLesson, mergeLessons, readLearning, readLessons, writeLearning } from './lessons'
@@ -26,8 +26,13 @@ import { isTransient, realClock, runQueue, type Clock } from './queue'
 import { trackWorld } from './usage'
 import { lineageRoots, recordAgentRun, registerPopulation, settleGeneration } from './agents'
 import { indexFeatures, recomputeSteps } from './steps'
+import { backfillEvidence, explainGap, indexEvidence, realBaseline } from './evidence'
+import { lessonLine, writePlaybook, type PlaybookLesson } from './playbook'
+import { generationStory } from '../notify/story'
+import { lifeGap, livesRunning, openGap } from './lifegap'
+import { livesSection } from './lives'
 import { diskReport, gb, sweep, writeSlim } from './retention'
-import { backupDue, backupToGit, markQuality, morningDigest, morningDue, qualityDue, stableDue } from './maintenance'
+import { backupDue, backupToGit, consistencyDue, markQuality, qualityDue, sendMorning, stableDue } from './maintenance'
 import { codeRoot } from './version'
 import { spawn } from 'node:child_process'
 import { enterVersion, inRunner, runnerCodeChanged, runningSimVersion, simVersionOnDisk, upstreamSimVersion, verifyLessons } from './version'
@@ -35,6 +40,7 @@ import { realityCheckDue, runRealityCheck } from './reality'
 import { agentRanges, EXTRA_SEEDS, markUncertaintyDone, milestoneYears, readUncertainty, versionTopAgents } from './uncertainty'
 import { checkHall } from './hall'
 import { sendDigest, sendGoalReport } from '../notify/email'
+import { populationOf } from './facts'
 
 export type EvolveOptions = {
   // generations to run; default keeps going until a world achieves the goal
@@ -170,7 +176,7 @@ function crashedSummary(runId: string, gen: number, agentId: string, constitutio
   return placeholderSummary({
     runId, generation: gen, agentId, status: 'destroyed', endDate: last?.date ?? '2026-11', ticks: last?.tick ?? 0,
     causeOfDeath: `runner error: ${err.message}`, constitution,
-    peakPopulation: Math.max(0, ...frames.map(f => f.regions.reduce((a, r) => a + r.population, 0))),
+    peakPopulation: Math.max(0, ...frames.map(f => populationOf(f))),
     moonStage: last?.moonStage ?? 'none',
   })
 }
@@ -249,6 +255,7 @@ async function runOne(g: GenerationFile, c: Candidate, seed: number, stage: Stag
   try { writeSlim(record) } catch (e) { deps.log(`  could not write slim for ${runId}: ${(e as Error).message}`) }
   // feature row for the steps recipe (real llm runs only)
   try { indexFeatures(record) } catch (e) { deps.log(`  steps: could not index ${runId}: ${(e as Error).message}`) }
+  try { indexEvidence(record) } catch (e) { deps.log(`  evidence: could not index ${runId}: ${(e as Error).message}`) }
   const learning = readLearning()
   learning.worldsRun++
   writeLearning(learning)
@@ -303,6 +310,20 @@ function publishNow(g: GenerationFile, current: { runId: string; agentId: string
 const hhmm = (t: number) => new Date(t).toTimeString().slice(0, 5)
 const bestRunOf = (c: Candidate) => c.full ?? [...(c.runs ?? [])].sort((a, b) => b.score - a.score)[0]
 
+// one explain-gaps job at a time; its last line goes to the log
+let gapsRunning = false
+function startGapReplays(log: (l: string) => void) {
+  if (gapsRunning) return
+  gapsRunning = true
+  try {
+    const child = spawn(process.execPath, [path.join(codeRoot(), 'node_modules', 'tsx', 'dist', 'cli.mjs'), '--tsconfig', path.join(codeRoot(), 'tsconfig.json'), path.join(codeRoot(), 'scripts', 'explain-gaps.ts')], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, LLM_PROVIDER: 'offline' } })
+    let out = ''
+    child.stdout.on('data', d => { out += d })
+    child.stderr.on('data', d => { out += d })
+    child.on('exit', () => { gapsRunning = false; for (const l of out.trim().split('\n').filter(l => /^(explain-gaps|playbook-ab):/.test(l))) log(l) })
+  } catch (e) { gapsRunning = false; log(`explain-gaps could not start: ${(e as Error).message}`) }
+}
+
 function updateLeaderboard(g: GenerationFile): LeaderboardEntry[] {
   const all = [...readLeaderboard()]
   for (const c of g.population) {
@@ -317,6 +338,13 @@ function updateLeaderboard(g: GenerationFile): LeaderboardEntry[] {
     if (!prev || e.score > prev.score) byText.set(e.constitution, e)
   }
   const top = [...byText.values()].sort((a, b) => b.score - a.score).slice(0, 20)
+  // the evidence: each entry against the one ranked below it, and its best world against UN projections
+  const recs = new Map(top.map(e => [e.best.runId, readRunRecord(e.best.runId)]))
+  top.forEach((e, i) => {
+    const rec = recs.get(e.best.runId), next = top[i + 1], nrec = next ? recs.get(next.best.runId) : null
+    try { e.explainGap = rec && next && nrec ? explainGap({ name: e.name, record: rec }, { name: next.name, record: nrec }) : (e.explainGap ?? null) } catch { e.explainGap = e.explainGap ?? null }
+    try { e.realBaseline = rec ? realBaseline(rec) : (e.realBaseline ?? null) } catch { e.realBaseline = e.realBaseline ?? null }
+  })
   writeJson(leaderboardFile(), top)
   return top
 }
@@ -363,10 +391,11 @@ async function runStage(g: GenerationFile, stage: Stage, tasks: { c: Candidate; 
 const QUALITY_MODEL = process.env.QUALITY_MODEL || 'qwen2.5:14b'
 async function qualityCheck(deps: Deps) {
   if (!qualityDue()) return
-  markQuality()
   const champ = readAgents().find(a => a.champion)
   const best = champ && readRunIndex().filter(r => r.agentId === champ.id && isFullRun(r.runId) && (!r.simVersion || r.simVersion === control.simVersion)).sort((a, b) => b.score - a.score)[0]
-  if (!champ || !best) { deps.log('quality check: no champion with a full run yet, skipped'); return }
+  // nothing to replay yet: try again between the next worlds instead of waiting a week
+  if (!champ || !best) return
+  markQuality()
   const runId = `qc${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${best.runId}`.slice(0, 80)
   const prevModel = process.env.LLM_MODEL
   control.maintenance = 'quality check'
@@ -493,10 +522,22 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
   writeLearning(learning)
 
   const steps = recomputeSteps()
+  // the evidence for older worlds, then the playbook: every lesson re-tested on the same-seed a/b pairs
+  try { const n = backfillEvidence(readRunIndex().map(r => r.runId), readRunRecord); if (n) deps.log(`evidence: backfilled ${n} worlds`) } catch (e) { deps.log(`evidence backfill failed: ${(e as Error).message}`) }
+  let moved: PlaybookLesson | undefined
+  try {
+    const pb = writePlaybook(g.generation)
+    deps.log(`playbook: ${pb.lessons.length} lessons, ${pb.pairs} a/b pairs over ${pb.worlds} worlds`)
+    moved = pb.lessons.filter(l => l.previous !== null && l.confidence !== null).sort((a, b) => Math.abs(b.confidence! - b.previous!) - Math.abs(a.confidence! - a.previous!))[0]
+    if (moved && moved.confidence === moved.previous) moved = undefined
+  } catch (e) { deps.log(`playbook failed: ${(e as Error).message}`) }
+  // why the top entries beat the next, tested by replay: a background job (pure replays, no model, no lock)
+  startGapReplays(deps.log)
   const topStep = steps.helped[0], deadliest = steps.hurt[0]
   const stepLines = [
     topStep ? `top step so far: ${topStep.text} (effect +${topStep.effect}, ${topStep.helpedWorlds.length} worlds helped)` : '',
     deadliest ? `deadliest step so far: ${deadliest.text} (in ${deadliest.hurtWorlds.length} worlds that did worse${deadliest.hurtWorlds.some(id => allRuns.some(r => r.runId === id && r.status === 'destroyed')) ? ' or died' : ''})` : '',
+    moved ? `playbook: ${lessonLine(moved)}` : '',
   ].filter(Boolean)
   const champRange = champion ? agentRanges(champion.id) : null
   if (champRange) stepLines.unshift(`champion across ${champRange.runs} full runs: ${champRange.lines.slice(0, 2).join('; ')}`)
@@ -504,8 +545,22 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
   log(line)
   for (const l of stepLines) log(`  ${l}`)
   if (g.stats?.newHall?.length) await notifyHallBatch(g.generation, g.stats.newHall)
-  await notifyGeneration([line, ...stepLines].join('\n'))
-  await sendDigest({ generation: g, leaderboard, bestRecord, allRuns, learning: learning.rows.filter(r => !r.lineage), lessonsKnown, steps })
+  // telegram gets the story, not the stats: the most interesting world, the deadliest step if there is room,
+  // and the champion's fake-wise takeaway (marked "probably")
+  const storyRecords = new Map<string, RunRecord>()
+  const interesting = [...allRuns.filter(r => r.status === 'destroyed'), ...[...allRuns].sort((a, b) => (b.humanCost?.famineDeaths ?? 0) - (a.humanCost?.famineDeaths ?? 0)).slice(0, 3), bestRun].filter(Boolean) as RunSummary[]
+  for (const r of interesting.slice(0, 6)) { const rec = records.get(r.runId) ?? readRunRecord(r.runId); if (rec) storyRecords.set(r.runId, rec) }
+  const story = generationStory({
+    generation: g.generation, champion: champion?.name ?? best.name, runs: allRuns.filter(r => storyRecords.has(r.runId)), records: storyRecords,
+    names: new Map(readAgents().map(a => [a.id, a.name])), firsts: (g.stats?.newHall ?? []).filter(e => e.kind === 'first' || e.kind === 'milestone').map(e => e.title),
+  }).split('\n')
+  if (deadliest && story.length < 4) story.splice(story.length - 1, 0, `deadliest habit so far: "${deadliest.text}".`)
+  // D's chosen lives: the most interesting one that ended during this generation (2 lines at most)
+  const lives = livesSection(Date.parse(g.startedAt))
+  await notifyGeneration([...story, ...(lives.length ? ['', ...lives] : [])].join('\n'))
+  const worstRun = [...allRuns].sort((a, b) => (b.humanCost?.deaths ?? 0) - (a.humanCost?.deaths ?? 0))[0]
+  await sendDigest({ generation: g, leaderboard, bestRecord, allRuns, learning: learning.rows.filter(r => !r.lineage), lessonsKnown, steps,
+    story, worstRecord: worstRun ? storyRecords.get(worstRun.runId) ?? readRunRecord(worstRun.runId) : null, champion: champion?.name })
 }
 
 // background chores while evolve runs: lastHeartbeat every minute, a telegram heartbeat every hour, a warning
@@ -519,9 +574,12 @@ function startWatchdogs(log: (l: string) => void, logFile?: string) {
   let restartSent = false
   let lowDiskWarned = false
   let stableRunning = false
+  let consistencyRunning = false
   const tick = async () => {
     try {
       heartbeatNow()
+      // paused evolution leaves ollama to the lives (the gap is refreshed every minute and lapses on resume)
+      if (control.paused) openGap(90)
       const now = Date.now()
       if (!restartSent && control.lastWorldAt > startedAt) {
         restartSent = true
@@ -553,13 +611,22 @@ function startWatchdogs(log: (l: string) => void, logFile?: string) {
       if (backupDue()) {
         try { const b = backupToGit(); log(`backup: ${b.note}${b.sha ? ` (${b.sha.slice(0, 7)})` : ''}`) } catch (e) { log(`backup failed: ${(e as Error).message.split('\n')[0]}`) }
       }
-      if (morningDue()) await send(await morningDigest())
+      await sendMorning(send, log)
       if (stableDue() && !stableRunning) {
         stableRunning = true
         const child = spawn(process.execPath, [path.join(codeRoot(), 'node_modules', 'tsx', 'dist', 'cli.mjs'), path.join(codeRoot(), 'scripts', 'promote-stable.ts')], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'], env: process.env })
         let out = ''
         child.stdout.on('data', d => { out += d })
         child.on('exit', () => { stableRunning = false; const last = out.trim().split('\n').pop(); if (last) log(last) })
+      }
+      // the nightly consistency suite on the last day's worlds and lives (telegrams only on a failure, itself)
+      if (consistencyDue() && !consistencyRunning) {
+        consistencyRunning = true
+        const child = spawn(process.execPath, [path.join(codeRoot(), 'node_modules', 'tsx', 'dist', 'cli.mjs'), '--tsconfig', path.join(codeRoot(), 'tsconfig.json'), path.join(codeRoot(), 'scripts', 'consistency.ts'), '--nightly', '--if-due'], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'], env: process.env })
+        let out = ''
+        child.stdout.on('data', d => { out += d })
+        child.stderr.on('data', d => { out += d })
+        child.on('exit', () => { consistencyRunning = false; const first = out.trim().split('\n')[0]; if (first) log(first) })
       }
       // a stall: nothing finished for 90 min (one warning per stall; a finished world resets it)
       if (!control.paused && !control.maintenance && now - control.lastWorldAt >= 90 * MIN && stallWarned !== control.lastWorldAt) {
@@ -588,6 +655,8 @@ export async function evolve(opts: EvolveOptions) {
       await llmWait()
       // between worlds: the weekly quality replay (real runs only, never in tests with a fake runWorld)
       if (!opts.runWorld) await qualityCheck(deps)
+      // then a short gap for D's chosen lives, only when some are running (evolution keeps priority otherwise)
+      if (!opts.runWorld) { const waited = await lifeGap(); if (waited) log(`lives gap: ${waited}s for ${livesRunning()} running lives`) }
     },
   }
   const stopWatchdogs = startWatchdogs(log, opts.logFile)

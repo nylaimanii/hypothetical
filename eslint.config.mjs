@@ -21,6 +21,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // D's one-life site, linted on its own
+    "life/**",
   ]),
 ]);
 

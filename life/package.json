@@ -1,0 +1,19 @@
+{
+  "name": "hypothetical-life",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node ../node_modules/next/dist/bin/next dev -p 3002 -H 0.0.0.0",
+    "build": "node ../node_modules/next/dist/bin/next build",
+    "start": "node ../node_modules/next/dist/bin/next start -p 3002 -H 0.0.0.0"
+  },
+  "dependencies": {
+    "next": "16.4.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "three": "^0.187.0",
+    "@react-three/fiber": "^9.8.2",
+    "@react-three/drei": "^10.7.9",
+    "zustand": "^5.1.0"
+  }
+}

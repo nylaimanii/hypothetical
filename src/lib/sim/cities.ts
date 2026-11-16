@@ -5,6 +5,7 @@ import { reqProgress } from './requirements'
 import { clamp, event, incomeIdx, regionPop, why, type CompanyState, type World } from './state'
 import { has } from './frontier'
 import { addFlow, addLandmark } from './visuals'
+import { addLifeEvent } from './behavior'
 
 // ESTIMATE water stress by region, 0 = plenty, 1 = extreme (WRI Aqueduct 4.0 country baseline water stress,
 // population-weighted by eye). https://www.wri.org/aqueduct
@@ -85,7 +86,7 @@ export function stepCompanies(w: World) {
     if (w.rng.companies() < pFail) {
       co.failed = true
       event(w, { regionId: co.regionId, kind: 'disaster', text: `${co.name} collapses, ${co.workers.toLocaleString('en-US')} workers laid off`, severity: 0.15 })
-      for (const c of w.citizens) if (c.regionId === co.regionId && c.job !== 'retired' && c.job !== 'student' && c.job !== 'child' && w.rng.companies() < 0.05) c.lifeEvents = [...c.lifeEvents, { tick: w.tick, text: `lost a job when ${co.name} went under` }].slice(-8)
+      for (const c of w.citizens) if (c.regionId === co.regionId && c.job !== 'retired' && c.job !== 'student' && c.job !== 'child' && w.rng.companies() < 0.05) addLifeEvent(w, c, `lost a job when ${co.name} went under`)
     }
   }
 }

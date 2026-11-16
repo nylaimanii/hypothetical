@@ -5,12 +5,14 @@ import { R, latLonToVec3, type Tile } from '../lib'
 import { COUNTRY_TABLE, countryIndexOf } from './countries'
 import raw from './tile-places.json'
 
-type Raw = { n: number; a: string; s: string; A: [string, string, string, number, number, number][]; S: string[] }
+type Raw = { n: number; a: string; s: string; A: [string, string, string, number, number, number, number?][]; S: string[] }
 const data = raw as unknown as Raw
 
 export type Admin1Row = { id: string; name: string; country: string; lat: number; lon: number; population: number; provenance: Record<string, Provenance> }
-// population is an ESTIMATE (country population split by the state's share of natural earth populated places)
-export const ADMIN1_TABLE: Admin1Row[] = data.A.map(([id, name, country, lat, lon, population]) => ({ id, name, country, lat, lon, population, provenance: { population: { kind: 'ESTIMATE' } } }))
+// population: GHS-POP 2025 summed over the state (SOURCED, from B's data/geo/admin1.json) where the 7th field is 1;
+// otherwise an ESTIMATE (country population split by the state's share of natural earth populated places)
+const GHS_POP = 'https://ghsl.jrc.ec.europa.eu/download.php?ds=pop'
+export const ADMIN1_TABLE: Admin1Row[] = data.A.map(([id, name, country, lat, lon, population, sourced]) => ({ id, name, country, lat, lon, population, provenance: { population: sourced ? { kind: 'SOURCED', url: GHS_POP } : { kind: 'ESTIMATE' } } }))
 export const OCEAN_TABLE: { name: string }[] = data.S.map((name) => ({ name }))
 
 const decode = (s: string) => Int32Array.from(s.split(','), (x) => (x === '' ? -1 : parseInt(x, 36)))

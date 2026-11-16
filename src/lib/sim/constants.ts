@@ -102,8 +102,11 @@ export const PROTEST_TIPPING_SHARE = 0.035
 
 // ---------- longevity ----------
 // best-practice life expectancy rose ~0.24 years per year for 160 years (Oeppen & Vaupel 2002, Science 296:1029)
-// https://doi.org/10.1126/science.1069675. ESTIMATE: overall mortality can fall at most 2.5%/yr from medicine
+// https://doi.org/10.1126/science.1069675. ESTIMATE: overall mortality can fall at most 2%/yr at the frontier,
+// faster for regions far behind it (catch-up: china gained ~20 years of life expectancy 1965-1995, mortality
+// falling ~4-5%/yr), from medicine
 // until speculative tech unlocks, which adds 2%/yr per unlocked speculative longevity node.
-export const MAX_MORTALITY_DECLINE_YEAR = 0.025
+// calibrated to the UN WPP 2024 medium variant (~0.15-0.2 years of life expectancy gained per year at the frontier)
+export const MAX_MORTALITY_DECLINE_YEAR = 0.012
 // oldest verified human: Jeanne Calment, 122 years 164 days. https://en.wikipedia.org/wiki/Jeanne_Calment
 export const MAX_VERIFIED_AGE = 122

@@ -17,12 +17,12 @@ import { soundState } from '../sound/engine'
 import { MigrationLines } from './Overlays'
 import { pipRegistry, usePhys } from './pipShared'
 import { sunDirection, worldDate } from './time'
-import CityLights from './CityLights'
 import { Atmosphere, Clouds, DisasterFx } from './Weather'
 import { useCurrentFrame, useStore } from '../state/store'
 // load budget: the planet itself paints first; every other layer is its own chunk, mounted just after
 // (physics only on the first close zoom, the city diorama only on the first visit)
 import { loadGeo } from './geo/lazy'
+import { loadFarTiles, loadHubs } from './real/far/useFar'
 import { isPhoneNow } from '../ui/usePhone'
 const Pips = lazy(() => import('./Pips'))
 const Structures = lazy(() => import('./Structures'))
@@ -34,6 +34,11 @@ const BorderRidges = lazy(() => import('./geo/BorderRidges'))
 const StateRidges = lazy(() => import('./geo/StateRidges'))
 const TrendArrows = lazy(() => import('./geo/TrendArrows'))
 const Orrery = lazy(() => import('./Orrery'))
+const RealCities = lazy(() => import('./real/cities/RealCities'))
+const InfraLayer = lazy(() => import('./real/infra/InfraLayer'))
+const NightLights = lazy(() => import('./real/far/NightLights'))
+const FlightArcs = lazy(() => import('./real/far/FlightArcs'))
+const ShippingLanes = lazy(() => import('./real/far/FlightArcs').then((m) => ({ default: m.ShippingLanes })))
 const PhysicsRoot = lazy(() => import('./PhysicsRoot'))
 const MovementStreams = lazy(() => import('./V3Layers').then((m) => ({ default: m.MovementStreams })))
 const RegionModeLabels = lazy(() => import('./V3Layers').then((m) => ({ default: m.RegionModeLabels })))
@@ -42,7 +47,7 @@ const ExplainLayer = lazy(() => import('./V3Layers').then((m) => ({ default: m.E
 
 // mounts its children a moment after the first frame, so the planet paints before the detail arrives
 function Prefetch() {
-  useEffect(() => { const id = setTimeout(() => { loadGeo() }, 300); return () => clearTimeout(id) }, [])
+  useEffect(() => { const id = setTimeout(() => { loadGeo(); loadFarTiles(); loadHubs() }, 300); return () => clearTimeout(id) }, [])
   return null
 }
 
@@ -54,25 +59,38 @@ function Later({ children, ms = 120 }: { children: ReactNode; ms?: number }) {
 import DeadWorld, { CoreShards, useDeathMood } from './DeadWorld'
 import { setDeathMuffle } from '../sound/engine'
 
+// the world clock: advances only while the timeline plays
+function WorldClock() {
+  useFrame((_, dt) => {
+    const playing = useStore.getState().playing
+    sceneRefs.wdt = playing ? Math.min(dt, 0.1) : 0
+    sceneRefs.wt += sceneRefs.wdt
+  }, -100)
+  return null
+}
+
 export function Sky({ grey = 0 }: { grey?: number }) {
   const scene = useThree((s) => s.scene)
+  // night in view, in steps of a fifth, so the gradient is redrawn only a few times across dusk
+  const [nightStep, setNightStep] = useState(0)
+  useFrame(() => { const st = Math.round(sceneRefs.night * 5) / 5; if (st !== nightStep) setNightStep(st) })
   useEffect(() => {
     const cv = document.createElement('canvas')
     cv.width = 4; cv.height = 256
     const g = cv.getContext('2d')!
     const grad = g.createLinearGradient(0, 0, 0, 256)
     // a collapsed world loses its color: the sky goes flat grey
-    const mixG = (hex: string, to: string) => { const a = new THREE.Color(hex), b = new THREE.Color(to); return `#${a.lerp(b, grey).getHexString()}` }
-    grad.addColorStop(0, mixG('#9C97B2', '#8C8A87')) // muted dusk
-    grad.addColorStop(0.55, mixG('#D4CCC6', '#B5B2AE'))
-    grad.addColorStop(1, mixG(C.bone, '#CFCBC5'))
+    const mixG = (hex: string, to: string, night: string) => { const a = new THREE.Color(hex).lerp(new THREE.Color(to), grey); return `#${a.lerp(new THREE.Color(night), nightStep * 0.92).getHexString()}` }
+    grad.addColorStop(0, mixG('#9C97B2', '#8C8A87', '#0E1324')) // muted dusk, deep navy at night
+    grad.addColorStop(0.55, mixG('#D4CCC6', '#B5B2AE', '#1A2036'))
+    grad.addColorStop(1, mixG(C.bone, '#CFCBC5', '#2A2D3E'))
     g.fillStyle = grad
     g.fillRect(0, 0, 4, 256)
     const tex = new THREE.CanvasTexture(cv)
     tex.colorSpace = THREE.SRGBColorSpace
     scene.background = tex
     return () => { scene.background = null; tex.dispose() }
-  }, [scene, grey])
+  }, [scene, grey, nightStep])
   return null
 }
 
@@ -81,8 +99,12 @@ export function Sky({ grey = 0 }: { grey?: number }) {
 // readable softbox beside the camera that keeps only the season's tilt
 export function KeyLight({ high }: { high: boolean }) {
   const light = useRef<THREE.DirectionalLight>(null)
-  const fill = useRef<THREE.DirectionalLight>(null)
+  const moon = useRef<THREE.DirectionalLight>(null)
+  const amb = useRef<THREE.AmbientLight>(null)
+  const hemi = useRef<THREE.HemisphereLight>(null)
   const camera = useThree((s) => s.camera)
+  const scene = useThree((s) => s.scene)
+  const moonDir = useMemo(() => new THREE.Vector3(), [])
   const real = useMemo(() => new THREE.Vector3(), [])
   useFrame((_, dt) => {
     const l = light.current
@@ -111,14 +133,30 @@ export function KeyLight({ high }: { high: boolean }) {
       sc.near = 30 - half - 2; sc.far = 30 + half + 2
       sc.updateProjectionMatrix()
     }
-    // a faint fill from the viewer keeps the night side readable without lighting it
-    if (fill.current) { fill.current.position.copy(camera.position); fill.current.target.updateMatrixWorld() }
+    // night: how far past the terminator the place we look at is (only when the real sun is used, i.e. paused)
+    const focusN = sceneRefs.focus.clone().normalize()
+    const sunAt = focusN.dot(sceneRefs.sunDir)
+    const nightTarget = s.playing ? 0 : THREE.MathUtils.smoothstep(-sunAt, -0.08, 0.22)
+    sceneRefs.night += (nightTarget - sceneRefs.night) * (1 - Math.exp(-dt * 3))
+    const n = sceneRefs.night
+    // soft moonlight from high in the night sky (not from the camera), cool and dim
+    moonDir.copy(sceneRefs.sunDir).negate().addScaledVector(focusN, 0.9).add(new THREE.Vector3(0, 0.35, 0)).normalize()
+    if (moon.current) {
+      moon.current.position.copy(moonDir).multiplyScalar(30)
+      moon.current.target.position.set(0, 0, 0)
+      moon.current.target.updateMatrixWorld()
+      moon.current.intensity = 0.2 * n
+    }
+    // the sky's light and the studio reflections fade at night; that is what made night read as day
+    if (amb.current) amb.current.intensity = 0.16 * (1 - 0.7 * n)
+    if (hemi.current) hemi.current.intensity = 0.28 * (1 - 0.8 * n)
+    scene.environmentIntensity = 1 - 0.82 * n
   })
   return (
     <>
-      <ambientLight intensity={0.16} color="#C9CCE0" />
-      <hemisphereLight args={['#E9E4F2', '#E8DCC6', 0.28]} />
-      <directionalLight ref={fill} intensity={0.32} color="#B8C2E0" />
+      <ambientLight ref={amb} intensity={0.16} color="#C9CCE0" />
+      <hemisphereLight ref={hemi} args={['#E9E4F2', '#E8DCC6', 0.28]} />
+      <directionalLight ref={moon} intensity={0} color="#9DB2E8" />
       <directionalLight ref={light} intensity={2.1} color="#FFF4E2" castShadow={high}
         shadow-mapSize={[2048, 2048]} shadow-bias={-0.0004} shadow-normalBias={0.025}
         shadow-camera-left={-14} shadow-camera-right={14} shadow-camera-top={14} shadow-camera-bottom={-14} shadow-camera-near={1} shadow-camera-far={70} />
@@ -184,7 +222,7 @@ function JuiceDriver() {
     const first = last.current === -1
     last.current = idx
     if (first || mode !== 'ai') return
-    for (const e of frame.newEvents) if (e.kind !== 'law') pushJuice({ kind: e.kind, regionId: e.regionId, severity: e.severity, text: e.text })
+    for (const e of frame.newEvents) if (e.kind !== 'law') pushJuice({ kind: e.kind, regionId: e.regionId, severity: e.severity, text: e.text, tick: e.tick })
   }, [idx, frame, mode, pushJuice])
   useEffect(() => {
     for (const j of juice) {
@@ -339,6 +377,7 @@ export default function Globe() {
         onPointerMissed={(e) => { if ((e.target as HTMLElement | null)?.tagName === 'CANVAS') select(null) }}
       >
         <PerformanceMonitor bounds={() => [50, 58]} flipflops={6} onIncline={() => setDpr((d) => Math.min(cap, d + 0.25))} onDecline={() => setDpr((d) => Math.max(1, d - 0.25))} onFallback={() => setDpr(1)} />
+        <WorldClock />
         <AdaptiveQuality high={high} />
         <Sky grey={sky} />
         <KeyLight high={high} />
@@ -355,7 +394,7 @@ export default function Globe() {
           {/* v4: visiting a city swaps the planet for its diorama (sky, light, environment and effects stay) */}
           {cityView ? <Suspense fallback={null}><CityView cityId={cityView} frame={frame} agent={agent} /></Suspense> : <>
           <Planet frame={frame} />
-          <CityLights frame={frame} />
+          <Later ms={200}><NightLights frame={frame} /></Later>
           <Atmosphere tint={frame.atmosphere?.tint} haze={frame.atmosphere?.haze ?? 0} />
           <Clouds frame={frame} />
           <DisasterFx frame={frame} />
@@ -370,10 +409,16 @@ export default function Globe() {
             <EmotionPulse frame={frame} />
           </Later>
           <Later ms={1500}><Orrery frame={frame} /></Later>
+          <Later ms={800}>
+            <FlightArcs frame={frame} countryOrder={record.frames[0]?.traffic?.countries} />
+            <ShippingLanes frame={frame} countryOrder={record.frames[0]?.traffic?.countries} />
+          </Later>
           {/* names: 5 countries at far, 5 cities at mid (the old region labels are retired) */}
           <Later ms={250}>
             <CountryNames frame={frame} />
             <CityMarkers frame={frame} />
+            <RealCities frame={frame} agent={agent} />
+            <InfraLayer frame={frame} agent={agent} />
             <BorderRidges frame={frame} />
             <StateRidges frame={frame} />
             <TrendArrows frame={frame} />

@@ -6,6 +6,11 @@ import { paceLine, readDay } from '../evolve/usage'
 import { topAgents } from '../evolve/agents'
 import { diskLine } from '../evolve/retention'
 import { send, telegramEnv, tg } from './telegram'
+import { readAgents } from '../evolve/agents'
+import { readRunIndex } from '../evolve/store'
+import { readNowFile } from '../evolve/now'
+import { livingByContinent } from '../evolve/lives'
+import { lifeReply } from '../life/telegram'
 
 type Update = { update_id: number; message?: { chat: { id: number }; text?: string } }
 const POLL_MS = 2000
@@ -23,8 +28,35 @@ async function ask(question: string): Promise<string> {
   }
 }
 
+const site = () => (process.env.HYP_SITE_URL ?? 'http://localhost:3000').replace(/\/$/, '')
+const worldLink = (runId: string, done: boolean) => done ? `${site()}/report/${encodeURIComponent(runId)}` : `${site()}/?tabs=${encodeURIComponent(runId)}&active=${encodeURIComponent(runId)}`
+
+// the current generation's worlds: finished (status, year, score), running now, and still queued
+export function worldsList(generation: number, running: string[]): string {
+  const names = new Map(readAgents().map(a => [a.id, a.name]))
+  const done = readRunIndex().filter(r => r.generation === generation).sort((a, b) => a.runId.localeCompare(b.runId))
+  const status = (s: string) => (s === 'destroyed' ? 'DIED' : s === 'alive' ? 'alive' : s.replace(/_/g, ' '))
+  const lines = done.map(r => `${names.get(r.agentId) ?? r.agentId} s${r.seed}${/-full-/.test(r.runId) ? ' (100y)' : ''} · ${status(r.status)} ${r.endDate.slice(0, 4)} · ${r.score} · ${worldLink(r.runId, true)}`)
+  for (const id of running) if (!done.some(r => r.runId === id)) lines.push(`${id} · running now · ${worldLink(id, false)}`)
+  const queued = (readNowFile()?.queue ?? []).filter(q => !running.includes(q.runId))
+  if (queued.length) lines.push(`queued: ${queued.map(q => `${names.get(q.agentId) ?? q.agentId} s${q.seed}`).join(', ')}`)
+  return lines.length ? `gen ${generation}\n${lines.join('\n')}` : `gen ${generation}: no worlds yet`
+}
+
+export function livesList(): string {
+  const groups = livingByContinent()
+  if (!groups.length) return 'nobody is being lived right now'
+  return groups.map(g => `${g.continent}\n${g.people.map(p => `  ${p.name}, ${p.age}, ${p.city}${p.agent ? ` (${p.agent}'s world)` : ''}`).join('\n')}`).join('\n')
+}
+
 async function reply(cmd: string, rest: string): Promise<string | null> {
   switch (cmd) {
+    case '/worlds':
+      { const cur = readNowFile()?.runId; return worldsList(control.generation, cur ? [cur] : []) }
+    case '/lives':
+      return livesList()
+    case '/help':
+      return '/status /worlds /lives /best /agents /ask <question> /pause /resume\n/life <name> /mute <name> /unmute <name> /quiet /loud'
     case '/status': {
       const best = readLeaderboard()[0]
       const day = readDay()
@@ -56,7 +88,8 @@ async function reply(cmd: string, rest: string): Promise<string | null> {
       control.paused = false
       return 'resumed'
     default:
-      return null
+      // D's life commands (/life, /mute, /unmute, /quiet, /loud): one poller per bot, so evolve answers them
+      return lifeReply(cmd, rest)
   }
 }
 

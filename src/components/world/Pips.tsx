@@ -5,7 +5,7 @@ import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Outlines } from '@react-three/drei'
 import type { Behavior, Citizen, Frame } from '@/lib/types'
 import { dominant, valence } from '@/lib/mock/mood'
-import { C, HAIR_HEX, LAND_TOP, MONK, groundRadius, latLonToVec3, shade, surfaceQuat, tangentBasis, vinyl } from './lib'
+import { C, HAIR_HEX, LAND_TOP, MONK, groundRadius, latLonToVec3, shade, surfaceQuat, tangentBasis, vinyl, sceneRefs } from './lib'
 import { HAIRS, P, buildW, hairGeometries, headScale, partGeometries, pipRegistry, pipScale, shoulderX, usePhys, type Agent } from './pipShared'
 import { CONFETTI_COLORS, EMOTION_ICON, EMOTION_TINT, ICONS, iconGeometries, propGeometries } from './pipProps'
 import { useStore } from '../state/store'
@@ -289,9 +289,9 @@ export default function Pips({ frame }: { frame: Frame }) {
     return () => clearInterval(id)
   }, [visible, quality, agents, setKeys, camera])
 
-  useFrame(({ clock }) => {
+  useFrame(() => {
     if (!visible) return
-    const t = clock.elapsedTime
+    const t = sceneRefs.wt
     const now = performance.now() / 1000
     const trend = trendOn(t)
     const camQ = camera.quaternion

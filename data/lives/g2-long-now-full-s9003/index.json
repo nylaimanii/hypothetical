@@ -1,0 +1,47 @@
+[
+ {
+  "lifeId": "g2-long-now-full-s9003-life-1",
+  "worldId": "g2-long-now-full-s9003",
+  "lifeNo": 1,
+  "name": "sofia shevchenko",
+  "sex": "female",
+  "look": {
+   "skinTone": 3,
+   "hair": "long_straight",
+   "hairColor": "black",
+   "adultHeightCm": 158.4,
+   "build": "average"
+  },
+  "birthplace": {
+   "cityId": "moscow",
+   "city": "Moscow",
+   "countryId": "RUS",
+   "country": "Russia",
+   "regionId": "rus_ca",
+   "lat": 55.76,
+   "lon": 37.62,
+   "fromTick": 0
+  },
+  "deathTick": 1283,
+  "deathAge": 106.9,
+  "deathCause": "old age, in their sleep",
+  "epitaph": "sofia shevchenko · 2026–2133 · moscow · factory worker",
+  "status": "done",
+  "score": 0.6653,
+  "twinScore": 0.5984,
+  "parts": {
+   "healthyYears": 0.9674,
+   "relationships": 0.4444,
+   "contribution": 0.7771,
+   "meaning": 0.5845,
+   "wellbeing": 0.4619
+  },
+  "lastCity": "Moscow",
+  "job": null,
+  "kids": 0,
+  "lessonsLeft": [
+   "(rule-made) protect your relationships early"
+  ],
+  "createdAt": "2026-11-16T12:48:03.033Z"
+ }
+]

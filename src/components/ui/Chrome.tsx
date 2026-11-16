@@ -1,9 +1,8 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
+import { populationOf } from './truth'
 import Link from 'next/link'
 import type { Budget, Frontier } from '@/lib/types'
-import { mockRuns } from '@/lib/mock/run'
-import { LEARNING_CURVE } from '@/lib/mock/v2'
 import { learningByLineage } from '@/lib/mock/agents'
 import type { Agent } from '@/lib/types'
 import { useCurrentFrame, useStore } from '../state/store'
@@ -12,7 +11,9 @@ import { AGENT_COLORS } from './Compare'
 import { api, Offline } from './api'
 import { DirectorToggle, SoundControls, replayIntro } from './Extras'
 import { formatDay, formatTime, tickToDate } from '../world/time'
-import { openRun } from './worlds'
+import { openRun, startAB } from './worlds'
+import { mayPair } from './ab'
+import { AgentBoard } from './WhyItWon'
 
 export function StatusPill({ status }: { status: string }) {
   const danger = status === 'destroyed'
@@ -52,6 +53,9 @@ export function TopLeft() {
           branched from <Num>{record.branchedFrom.runId}</Num> at <Num>{formatDay(tickToDate(record.branchedFrom.tick))}</Num>
         </button>
       )}
+      {!compare && mayPair(record.runId) && (
+        <button onClick={() => startAB(record.runId, useStore.getState().playhead)} className="mt-1 block text-[11px] text-ink/60 underline decoration-ink/25 underline-offset-2 hover:text-ink">compare with the original, side by side</button>
+      )}
     </div>
   )
 }
@@ -73,7 +77,7 @@ export function MissionBar() {
   )
   return (
     <div className="panel pointer-events-auto flex shrink-0 items-center divide-x divide-ink/10 whitespace-nowrap px-1.5 py-1.5">
-      {frame.globalPopulation > 0 && item('people', <Num>{fmt.people(frame.globalPopulation)}</Num>)}
+      {populationOf(frame) > 0 && item('people', <Num>{fmt.people(populationOf(frame))}</Num>)}
       {frame.globalPeriodLifeExpectancy > 0 && item('life exp.', <Num>{frame.globalPeriodLifeExpectancy.toFixed(1)}y</Num>, () => setPanel('longevity'))}
       {item('frontier', frontierLabel(frame.frontier), () => setPanel('offworld'))}
       {mode === 'ai' && cost.deaths > 0 && item('deaths', <Num>{fmt.people(cost.deaths)}</Num>, undefined, true)}
@@ -105,6 +109,7 @@ const Gear = () => (
 )
 
 export function TopRight({ onLive }: { onLive: () => void }) {
+  const canLive = useStore((s) => s.caps.playLive)
   const drawerOpen = useStore((s) => s.drawerOpen)
   const setDrawer = useStore((s) => s.setDrawer)
   const liveRunId = useStore((s) => s.liveRunId)
@@ -123,7 +128,7 @@ export function TopRight({ onLive }: { onLive: () => void }) {
       <Link href="/mission" className={`${btn(false)} flex items-center`}>mission</Link>
       <DirectorToggle />
       <SoundControls />
-      <button onClick={onLive} className={btn(!!liveRunId)}>{liveRunId ? 'live on' : 'play live'}</button>
+      {canLive && <button onClick={onLive} className={btn(!!liveRunId)}>{liveRunId ? 'live on' : 'play live'}</button>}
       <button onClick={() => setDrawer(!drawerOpen)} className={btn(drawerOpen)}>rules</button>
       <button onClick={() => useStore.getState().setShortcuts(true)} aria-label="keyboard shortcuts" title="keyboard shortcuts (?)" className={`${btn(false)} flex w-9 items-center justify-center px-0 font-mono`}>?</button>
       <button onClick={() => setAdvanced(!advanced)} aria-label="advanced settings" title="advanced settings" className={`${btn(advanced)} flex w-9 items-center justify-center px-0`}><Gear /></button>
@@ -209,7 +214,6 @@ function LineageCurve({ rows, agents }: { rows: { generation: number; bestScore:
 
 export function Leaderboard() {
   const runs = useStore((s) => s.runs)
-  const runsSource = useStore((s) => s.runsSource)
   const record = useStore((s) => s.record)
   const setRecord = useStore((s) => s.setRecord)
   const setNotice = useStore((s) => s.setNotice)
@@ -218,12 +222,10 @@ export function Leaderboard() {
   const agents = useStore((s) => s.agents)
   const [apiCurve, setApiCurve] = useState<{ generation: number; bestScore: number; lineage?: string }[] | null>(null)
   useEffect(() => { api.learning().then((c) => { if (Array.isArray(c) && c.length > 1) setApiCurve(c) }).catch(() => {}) }, [])
-  const curveMock = !apiCurve
-  const curve = apiCurve ?? (agents.length ? learningByLineage(agents) : LEARNING_CURVE.map((p) => ({ ...p, lineage: 'all' })))
+  // the learning curve from the api, else computed from the real agents; nothing when neither has data
+  const curve = apiCurve ?? (agents.length ? learningByLineage(agents) : [])
   if (!sorted.length) return null
   const load = async (id: string) => {
-    const mock = mockRuns().find((r) => r.runId === id)
-    if (runsSource === 'mock' && mock) return setRecord(mock, 'mock')
     try { setRecord(await api.run(id), 'api') } catch (e) { setNotice(e instanceof Offline ? 'runner offline' : 'could not load run') }
   }
   return (
@@ -231,18 +233,20 @@ export function Leaderboard() {
       <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between px-4 py-2.5 text-left">
         <span className="font-display text-[15px]">leaderboard</span>
         <span className="flex items-center gap-2">
-          {runsSource === 'mock' && <span className="font-mono text-[9px] tracking-[0.2em] text-ink/45">MOCK</span>}
           <span className="text-ink/40">{open ? '−' : '+'}</span>
         </span>
       </button>
       {open && curve.length > 1 && (
         <div className="px-4 pb-2">
-          <div className="flex items-baseline justify-between text-[10px] text-ink/50"><span>best score by generation{curveMock ? ' · mock' : ''}</span><Num>gen {Math.max(...curve.map((p) => p.generation))}</Num></div>
+          <div className="flex items-baseline justify-between text-[10px] text-ink/50"><span>best score by generation</span><Num>gen {Math.max(...curve.map((p) => p.generation))}</Num></div>
           <LineageCurve rows={curve} agents={agents} />
         </div>
       )}
       {open && (
-        <ul className="scroll-thin min-h-0 max-h-[40vh] overflow-y-auto pb-2">
+        <div className="scroll-thin min-h-0 max-h-[60vh] overflow-y-auto">
+        <AgentBoard />
+        <div className="px-4 pb-1 pt-1 text-[10px] uppercase tracking-[0.12em] text-ink/45">worlds</div>
+        <ul className="pb-2">
           {sorted.map((r, i) => (
             <li key={r.runId}>
               <button onClick={() => load(r.runId)} className={`w-full px-4 py-1.5 text-left hover:bg-ink/5 ${record.runId === r.runId ? 'bg-ink/[0.07]' : ''}`}>
@@ -258,10 +262,12 @@ export function Leaderboard() {
                   <Num>{r.endDate}</Num>
                   <span>gen <Num>{r.generation}</Num></span>
                 </div>
+                {(r as { realBaseline?: { text: string } | null }).realBaseline?.text && <div className="ml-6 text-[11px] text-ink/55">{(r as { realBaseline?: { text: string } }).realBaseline!.text}</div>}
               </button>
             </li>
           ))}
         </ul>
+        </div>
       )}
     </div>
   )

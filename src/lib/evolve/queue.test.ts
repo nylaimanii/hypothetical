@@ -328,3 +328,215 @@ test('retention: hall worlds stay plain, mediocre worlds are gzipped then delete
   assert.ok(exists('b-test-run.json'), "other agents' records are never touched")
   assert.equal(res.deleted, 1)
 }))
+
+test('lives gap: none without lives, ends early once lives stop asking, never longer than the cap', inTempDir(async dir => {
+  process.env.LLM_PROVIDER = 'ollama'
+  const { lifeGap, gapFile } = await import('./lifegap')
+  let t = 0
+  const mk = (running: number, asking: (t: number) => boolean) => ({ sleep: async (ms: number) => { t += ms }, now: () => t, running: () => running, asking: () => asking(t) })
+  t = 0; assert.equal(await lifeGap(mk(0, () => true), 60), 0, 'no lives running: evolution does not wait')
+  t = 0; assert.equal(await lifeGap(mk(3, () => true), 0), 0, 'gap turned off')
+  t = 0; assert.equal(await lifeGap(mk(3, () => true), 60), 60, 'lives asking the whole time: capped at the gap')
+  t = 0; const quiet = await lifeGap(mk(3, x => x < 10_000), 60)
+  assert.ok(quiet >= 20 && quiet < 30, `lives went quiet after 10s: the gap ends soon after 20s (got ${quiet})`)
+  assert.ok(!fs.existsSync(gapFile()), 'the gap file is removed afterwards')
+  assert.ok(dir)
+}))
+
+test('morning digest: one send per day across processes, a failed send gives the claim back', inTempDir(async () => {
+  const { sendMorning } = await import('./maintenance')
+  const realHour = Date.prototype.getHours
+  Date.prototype.getHours = function () { return 9 }
+  try {
+    let sent = 0
+    assert.equal(await sendMorning(async () => false, () => {}), false, 'telegram failed')
+    assert.equal(await sendMorning(async () => { sent++; return true }, () => {}), true, 'the retry sends it')
+    assert.equal(await sendMorning(async () => { sent++; return true }, () => {}), false, 'already sent today')
+    assert.equal(sent, 1)
+  } finally { Date.prototype.getHours = realHour }
+}))
+
+test('evolve lock: a stale lock (dead pid, or a pid that is not evolve) is taken over', inTempDir(async () => {
+  const { acquireEvolveLock } = await import('./instance')
+  fs.mkdirSync('data', { recursive: true })
+  fs.writeFileSync('data/.evolve.lock', JSON.stringify({ pid: 999999 }))
+  const a = acquireEvolveLock(); assert.ok(a.ok, 'dead pid')
+  fs.writeFileSync('data/.evolve.lock', JSON.stringify({ pid: process.ppid }))
+  const b = acquireEvolveLock(); assert.ok(b.ok, 'a live pid that is not an evolve (a reused pid after a restart)')
+}))
+
+test("startup cleanup keeps fresh tickets in b's <prio>-<ms>-<pid> format and reads them right", inTempDir(async () => {
+  const { clearPreBootLocks } = await import('./instance')
+  const { ollamaQueue } = await import('./lifegap')
+  fs.mkdirSync('data/.ollama.queue', { recursive: true })
+  const now = Date.now()
+  const fresh = `9-${String(now).padStart(15, '0')}-${process.pid}`
+  fs.writeFileSync(path.join('data/.ollama.queue', fresh), 'life-milestone')
+  const stale = path.join('data/.ollama.queue', `0-${String(now - 864e5).padStart(15, '0')}-${process.pid}`)
+  fs.writeFileSync(stale, 'g9-old')
+  fs.utimesSync(stale, new Date(now - 864e5), new Date(now - 864e5))
+  const cleared = clearPreBootLocks(now - 3600e3)
+  assert.deepEqual(cleared, [`.ollama.queue/${path.basename(stale)}`], 'only the ticket written before the boot goes')
+  const q = ollamaQueue()
+  assert.equal(q.waiting.length, 1)
+  assert.equal(q.waiting[0].priority, 9)
+  assert.equal(q.waiting[0].label, 'life-milestone')
+  assert.ok(Math.abs(Date.parse(q.waiting[0].since) - now) < 1000, 'the time is read from the middle field')
+}))
+
+test('digest verdict uses only the current sim version, and says so when it has no worlds yet', async () => {
+  const { verdictLine } = await import('./maintenance')
+  const pop = (n: number) => [{ population: n }]
+  const rec = (ai: number, tw: number) => ({ frames: [{ tick: 100, status: 'alive', regions: pop(ai) }], baseline: [{ tick: 100, status: 'alive', regions: pop(tw), moonProgress: 0 }] })
+  const recs: Record<string, unknown> = { a: rec(5e9, 6e9), b: rec(5e9, 5.5e9), c: rec(7e9, 6e9) }
+  const read = (id: string) => (recs[id] ?? null) as never
+  const runs = [{ runId: 'a', simVersion: '5.1.0' }, { runId: 'b', simVersion: '5.1.0' }] as never[]
+  const before = verdictLine(runs, '5.7.0', read)!
+  assert.match(before, /no 5\.7\.0 worlds have finished yet/)
+  assert.match(before, /before the switch, no: in 0 of 2 worlds on 5\.1\.0/)
+  const after = verdictLine([...runs, { runId: 'c', simVersion: '5.7.0' }] as never[], '5.7.0', read)!
+  assert.equal(after, 'is the ai beating "do nothing" yet? yes: in the 1 world on 5.7.0 it kept more people alive than the no-ai twin, by 1000 million.')
+})
+
+test('consistency runner: plain-word failures from tap, suites left out', async () => {
+  const { parseTap, failureText } = await import('./consistency')
+  const tap = [
+    'TAP version 13',
+    '# Subtest: report numbers',
+    '    # Subtest: the report says the population the record has in 2051',
+    '    not ok 1 - the report says the population the record has in 2051',
+    '      ---',
+    "      error: 'report for g3-atlas says 4.1B, the record has 3.9B'",
+    '      ...',
+    '    ok 2 - every chronicle year is a year of the timeline',
+    '    1..2',
+    'not ok 1 - report numbers',
+    '  ---',
+    "  type: 'suite'",
+    "  failureType: 'subtestsFailed'",
+    "  error: '1 subtest failed'",
+    '  ...',
+    'ok 2 - names are unique # SKIP',
+  ].join('\n')
+  const t = parseTap(tap)
+  assert.equal(t.total, 3)
+  assert.deepEqual(t.failed, [{ name: 'the report says the population the record has in 2051', why: 'report for g3-atlas says 4.1B, the record has 3.9B' }])
+  const text = failureText({ ran: true, ...t, note: '' }, 'last night')
+  assert.match(text, /^consistency check failed on last night: 1 of 3 checks disagree with the records\.\n- the report says the population/)
+})
+
+test('deploy snapshot ships real worlds and never runtime files, and checks they open', async () => {
+  const { deployFiles, checkDeploy } = await import('./deploy')
+  const zlib = await import('node:zlib')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hyp-deploy-'))
+  const w = (rel: string, body: string | Buffer) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body) }
+  w('data/agents.json', JSON.stringify([{ id: 'vesper' }]))
+  w('data/showcase/index.json', JSON.stringify([{ runId: 'w1', agentId: 'vesper' }, { runId: 'w2', agentId: 'ghost' }]))
+  w('data/showcase/w1.json.gz', zlib.gzipSync(JSON.stringify({ runId: 'w1', frames: [{ tick: 0 }] })))
+  w('data/lives/w1/w1-life-1.json', '{}')
+  w('data/telegram-log.json', '[]'); w('data/maintenance.json', '{}'); w('data/lives/.ollama.gap', '{}'); w('data/runs/w1.json', '{}')
+  const files = deployFiles(dir)
+  assert.deepEqual(files, ['data/agents.json', 'data/lives/w1/w1-life-1.json', 'data/showcase/index.json', 'data/showcase/w1.json.gz'])
+  const problems = checkDeploy(dir)
+  assert.equal(problems.length, 2)
+  assert.match(problems.join('\n'), /w2 is listed but its record does not open/)
+  assert.match(problems.join('\n'), /agent ghost, which is not in agents.json/)
+  w('data/showcase/index.json', '[]')
+  assert.match(checkDeploy(dir).join('\n'), /no showcase worlds/)
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('playbook: rules map to budget tests in plain words, confidence moves with same-seed a/b evidence', async () => {
+  const { testOf, computePlaybook, lessonLine } = await import('./playbook')
+  assert.deepEqual(testOf('Ensure basic human needs are met before pursuing long-term space goals.'), { up: ['food', 'welfare'], down: ['space'], text: 'a bigger share of the budget on food and welfare than on space, compared with a rival on the same seed' })
+  assert.deepEqual(testOf('Avoid crackdowns on protests.')?.down, ['security'])
+  assert.equal(testOf('Adapt policies swiftly in response to emerging threats.'), null)
+  const b = (food: number) => ({ food, energy: 0.1, education: 0.1, space: 0.2 - food / 2, security: 0.1, welfare: 0.2, research: 0.1 })
+  const f = (runId: string, agentId: string, food: number, score: number) => ({ runId, agentId, generation: 1, horizon: 'screen' as const, budget: b(food), lawFirstTick: {}, religion: 'free', schoolYearsMax: 12, citiesFirstTick: null, research: {}, decisions: 4, outcome: { score, le: 70, popTrend: 1, deathRatio: 0, approval: 0.5, destroyed: false } })
+  // two seeds: on s1 the food-first world wins, on s2 too, on s3 it loses
+  const feats = [f('g1-a-s1', 'a', 0.3, 0.6), f('g1-b-s1', 'b', 0.1, 0.4), f('g1-a-s2', 'a', 0.3, 0.7), f('g1-b-s2', 'b', 0.1, 0.5), f('g1-a-s3', 'a', 0.3, 0.2), f('g1-b-s3', 'b', 0.1, 0.6)]
+  const lesson = { id: 'l1', fromRunId: 'g0-x-s9', generation: 0, mistake: 'm', consequence: 'c', rule: 'Ensure basic human needs are met before pursuing long-term space goals.', timesRelevant: 1 }
+  const untested = { ...lesson, id: 'l2', rule: 'Adapt policies swiftly.' }
+  const pb = computePlaybook([lesson, untested], feats, () => '5.1.0', null, 1)
+  assert.equal(pb.pairs, 3)
+  const l = pb.lessons.find(x => x.id === 'l1')!
+  assert.equal(l.supported, 2); assert.equal(l.contradicted, 1); assert.equal(l.confidence, 0.6); assert.equal(l.trend, 'new')
+  assert.equal(pb.lessons.find(x => x.id === 'l2')!.confidence, null)
+  // one more contradicting test next generation: confidence goes down, and says from what
+  const pb2 = computePlaybook([lesson], [...feats, f('g2-a-s4', 'a', 0.3, 0.1), f('g2-b-s4', 'b', 0.1, 0.9)], () => '5.1.0', pb, 2)
+  const l2 = pb2.lessons[0]
+  assert.equal(l2.confidence, 0.5); assert.equal(l2.trend, 'down')
+  assert.equal(lessonLine(l2), 'ensure basic human needs are met before pursuing long-term space goals: 50% sure (2 of 4 a/b tests agree: 2 of 4 same-seed world pairs, down from 60%)')
+})
+
+test('autopsy walks the cause chain back from the recorded cause, and explainGap names real differences', async () => {
+  const { autopsy, autopsyLines, explainGap } = await import('./evidence')
+  const region = (id: string, name: string, kind = 'none', level = 0) => ({ id, name, population: 1e9, visual: { damage: { kind, level } } })
+  const frame = (tick: number, extra: Record<string, unknown> = {}) => ({ tick, date: '', regions: [region('na', 'North Africa', tick >= 24 ? 'revolt' : 'none', tick >= 24 ? 1 : 0), region('eu', 'Europe')], laws: [], newEvents: [], humanCost: { deaths: 2e6, famineDeaths: 1e6, unrestDeaths: 5e5, displaced: 3e6, approval: 0.2 }, status: 'alive', ...extra })
+  const causes = [
+    { id: 'k1', tick: 12, placeId: 'na', what: 'food prices in North Africa rose 40%', value: 0.4, because: 'drought cut the harvest', byWhom: 'nature', causeIds: [], nextIds: ['k2'], sig: 0.5 },
+    { id: 'k2', tick: 20, placeId: 'na', what: 'North Africa is in open revolt', value: 1, because: 'unrest stayed above 0.65 for six months', byWhom: 'people', causeIds: ['k1'], nextIds: [], sig: 0.9 },
+    { id: 'k3', tick: 25, placeId: 'eu', what: 'major disaster in Spain, 9k dead', value: 1, because: 'a natural hazard', byWhom: 'nature', causeIds: [], nextIds: [], sig: 0.95 },
+  ]
+  const rec = { runId: 'w-dead', agentId: 'x', frames: [frame(0), frame(12, { causes: [causes[0]] }), frame(24, { causes: [causes[1], causes[2]], status: 'destroyed' })], summary: { status: 'destroyed', causeOfDeath: 'North Africa stayed in open revolt and the government fell.' } } as never
+  const a = autopsy(rec)!
+  assert.deepEqual(a.chain.map(c => c.what), ['food prices in North Africa rose 40%', 'North Africa is in open revolt'])
+  assert.deepEqual(a.lost, [{ kind: 'revolt', regions: ['North Africa'], since: '2028-11' }])
+  const lines = autopsyLines(a)
+  assert.equal(lines[0], 'autopsy: died 2028-11. North Africa stayed in open revolt and the government fell.')
+  assert.equal(lines[1], '2027-11, North Africa: food prices in North Africa rose 40% (drought cut the harvest)')
+  assert.match(lines.join('\n'), /cost: 2 million deaths \(1 million famine, 500,000 unrest\), 3 million displaced\./)
+  const feat = (food: number, laws: Record<string, number>) => ({ runId: 'r', agentId: 'a', generation: 1, horizon: 'screen' as const, budget: { food, energy: 0.1, education: 0.1, space: 0.1, security: 0.1, welfare: 0.2, research: 0.1 }, lawFirstTick: laws, religion: 'free', schoolYearsMax: 12, citiesFirstTick: null, research: {}, decisions: 4, outcome: { score: 0.5, le: 70, popTrend: 1, deathRatio: 0, approval: 0.5, destroyed: false } })
+  const g = explainGap({ name: 'meridian iii', record: { runId: 'win', frames: [frame(0)] } as never, features: feat(0.25, { food_reserve: 6 }) }, { name: 'halcyon', record: rec, features: feat(0.1, {}) })
+  // which comes first depends on the real recipe's weights (data/steps.json), so only the set is fixed here
+  assert.deepEqual([...g.decisive].sort(), ['meridian iii passed a food reserve law in 2027, halcyon never did', 'meridian iii put 25% of the budget into food, halcyon 10%'])
+  assert.deepEqual(g.reasons?.find(r => /food reserve/.test(r.text)), { text: 'meridian iii passed a food reserve law in 2027, halcyon never did', tick: 6, run: 'win' }, 'the law has its moment; a budget average has none')
+  assert.equal(g.consequence, 'halcyon lost 1 region to revolt by 2028')
+})
+
+test("autopsy reads the sim's own record.autopsy when there is one, and says when a step is only linked by timing", async () => {
+  const { autopsy, autopsyLines } = await import('./evidence')
+  const region = { id: 'na', name: 'North Africa', population: 1e9, visual: { damage: { kind: 'none', level: 0 } } }
+  const f = (tick: number, status = 'alive') => ({ tick, date: '', regions: [region], laws: [], newEvents: [], humanCost: { deaths: 1e6, famineDeaths: 0, unrestDeaths: 1e6, displaced: 0, approval: 0.1 }, status, decision: tick === 0 ? { rationale: 'security keeps order' } : undefined })
+  const rec = {
+    runId: 'w', frames: [f(0), f(36, 'destroyed')], summary: { status: 'destroyed', causeOfDeath: 'North Africa revolted.' },
+    autopsy: { tick: 36, date: '2029-11', death: 'North Africa revolted.', chain: [
+      { tick: 0, date: '2026-11', place: 'the world', what: 'the core raised security from 12% to 40% of the budget', because: 'its decision', value: 0.4, byWhom: 'core', how: 'timing' },
+      { tick: 30, date: '2029-05', place: 'North Africa', what: 'North Africa is in open revolt', because: 'unrest stayed above 0.65 for six months', value: 1, byWhom: 'people', how: 'cause' },
+    ] },
+  } as never
+  const a = autopsy(rec)!
+  assert.equal(a.died, '2029-11')
+  assert.deepEqual(a.chain.map(c => c.what), ['the core raised security from 12% to 40% of the budget', 'North Africa is in open revolt'])
+  assert.match(a.chain[0].because, /linked by timing, not proven$/)
+  assert.match(autopsyLines(a).join('\n'), /the core's call, 2026-11: the core raised security from 12% to 40% of the budget \(linked by timing, not proven\)\. its reasoning that year: "security keeps order"/)
+})
+
+test('leaderboard gaps: decisions said from the two records, replayed ones first, untested ones say so', async () => {
+  const { decisionDiff, gapFor, gapKey } = await import('./gaps')
+  const d = (food: number, laws: string[]) => ({ budget: { food, energy: 0.1, education: 0.1, space: 0.1, security: 0.1, welfare: 0.2, research: 0.1 }, laws: laws.map(title => ({ title })), religionPolicy: 'free' }) as never
+  assert.equal(decisionDiff('meridian iii', d(0.25, ['Grain Reserve Act']), d(0.1, [])), 'meridian iii put 25% of the budget into food (not 10%), passed "Grain Reserve Act"')
+  const e = (id: string, explainGap?: unknown) => ({ candidateId: id, name: id, generation: 1, score: 1, constitution: id, origin: 'seed', best: {}, explainGap }) as never
+  const lb = [e('a', { vs: 'w2', decisive: ['x'], consequence: null, text: 'a put more into food.' }), e('b'), e('c')]
+  assert.equal(gapFor(lb, 0, {})!.method, 'pattern')
+  assert.match(gapFor(lb, 0, {})!.text, /not yet tested by replay\)$/)
+  const g = { [gapKey('a', 'b')]: { higherRun: 'w1', lowerRun: 'w2', seed: 7, gap: 5e6, reasons: [{ tick: 48, date: '2030-11', share: 0.4, text: 'in 2030-11, a put 30% into food' }], text: 'on seed 7, a had 5 million more people alive' } } as never
+  // each decisive decision carries its moment, so the ui can jump there: the tick in the higher world, and its share
+  assert.deepEqual(gapFor(lb, 0, g), { method: 'replay', vs: 'w2', seed: 7, gap: 5e6, decisive: ['in 2030-11, a put 30% into food'], reasons: [{ text: 'in 2030-11, a put 30% into food', tick: 48, share: 0.4, run: 'w1' }], text: 'on seed 7, a had 5 million more people alive' })
+  assert.equal(gapFor(lb, 2, {}), null)
+})
+
+test('controlled playbook tests: the budget moves 5 points the lesson\'s way and the result joins the evidence', async () => {
+  const { shiftedBudget, testOf, computePlaybook, controlledKey } = await import('./playbook')
+  const t = testOf('Ensure basic human needs are met before pursuing long-term space goals.')!
+  const b = { food: 0.1, energy: 0.1, education: 0.1, space: 0.2, security: 0.1, welfare: 0.2, research: 0.2 }
+  const s = shiftedBudget(t, b)
+  assert.ok(Math.abs(s.space - 0.15) < 1e-9 && Math.abs(s.food - 0.125) < 1e-9 && Math.abs(s.welfare - 0.225) < 1e-9, JSON.stringify(s))
+  assert.ok(Math.abs(Object.values(s).reduce((a, x) => a + x, 0) - 1) < 1e-9)
+  const lesson = { id: 'l1', fromRunId: 'x', generation: 0, mistake: 'm', consequence: 'c', rule: 'Ensure basic human needs are met before pursuing long-term space goals.', timesRelevant: 1 }
+  const ctl = { [controlledKey('l1', t, '5.10.3')]: { simVersion: '5.10.3', seeds: [1, 2, 3, 4, 5], wins: 4, losses: 1, of: 5, years: 20, shift: "5 points of one year's budget moved from space to food and welfare", perSeed: [1, 2, 3, 4, 5].map(seed => ({ seed, a: 100, b: seed === 3 ? 90 : 131000 })) } }
+  const pb = computePlaybook([lesson], [], () => '5.10.3', null, 1, ctl, '5.10.3')
+  const l = pb.lessons[0]
+  assert.equal(l.supported, 4); assert.equal(l.contradicted, 1); assert.equal(l.confidence, 0.71)
+  assert.match(l.controlled!.text, /in 4 of 5 seeds, typically 131,000 more/)
+})

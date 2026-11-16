@@ -5,6 +5,7 @@ import type { Frame, Frontier, HallEntry, RunRecord } from '../types'
 import { FRONTIER_ORDER } from './agents'
 import { readJson, writeJson } from './store'
 import { versionedPath } from './version'
+import { yearOfTick } from './facts'
 
 type HallFile = { entries: HallEntry[]; records: Record<string, { value: number; runId: string }> }
 const hallFile = (v?: string | null) => versionedPath('hall.json', v)
@@ -15,7 +16,7 @@ export function readHall(v?: string | null): HallFile {
   return raw ?? { entries: [], records: {} }
 }
 
-const yearOf = (tick: number) => 2026 + Math.floor((tick + 10) / 12)
+const yearOf = yearOfTick
 const pop = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : `${(n / 1e6).toFixed(0)}M`
 const FRONTIER_TITLES: Partial<Record<Frontier, string>> = {
   moon_landing: 'first moon landing ever',

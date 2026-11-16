@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { Outlines, RoundedBox } from '@react-three/drei'
-import type { Frame, Layer, MoonStage, Region } from '@/lib/types'
+import type { Frame, MoonStage, Region } from '@/lib/types'
 import { C, LAND_TOP, LAYERS, R, groundRadius, latLonToVec3, layerMetric, surfaceQuat, tangentBasis, vinyl } from './lib'
 import { useStore } from '../state/store'
 
@@ -52,107 +52,7 @@ const mats = {
   rocketBand: vinyl('#5F7A88'),
 }
 
-function Capitol({ m }: { m: number }) {
-  return (
-    <group scale={0.75 + m * 0.5}>
-      <RoundedBox args={[0.9, 0.18, 0.62]} radius={0.05} position={[0, 0.09, 0]} material={mats.boneDeep}><O /></RoundedBox>
-      <RoundedBox args={[0.7, 0.3, 0.46]} radius={0.05} position={[0, 0.33, 0]} material={mats.bone}><O /></RoundedBox>
-      {[-0.24, -0.08, 0.08, 0.24].map((x) => (
-        <mesh key={x} position={[x, 0.33, 0.25]} material={mats.boneDeep}><cylinderGeometry args={[0.035, 0.035, 0.3, 10]} /><O t={0.04} /></mesh>
-      ))}
-      <mesh position={[0, 0.5, 0]} material={mats.bone}><sphereGeometry args={[0.2, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2]} /><O /></mesh>
-      <mesh position={[0, 0.76, 0]} material={mats.ink}><cylinderGeometry args={[0.018, 0.018, 0.14, 6]} /></mesh>
-    </group>
-  )
-}
-
-function Coins({ m }: { m: number }) {
-  const n = 2 + Math.round(m * 7)
-  return (
-    <group>
-      {Array.from({ length: n }, (_, i) => (
-        <mesh key={i} position={[Math.sin(i * 1.7) * 0.025, 0.05 + i * 0.085, Math.cos(i * 2.3) * 0.025]} material={mats.gold}>
-          <cylinderGeometry args={[0.22, 0.22, 0.075, 22]} /><O t={0.04} />
-        </mesh>
-      ))}
-      {n > 5 && (
-        <mesh position={[0.36, 0.05, 0.1]} material={mats.gold}><cylinderGeometry args={[0.16, 0.16, 0.075, 20]} /><O t={0.04} /></mesh>
-      )}
-    </group>
-  )
-}
-
-function Tower({ m }: { m: number }) {
-  const tip = useRef<THREE.Mesh>(null)
-  const h = 0.6 + m * 0.9
-  useFrame(({ clock }) => {
-    if (tip.current) (tip.current.material as THREE.MeshPhysicalMaterial).emissiveIntensity = Math.sin(clock.elapsedTime * 4) > 0.2 ? 0.9 : 0.1
-  })
-  const tipMat = useMemo(() => mats.tip.clone(), [])
-  return (
-    <group>
-      <mesh position={[0, h / 2, 0]} material={mats.steel}><cylinderGeometry args={[0.05, 0.2, h, 4]} /><O /></mesh>
-      {[0.3, 0.6].map((f) => (
-        <RoundedBox key={f} args={[0.5 - f * 0.3, 0.04, 0.06]} radius={0.015} position={[0, h * f, 0]} material={mats.steel}><O t={0.03} /></RoundedBox>
-      ))}
-      <mesh ref={tip} position={[0, h + 0.06, 0]} material={tipMat}><sphereGeometry args={[0.07, 14, 10]} /><O t={0.04} /></mesh>
-    </group>
-  )
-}
-
-function Spire({ m }: { m: number }) {
-  const orb = useRef<THREE.Mesh>(null)
-  const h = 0.5 + m * 0.8
-  useFrame(({ clock }) => { if (orb.current) orb.current.position.y = h + 0.14 + Math.sin(clock.elapsedTime * 1.4) * 0.03 })
-  return (
-    <group>
-      <RoundedBox args={[0.3, 0.1, 0.3]} radius={0.03} position={[0, 0.05, 0]} material={mats.boneDeep}><O t={0.04} /></RoundedBox>
-      <mesh position={[0, 0.1 + h / 2, 0]} material={mats.spire}><cylinderGeometry args={[0.03, 0.1, h, 6]} /><O /></mesh>
-      <mesh ref={orb} material={mats.orb}><icosahedronGeometry args={[0.09, 1]} /><O t={0.04} /></mesh>
-    </group>
-  )
-}
-
-function Screen({ m }: { m: number }) {
-  return (
-    <group scale={0.75 + m * 0.5}>
-      <mesh position={[0, 0.12, 0]} material={mats.ink}><cylinderGeometry args={[0.04, 0.06, 0.24, 8]} /></mesh>
-      <RoundedBox args={[0.72, 0.48, 0.14]} radius={0.05} position={[0, 0.48, 0]} material={mats.boneDeep}><O /></RoundedBox>
-      <RoundedBox args={[0.6, 0.36, 0.02]} radius={0.01} position={[0, 0.48, 0.07]} material={mats.screen} />
-    </group>
-  )
-}
-
-function House({ m }: { m: number }) {
-  return (
-    <group scale={0.7 + m * 0.5}>
-      <RoundedBox args={[0.5, 0.36, 0.44]} radius={0.04} position={[0, 0.18, 0]} material={mats.bone}><O /></RoundedBox>
-      <mesh position={[0, 0.48, 0]} rotation={[0, 0, Math.PI / 2]} material={mats.roof}>
-        <cylinderGeometry args={[0.2, 0.2, 0.56, 3]} /><O />
-      </mesh>
-      <RoundedBox args={[0.12, 0.2, 0.02]} radius={0.01} position={[0, 0.1, 0.225]} material={mats.ink} />
-      <RoundedBox args={[0.1, 0.1, 0.02]} radius={0.01} position={[0.15, 0.22, 0.225]} material={mats.screen} />
-    </group>
-  )
-}
-
-function Farm({ m }: { m: number }) {
-  const trees = 1 + Math.round(m * 3)
-  return (
-    <group>
-      <RoundedBox args={[0.8, 0.08, 0.6]} radius={0.03} position={[0, 0.04, 0]} material={mats.soil}><O t={0.04} /></RoundedBox>
-      {[-0.2, 0, 0.2].map((z) => (
-        <RoundedBox key={z} args={[0.66, 0.06, 0.08]} radius={0.02} position={[0, 0.1, z]} material={mats.leaf} />
-      ))}
-      {Array.from({ length: trees }, (_, i) => (
-        <group key={i} position={[-0.5 + (i % 2) * 0.12, 0, -0.3 + i * 0.22]}>
-          <mesh position={[0, 0.12, 0]} material={mats.trunk}><cylinderGeometry args={[0.03, 0.04, 0.24, 6]} /></mesh>
-          <mesh position={[0, 0.3, 0]} material={mats.leaf}><icosahedronGeometry args={[0.13, 1]} /><O t={0.04} /></mesh>
-        </group>
-      ))}
-    </group>
-  )
-}
+// v5: the generic layer icons (capitol, coins, tower, spire, screen, house, farm) were retired for real infrastructure
 
 export function Rocket({ stage }: { stage: number }) {
   if (stage <= 0) return null
@@ -192,9 +92,6 @@ function Pad({ m, rocketStage, shake }: { m: number; rocketStage: number; shake:
   )
 }
 
-const ICON: Record<Exclude<Layer, 'physics'>, (p: { m: number }) => React.ReactElement> = {
-  government: Capitol, economy: Coins, tech: Tower, religion: Spire, media: Screen, family: House, biology: Farm,
-}
 
 export const padShake = { current: 0 } as React.RefObject<number>
 export const launchState = { flying: false } // rocket leaves the pad while flying
@@ -225,15 +122,17 @@ export default function Symbols({ frame, spaceport }: { frame: Frame; spaceport?
       {frame.regions.map((r, ri) => (
         <group key={r.id} ref={(g) => { regionGroups.current[ri] = g }}>
           {LAYERS.map((layer, i) => {
+            // v5: the generic per-region icons are retired; real infrastructure replaces them.
+            // only the launch pad stays, at the spaceport (a real launch site, and the launches fly from it)
+            if (layer !== 'physics' || r.id !== spaceport) return null
             const { pos, quat } = symbolTransform(r, i)
             const m = layerMetric(layer, r, frame.regions)
-            const onClick = (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); select(layer === 'physics' && r.id === spaceport ? { kind: 'moon' } : { kind: 'layer', regionId: r.id, layer }) }
-            const Icon = layer === 'physics' ? null : ICON[layer]
+            const onClick = (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); select({ kind: 'moon' }) }
             return (
               <group key={layer} position={pos} quaternion={quat} scale={zoom === 'close' ? 0.5 : 0.95} onClick={onClick}
                 onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = 'pointer' }}
                 onPointerOut={() => { document.body.style.cursor = '' }}>
-                {Icon ? <Icon m={m} /> : <Pad m={m} rocketStage={r.id === spaceport ? stage : 0} shake={padShake} />}
+                <Pad m={m} rocketStage={stage} shake={padShake} />
               </group>
             )
           })}

@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "evolve": "tsx scripts/evolve.ts",
+    "evolve": "zsh scripts/run-evolve.sh",
+    "evolve:here": "tsx scripts/evolve.ts",
     "live": "tsx scripts/live.ts",
     "run-one": "tsx scripts/run-one.ts",
     "seed": "tsx scripts/seed.ts",
@@ -15,7 +16,11 @@
     "retention": "tsx scripts/retention.ts",
     "backup": "tsx scripts/backup.ts",
     "promote-stable": "tsx scripts/promote-stable.ts",
-    "morning": "tsx scripts/morning.ts"
+    "morning": "tsx scripts/morning.ts",
+    "consistency": "tsx scripts/consistency.ts",
+    "explain-gaps": "tsx scripts/explain-gaps.ts",
+    "hooks:install": "sh scripts/hooks/install.sh",
+    "controls": "tsx scripts/controls.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",

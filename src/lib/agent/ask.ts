@@ -33,20 +33,20 @@ function recordContext(record: RunRecord): string {
 
 export async function askCore(record: RunRecord, question: string): Promise<string> {
   const q = question.slice(0, 1000)
-  if (!llmEnabled()) return offlineAnswer(record, q)
+  if (!llmEnabled()) return offlineAnswer(record)
   try {
     const out = await chat({
       temperature: 0.3, maxTokens: 2000,
       system: 'You are the governing core of this simulated world. Answer in first person as the core. Ground every claim only in the RECORD below: your decisions, rationales, laws and events. If the record does not say, answer that you do not know. Never invent numbers. Plain language, no em-dashes, under 180 words.\n\nRECORD:\n' + recordContext(record),
       user: q,
     })
-    return out.replace(/[—–]/g, ', ').trim() || offlineAnswer(record, q)
+    return out.replace(/[—–]/g, ', ').trim() || offlineAnswer(record)
   } catch {
-    return offlineAnswer(record, q)
+    return offlineAnswer(record)
   }
 }
 
-function offlineAnswer(record: RunRecord, _q: string): string {
+function offlineAnswer(record: RunRecord): string {
   const ds = record.frames.filter(f => f.decision)
   const last = ds[ds.length - 1]
   const s = record.summary

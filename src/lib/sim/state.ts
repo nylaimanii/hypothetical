@@ -2,6 +2,17 @@
 import type { Behavior, Budget, Citizen, City, Company, CrowdState, Faction, Flow, Frontier, HumanCost, Law, Mood, Region, ReligionPolicy, SchoolPolicy, SpaceAsset, WorldEvent, WorldStatus } from '../types'
 import { LAND, initMix, initRail } from './visuals'
 import { onEvent, type CauseInput, type CauseLink, type Story, type Trend } from './causes'
+import { initCountries, type CountryState } from './places'
+import { initDaily, DAILY } from './daily'
+import { DEFAULTS } from './assumptions'
+import { periodLifeExpectancy } from './biology'
+import { initPower, type CoreBody } from './power'
+import { initPhysical, type Physical } from './physical'
+import { initPeople, type People, type RegionPeople } from './people'
+import { newNameRegistry, type NameRegistry } from './names'
+import { initCities, initClimate, initCountryMix, type CityState, type ClimateState } from './world-layer'
+import type { InfraDiff } from '../types-v5'
+import type { Mix } from './visuals'
 import seedJson from '../../../data/seed.json'
 import demoJson from '../../../data/demographics.json'
 import { ALLOC_GDP_WEIGHT, BASELINE_BUDGET, BASELINE_RELIGION, BASELINE_SCHOOL, GOMPERTZ_B, REVENUE_SHARE, START_RESERVE } from './constants'
@@ -108,6 +119,16 @@ export type RegionState = {
   famineDeaths: number
   excessDeathsTick: number
   pop0: number
+  valence0: number // mood valence at tick 0 (happiness moves relative to it)
+  investAvg: number // slow average of investment spending above 2026
+  leak: number; leak0: number; tech0: number; powerMult: number; autoGrowth: number; flightDrag: number
+  chokeDrag: number; chokeEnergy: number; chokeFood: number; physFood: number; demoGrowth: number; pensionSqueeze: number; wa0: number; waPrev: number; waTrend0?: number // physical.ts
+  people: RegionPeople; peopleMult: number // people.ts // power.ts: corruption, administration, automation, capital flight
+  collectiveMult: number // harvest multiplier from collectivization
+  healthLaw: number // mortality cut from health laws (phased)
+  mortNoise?: number // year-to-year mortality shock (biology.ts)
+  forced?: number // compliance explained only by force this month (society.ts)
+  collC: number // collectivization enforcement this month
   // cause chains
   yearAcc: Record<string, Record<string, number>> // why-drivers summed over the current year
   yearStart: Record<string, number> // stat values at the start of the year
@@ -149,7 +170,7 @@ export type World = {
   citizens: Citizen[]
   crewDeaths: number
   citizenSeq: number
-  citizenMeta: Record<string, { origin: string; baseHair: Citizen['hairColor']; affectedTick: number; prevMood: number }>
+  citizenMeta: Record<string, { origin: string; baseHair: Citizen['hairColor']; affectedTick: number; prevMood: number; sinceTick?: number }>
   // v2
   requirements: ReqState[]
   cities: City[]
@@ -169,11 +190,46 @@ export type World = {
   lessonsApplied: Set<string>
   lawsProposed: number
   lawsRepeated: number
+  lawsAmended: number
+  lawsConverted: number
+  lawsBudget: number; lastBudgetLaws: string[]
+  reqHist?: number[] // total research progress at the end of each of the last 3 years // laws that were budget changes
+  lastConverted: string[]
   lastRepeated: string[] // titles the governor re-passed at its last decision (they did nothing)
   frameCursor: number
+  eventSeq: number
+  eventKinds: Record<string, number>
+  topEvents: WorldEvent[]
+  countries: CountryState[]
+  // phase 1 world layer
+  climate: ClimateState
+  countryMix: Record<string, Mix>
+  countryMix0: Record<string, Mix>
+  retiredPlants: string[]
+  builtPlants: Record<string, number>
+  realCities: CityState[]
+  recentRepeals: { tick: number; title: string; policyKind: string; law?: Law }[] // last 4 years
+  causeDeaths: { air: number; water: number; despair?: number } // excess over 2026 rates, from daily.ts
+  skilledMigrants: number
+  core: CoreBody
+  phys: Physical
+  freedomSum?: number // sum of monthly world freedom (tradeoffs.ts)
+  assumptions: Record<string, number> // this world's rules (data/assumptions.json + overrides), read through A(w, id)
+  people: People
+  diary: { tick: number; date: string; kind: 'entry' | 'lookback'; text: string }[] // the core's own notes
+  lastLookback?: string
+  nuclear0: number
+  hiddenLoss: number // tax base hidden offshore beyond 2026
+  vital: { births: number; deaths: number; famine: number; pandemic: number; riots: number; disasters: number; migration: number; welfare: number }
+  welfareDeathsYear: number; welfareDeathsAcc: number; famineDeathsYear: number; famineDeathsAcc: number // deaths from health and social spending above or below 2026 (negative = lives saved)
+  housingDeaths: number // excess deaths from slum and camp growth since 2026 (negative when housing improves)
+  railBuilt: string[] // cross-border rail lines built since 2026 ('a|b')
+  citiesHitIdx: Record<string, number>
+  infraAcc: InfraDiff[]
   causes: CauseLink[]
   // every pip's full life story, written to data/runs/<runId>.lives.json (not part of snapshots)
-  lifeArchive: Record<string, { name: string; regionId: string; events: { tick: number; text: string }[] }>
+  lifeArchive: Record<string, { name: string; regionId: string; events: { tick: number; text: string }[]; death?: { tick: number; ageAtDeath: number; cause: string }; birthTick?: number; countryId?: string; cityId?: string }>
+  names: NameRegistry // every full name used in this world (names.ts)
   lastFrameTick: number
   provenanceSent?: boolean
   causeSeq: number
@@ -196,7 +252,7 @@ export function allocShares(regions: RegionState[]): number[] {
   return regions.map((_, i) => ALLOC_GDP_WEIGHT * gdp[i] / g + (1 - ALLOC_GDP_WEIGHT) * pop[i] / p)
 }
 
-export function initWorld(seed: number, twin: boolean): World {
+export function initWorld(seed: number, twin: boolean, assumptions?: Record<string, number>): World {
   const regions: RegionState[] = SEED_REGIONS.map(src => {
     const r: Region = { ...JSON.parse(JSON.stringify(src)), crowds: [], approval: 0.5, lifeExpectancy: 0, periodLifeExpectancy: 0, fertility: 0, diseaseBurden: 0, travelHoursToNearest: 0, whys: [] }
     const d = DEMOGRAPHICS[r.id]
@@ -223,13 +279,14 @@ export function initWorld(seed: number, twin: boolean): World {
       crowds: [], privateApproval: 0.5, falsificationGap: 0.1, flipped: false, lastWellbeing: 0,
       periodLE: 0, cohortLE: 0, leTrend: 0.2, diseaseBurden: 0, travelHours: TRAVEL_HOURS[r.id] ?? 6,
       causeMult: { cardio: 1, cancer: 1, neuro: 1, metabolic: 1, infectious: 1, injury: 1, other: 1 },
-      agingSlope: GOMPERTZ_B, oldAgeFloor: 1 / 20, pronatal: 0, strikeBoost: 0, newCityPop: 0, whyAcc: {}, famineDeaths: 0, excessDeathsTick: 0, pop0: r.population, yearAcc: {}, yearStart: {}, trends: [], priceIdx: 1,
+      agingSlope: GOMPERTZ_B, oldAgeFloor: 1 / 20, pronatal: 0, strikeBoost: 0, newCityPop: 0, whyAcc: {}, famineDeaths: 0, excessDeathsTick: 0, pop0: r.population, valence0: 0.5, investAvg: 0, collectiveMult: 1, collC: 0, leak: 0, leak0: 0, tech0: 0, powerMult: 1, people: undefined as unknown as RegionPeople, peopleMult: 1, chokeDrag: 0, chokeEnergy: 0, chokeFood: 0, physFood: 1, demoGrowth: 0, pensionSqueeze: 0, wa0: 0, waPrev: 0, autoGrowth: 0, flightDrag: 0, healthLaw: 0, yearAcc: {}, yearStart: {}, trends: [], priceIdx: 1,
       mixCap: initMix(r.id, r.energyTWh * START_RESERVE), farmland: LAND[r.id].farmland, forest: LAND[r.id].forest, railLinks: [], landmarks: [],
     }
   })
   // per-capita spending at the 2026 budget, the reference point for "more or less than today"
   const shares = allocShares(regions)
-  const revenue = REVENUE_SHARE * sum(regions.map(r => r.r.gdpUsd))
+  const revShare = (assumptions ?? DEFAULTS).revenue_share ?? REVENUE_SHARE
+  const revenue = revShare * sum(regions.map(r => r.r.gdpUsd))
   regions.forEach((rs, i) => {
     const pc = (k: keyof Budget) => BASELINE_BUDGET[k] * revenue * shares[i] / rs.r.population
     rs.pc0 = { welfare: pc('welfare'), education: pc('education'), security: pc('security'), food: pc('food') }
@@ -240,16 +297,47 @@ export function initWorld(seed: number, twin: boolean): World {
     budget: { ...BASELINE_BUDGET }, religionPolicy: BASELINE_RELIGION, schoolPolicy: { ...BASELINE_SCHOOL, curriculum: [...BASELINE_SCHOOL.curriculum] },
     space: initSpace(), events: [], transit: [], migrationCostMonthly: [],
     rng: {
-      events: stream(seed, 'events'), space: stream(seed, twin ? 'space-twin' : 'space'), society: stream(seed, twin ? 'society-twin' : 'society'), citizens: stream(seed, 'citizens'),
-      research: stream(seed, twin ? 'research-twin' : 'research'), factions: stream(seed, twin ? 'factions-twin' : 'factions'), companies: stream(seed, twin ? 'companies-twin' : 'companies'), behavior: stream(seed, twin ? 'behavior-twin' : 'behavior'),
+      // the twin draws the same random numbers as its world (common random numbers): with identical policy the two are
+      // identical, so any gap between them is the governor's doing, not luck (separate streams moved the 50-year
+      // population gap by -60M to +96M across seeds with the same policy)
+      events: stream(seed, 'events'), space: stream(seed, 'space'), society: stream(seed, 'society'), citizens: stream(seed, 'citizens'),
+      research: stream(seed, 'research'), factions: stream(seed, 'factions'), companies: stream(seed, 'companies'), behavior: stream(seed, 'behavior'),
     },
     peakPop: pop, globalFoodMonthsUnder: 0, revoltStreak: 0, warTension: 0, maxWarSeverity: 0,
-    status: 'alive', wellbeingSum: 0, wellbeingN: 0, revenueShare: REVENUE_SHARE, citizens: [], crewDeaths: 0, citizenSeq: 0, citizenMeta: {},
+    status: 'alive', wellbeingSum: 0, wellbeingN: 0, revenueShare: revShare, citizens: [], crewDeaths: 0, citizenSeq: 0, citizenMeta: {},
     requirements: initRequirements(), cities: [], cityScores: {}, companies: [], factions: initFactions(), frontier: 'none', frontierState: initFrontier(),
     humanCost: { deaths: 0, famineDeaths: 0, unrestDeaths: 0, displaced: 0, approval: 0.5 }, lessonsKnown: 0, researchFocus: [], lawMeta: {}, lawsuits: {},
-    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), lawsProposed: 0, lawsRepeated: 0, lastRepeated: [], frameCursor: 0, spaceAssets: [], flowAcc: [], causes: [], causeSeq: 0, lifeArchive: {}, lastFrameTick: 0,
+    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), lawsProposed: 0, lawsRepeated: 0, lawsAmended: 0, lawsConverted: 0, lawsBudget: 0, lastBudgetLaws: [], lastConverted: [], lastRepeated: [], frameCursor: 0, eventSeq: 0, eventKinds: {}, topEvents: [], spaceAssets: [], flowAcc: [], causes: [], causeSeq: 0, countries: initCountries(regions), climate: undefined as unknown as ClimateState, countryMix: {}, countryMix0: {}, retiredPlants: [], builtPlants: {}, realCities: [], railBuilt: [], housingDeaths: 0, core: undefined as unknown as CoreBody, phys: undefined as unknown as Physical, assumptions: { ...(assumptions ?? DEFAULTS) }, people: undefined as unknown as People, diary: [], nuclear0: 0, hiddenLoss: 0, vital: { births: 0, deaths: 0, famine: 0, pandemic: 0, riots: 0, disasters: 0, migration: 0, welfare: 0 }, welfareDeathsYear: 0, welfareDeathsAcc: 0, famineDeathsYear: 0, famineDeathsAcc: 0, causeDeaths: { air: 0, water: 0 }, skilledMigrants: 0, recentRepeals: [], citiesHitIdx: {}, infraAcc: [], lifeArchive: {}, names: newNameRegistry(), lastFrameTick: 0,
   }
   initRail(world)
+  world.climate = initClimate(world)
+  initCountryMix(world)
+  initCities(world)
+  // each country's mortality level fits its sourced life expectancy (World Bank SP.DYN.LE00.IN, 2024), so the world
+  // starts where UN WPP does; the region's period life expectancy is set from the start (no 0 on the first frame)
+  for (const rs of world.regions) {
+    const cs = world.countries.filter(c => c.regionId === rs.r.id)
+    for (const c of cs) {
+      const target = DAILY.get(c.id)?.lifeExpectancy
+      const params = (a: number) => ({ gompertzA: a, infantMort: c.infantMort, agingSlope: rs.agingSlope, causeMult: rs.causeMult, oldAgeFloor: rs.oldAgeFloor })
+      if (target && target > 30) {
+        let lo = 1e-5, hi = 0.2
+        for (let k = 0; k < 50; k++) { const m = Math.sqrt(lo * hi); if (periodLifeExpectancy(params(m), 1, 0) > target) lo = m; else hi = m }
+        c.gompertzA = Math.sqrt(lo * hi)
+      }
+      c.ple = periodLifeExpectancy(params(c.gompertzA), 1, 0)
+    }
+    const P = cs.reduce((a, c) => a + c.bands.reduce((x, y) => x + y, 0), 0)
+    if (P > 0) rs.periodLE = cs.reduce((a, c) => a + c.ple * c.bands.reduce((x, y) => x + y, 0), 0) / P
+    if (P > 0) rs.gompertzA = cs.reduce((a, c) => a + c.gompertzA * c.bands.reduce((x, y) => x + y, 0), 0) / P
+    // the public region fields carry the 2026 values from the first frame (no 0 before the first year is simulated)
+    if (P > 0) { rs.cohortLE = rs.periodLE; rs.r.periodLifeExpectancy = Math.round(rs.periodLE * 10) / 10; rs.r.lifeExpectancy = Math.round(rs.periodLE * 10) / 10; rs.r.fertility = Math.round(cs.reduce((a, c) => a + c.tfr * c.bands.reduce((x, y) => x + y, 0), 0) / P * 1000) / 1000 }
+  }
+  for (const c of world.countries) c.daily = initDaily(world, c, world.regions.find(r => r.r.id === c.regionId)!)
+  initPower(world)
+  world.nuclear0 = world.regions.reduce((a, r) => a + r.mixCap.nuclear, 0)
+  initPhysical(world)
+  initPeople(world)
   return world
 }
 
@@ -294,13 +382,18 @@ export type EventInput = Omit<WorldEvent, 'tick' | 'significance'> & { significa
 // cause: who did it and why. events above the noise floor also become CauseLinks (causes.ts)
 export function event(w: World, e: EventInput, cause?: CauseInput): WorldEvent {
   const ev: WorldEvent = { tick: w.tick, ...e, severity: clamp(e.severity), significance: 0 }
-  ;(ev as WorldEvent & { id: string }).id = `e${w.events.length}`
+  ;(ev as WorldEvent & { id: string }).id = `e${w.eventSeq++}`
   ev.significance = Math.round(clamp(e.significance ?? significanceOf(w, ev)) * 1000) / 1000
   if (ev.significance >= HEADLINE_MIN && !ev.headline) {
     const year = START_YEAR + Math.floor((START_MONTH - 1 + w.tick) / 12)
     ev.headline = headlineFor(ev, w.regions.find(r => r.r.id === ev.regionId)?.r.name, year)
   }
   w.events.push(ev)
+  w.eventKinds[ev.kind] = (w.eventKinds[ev.kind] ?? 0) + 1
+  // running top 8 for the run summary (the world only keeps two years of events)
+  if (ev.kind !== 'law' && ev.kind !== 'override') {
+    w.topEvents = [...w.topEvents, ev].sort((a, b) => b.significance - a.significance || b.severity - a.severity || a.tick - b.tick).slice(0, 8)
+  }
   const l = onEvent(w, ev, cause)
   if (l) (ev as WorldEvent & { linkId?: string }).linkId = l.id
   return ev
@@ -311,7 +404,7 @@ export function significanceOf(w: World, e: WorldEvent): number {
   const total = Math.max(1, w.regions.reduce((a, r) => a + r.r.population, 0))
   const reach = e.regionId ? (w.regions.find(r => r.r.id === e.regionId)?.r.population ?? 0) / total : 1
   const mission = e.kind === 'launch' || e.kind === 'breakthrough' ? (/mars|moon|frontier|lifespan|self sustaining|outpost|asteroid/.test(e.text) ? 0.5 : 0.15) : e.kind === 'war' ? 0.3 : 0
-  const sameKind = w.events.filter(x => x.kind === e.kind).length
+  const sameKind = w.eventKinds[e.kind] ?? 0
   const rarity = 1 / (1 + sameKind / 5)
   return clamp(e.severity * (0.35 + 0.65 * Math.sqrt(reach)) * 0.7 + mission + 0.25 * rarity * e.severity)
 }

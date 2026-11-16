@@ -1,12 +1,14 @@
 'use client'
+import { WHY_SOURCES } from '@/lib/types-v5'
 import { rosterAt } from '../state/store'
 import { ReasoningLines, layerSentence, useLinks, whyDoing } from './chains'
 import { todayOf } from '../world/city/day'
+import { lifeHref, lifeNear, useLives } from '../state/useLives'
 import { localHour, utcHourOf, worldDate } from '../world/time'
 import { useState } from 'react'
 import type { Budget, Citizen, Emotion, Frame, Law, Layer, Migration, Precedent, Region, RunRecord, Why } from '@/lib/types'
 import { EMOTIONS, valence } from '@/lib/mock/mood'
-import { MOON_STAGES, mockRuns } from '@/lib/mock/run'
+import { MOON_STAGES } from '@/lib/mock/run'
 import Emblem from './Emblem'
 import { openRun } from './worlds'
 import { layerMetric } from '../world/lib'
@@ -14,6 +16,7 @@ import { useCurrentFrame, useStore, type Selection } from '../state/store'
 import { Bar, Num, Prov, Section, Sparkline, fmt } from './bits'
 import { api, Offline } from './api'
 import { sendOverride } from './actions'
+import { dateOfTick, eventDate, eventsBetween, recorded } from './truth'
 
 // ---------- shared bits ----------
 
@@ -79,7 +82,8 @@ function StatRow({ label, value, prov, why, raw }: { label: string; value: strin
         <ul className="mt-1 space-y-0.5 rounded-lg bg-ink/5 px-2 py-1.5">
           {why.drivers.map((d, i) => (
             <li key={i} className="flex items-baseline justify-between gap-3 text-[11.5px]">
-              <span className="min-w-0">{d.source ? <a href={d.source} target="_blank" rel="noreferrer" className="underline decoration-ink/25 underline-offset-2">{d.label}</a> : d.label}</span>
+              {/* frames leave driver sources out to stay small; B's WHY_SOURCES holds them by label */}
+              {(() => { const src = d.source ?? WHY_SOURCES[d.label]; return <span className="min-w-0">{src ? <a href={src} target="_blank" rel="noreferrer" className="underline decoration-ink/25 underline-offset-2">{d.label}</a> : d.label}</span> })()}
               <Num className="shrink-0 text-ink/70">{d.delta > 0 ? '+' : ''}{Math.abs(d.delta) >= 100 ? fmt.people(d.delta) : d.delta.toFixed(Math.abs(d.delta) < 1 ? 3 : 1)}</Num>
             </li>
           ))}
@@ -128,10 +132,13 @@ function PipDossier({ c, frame, record }: { c: Citizen; frame: Frame; record: Ru
   const playing = useStore((s) => s.playing)
   const playhead = useStore((s) => s.playhead)
   const home = frame.cities.find((x) => x.id === c.cityId) ?? frame.regions.find((r) => r.id === c.regionId)
+  const lives = useLives(record.runId)
+  const pipLife = home ? lifeNear(lives, home.lat, home.lon) : undefined
   const today = c.dayPlan && home ? todayOf(c, localHour(utcHourOf(worldDate(playhead, hour, playing)), home.lon)) : null
   return (
     <Drawer kicker={`${region?.name ?? 'citizen'} · ${words(c.archetype)}`} title={c.name}>
       {why && <p className="mb-1 text-[12.5px] leading-snug text-ink/80">{why}</p>}
+      {pipLife && lives && <a href={lifeHref(lives, pipLife)} target="_blank" rel="noreferrer" className="mb-1 block text-[12px] underline decoration-ink/25 underline-offset-2">watch this life: {pipLife.name}</a>}
       {today && <p className="mb-2 text-[12px] leading-snug text-ink/65"><span className="text-ink/45">today</span> {today.place}, until {today.until}. {today.why}</p>}
       <Tabs tabs={['who', 'feelings', 'life', 'laws']} value={tab} onChange={setTab} />
       {tab === 'who' && (
@@ -207,12 +214,12 @@ function RegionDossier({ r, frame, record, idx }: { r: Region; frame: Frame; rec
       {tab === 'stats' && (
         <Section title="every number, with its why">
           <StatRow label="population" value={fmt.people(r.population)} prov={p.population} why={w('population')} />
-          <StatRow label="period life expectancy" value={`${r.periodLifeExpectancy.toFixed(1)}y`} prov={p.periodLifeExpectancy} why={w('periodLifeExpectancy')}  raw={r.periodLifeExpectancy} />
-          <StatRow label="cohort life expectancy" value={`${r.lifeExpectancy.toFixed(1)}y`} prov={p.lifeExpectancy}  raw={r.lifeExpectancy} />
+          <StatRow label="period life expectancy" value={recorded(r.periodLifeExpectancy) ? `${r.periodLifeExpectancy.toFixed(1)}y` : 'not computed yet'} prov={p.periodLifeExpectancy} why={w('periodLifeExpectancy')}  raw={r.periodLifeExpectancy} />
+          <StatRow label="cohort life expectancy" value={recorded(r.lifeExpectancy) ? `${r.lifeExpectancy.toFixed(1)}y` : 'not computed yet'} prov={p.lifeExpectancy}  raw={r.lifeExpectancy} />
           <StatRow label="approval of the core" value={fmt.pct(r.approval)} why={w('approval')}  raw={r.approval} />
           <StatRow label="unrest" value={fmt.pct(r.unrest)} prov={p.unrest} why={w('unrest')} />
           <StatRow label="kcal / person" value={fmt.kcal(r.foodKcalPerCapita)} prov={p.foodKcalPerCapita} why={w('foodKcalPerCapita')} />
-          <StatRow label="fertility" value={r.fertility.toFixed(2)} prov={p.fertility}  raw={r.fertility} />
+          <StatRow label="fertility" value={recorded(r.fertility) ? r.fertility.toFixed(2) : 'not computed yet'} prov={p.fertility}  raw={r.fertility} />
           <StatRow label="disease burden" value={fmt.pct(r.diseaseBurden)} prov={p.diseaseBurden}  raw={r.diseaseBurden} />
           <StatRow label="aged 65+" value={fmt.pct(r.share65plus)} prov={p.share65plus} />
           <StatRow label="education" value={fmt.pct(r.education)} prov={p.education} why={w('education')} />
@@ -312,6 +319,7 @@ function LawDossier({ id, frame, record }: { id: string; frame: Frame; record: R
   const [tab, setTab] = useTab<'law' | 'precedents' | 'effect'>('law')
   const law = frame.laws.find((l) => l.id === id) ?? record.frames.flatMap((f) => f.laws).find((l) => l.id === id)
   const liveRunId = useStore((s) => s.liveRunId)
+  const canOverride = useStore((s) => s.caps.override)
   const overrides = useStore((s) => s.overrides)
   const [busy, setBusy] = useState(false)
   if (!law) return null
@@ -338,7 +346,7 @@ function LawDossier({ id, frame, record }: { id: string; frame: Frame; record: R
           {law.hatedBy.length > 0 && <Section title="hated by"><div className="flex flex-wrap gap-1.5">{law.hatedBy.map((g) => <Chip key={g} tone="soft">{g}</Chip>)}</div></Section>}
           {resisting.length > 0 && <Section title="resisting regions"><div className="flex flex-wrap gap-1.5">{resisting.map((r) => <Link key={r.id} to={{ kind: 'region', id: r.id }}><Chip tone="soft">{r.name}</Chip></Link>)}</div></Section>}
           {law.vetoed && <div className="mt-4 rounded-lg border border-ink/20 px-3 py-2 text-[12px]">vetoed by you</div>}
-          {liveRunId && !law.vetoed && !sent && (
+          {liveRunId && canOverride && !law.vetoed && !sent && (
             <button disabled={busy} onClick={async () => { setBusy(true); try { await sendOverride({ kind: 'veto_law', lawId: law.id }) } finally { setBusy(false) } }}
               className="mt-4 w-full rounded-full bg-ink py-2 font-mono text-[12px] uppercase tracking-[0.2em] text-bone hover:bg-ink/85 disabled:opacity-50">veto</button>
           )}
@@ -423,12 +431,13 @@ function RequirementDossier({ id, frame, record }: { id: string; frame: Frame; r
 
 // ---------- faction ----------
 
-function FactionDossier({ id, frame, record, idx }: { id: string; frame: Frame; record: RunRecord; idx: number }) {
+function FactionDossier({ id, frame, record }: { id: string; frame: Frame; record: RunRecord; idx: number }) {
+  const playheadNow = useStore((s) => s.playhead)
   const f = frame.factions.find((x) => x.id === id)
   if (!f) return null
   const opposes = frame.laws.filter((l) => l.hatedBy.some((g) => g.includes(f.name)))
   const backs = frame.laws.filter((l) => l.lovedBy.some((g) => g.includes(f.name)))
-  const did = record.frames.slice(0, idx + 1).flatMap((fr) => fr.newEvents.filter((e) => e.regionId && f.regionIds.includes(e.regionId) && ['revolt', 'war'].includes(e.kind)).map((e) => ({ ...e, date: fr.date })))
+  const did = eventsBetween(record, 0, playheadNow).map((x) => x.e).filter((e) => e.regionId && f.regionIds.includes(e.regionId) && ['revolt', 'war'].includes(e.kind)).map((e) => ({ ...e, date: eventDate(e) }))
   const crowds = frame.regions.filter((r) => f.regionIds.includes(r.id)).flatMap((r) => r.crowds.map((c) => ({ r, c })))
   return (
     <Drawer kicker={`faction · ${words(f.kind)}`} title={f.name}>
@@ -467,6 +476,7 @@ function CoreDossier({ record, idx, frame }: { record: RunRecord; idx: number; f
   const applied = new Set(decisions.flatMap(({ d }) => d.lessonsApplied))
   const lessons = record.lessons ?? []
   const dead = new Set(lessons.map((l) => l.fromRunId)).size
+  const canAsk = useStore((s) => s.caps.ask)
   const ask = async () => {
     if (!q.trim()) return
     setBusy(true); setAnswer(null)
@@ -479,19 +489,20 @@ function CoreDossier({ record, idx, frame }: { record: RunRecord; idx: number; f
       {tab === 'mandate' && (
         <>
           <Section title="constitution"><p className="font-display text-[15px] italic leading-snug">{record.constitution}</p></Section>
+          <a href={`/report/${encodeURIComponent(record.runId)}`} className="mt-2 inline-block text-[12px] text-ink/60 underline decoration-ink/25 underline-offset-2 hover:text-ink">this world&apos;s full report</a>
           {dead > 0 && <Section title="lineage"><p className="text-[13px]">learned from <Num>{dead}</Num> dead world{dead === 1 ? '' : 's'} · knows <Num>{frame.lessonsKnown || lessons.length}</Num> lessons</p></Section>}
           {decisions.some(({ d }) => d.publicStatement) && (
             <Section title="what it told the public">
               <ul className="space-y-1.5">{[...decisions].reverse().filter(({ d }) => d.publicStatement).map(({ f, d }) => <li key={f.tick} className="text-[12.5px]"><Num className="mr-2 text-[10.5px] text-ink/45">{f.date}</Num>&ldquo;{d.publicStatement}&rdquo;</li>)}</ul>
             </Section>
           )}
-          <Section title="ask the core">
+          {canAsk && <Section title="ask the core">
             <form onSubmit={(e) => { e.preventDefault(); ask() }} className="flex gap-2">
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="why move people to the corridor?" className="min-w-0 flex-1 rounded-full border border-ink/20 bg-bone px-3 py-1.5 text-[13px] outline-none focus:border-ink/60" />
               <button disabled={busy} className="rounded-full bg-ink px-3 font-mono text-[11px] uppercase text-bone disabled:opacity-50">{busy ? '...' : 'ask'}</button>
             </form>
             {answer && <p className={`mt-2 text-[13px] leading-relaxed ${answer === 'runner offline' ? 'text-ink/45' : ''}`}>{answer}</p>}
-          </Section>
+          </Section>}
         </>
       )}
       {tab === 'decisions' && (
@@ -500,7 +511,7 @@ function CoreDossier({ record, idx, frame }: { record: RunRecord; idx: number; f
             {[...decisions].reverse().map(({ f, d }) => (
               <li key={f.tick}>
                 <button onClick={() => setPlayhead(f.tick)} className="w-full rounded-lg px-2 py-1 text-left hover:bg-ink/5">
-                  <Num className="text-[11px] text-ink/50">{f.date}</Num>
+                  <Num className="text-[11px] text-ink/50">{dateOfTick(f.tick)}</Num>
                   <div className="text-[12.5px]">{d.rationale}</div>
                   {(d.foundCities.length > 0 || d.charterCompanies.length > 0 || d.researchFocus.length > 0) && (
                     <div className="mt-0.5 text-[11px] text-ink/55">
@@ -539,9 +550,9 @@ function EventDossier({ tick, index, record }: { tick: number; index: number; re
   const e = f?.newEvents[index]
   if (!f || !e) return null
   const r = f.regions.find((x) => x.id === e.regionId)
-  const hit = rosterAt(record, f.tick).filter((c) => c.regionId === e.regionId && c.lifeEvents.some((l) => l.tick === tick))
+  const hit = rosterAt(record, f.tick).filter((c) => c.regionId === e.regionId && c.lifeEvents.some((l) => l.tick === e.tick))
   return (
-    <Drawer kicker={`event · ${e.kind} · ${f.date}`} title={e.text}>
+    <Drawer kicker={`event · ${e.kind} · ${eventDate(e)}`} title={e.text}>
       <Section title="what happened">
         <div className="flex flex-wrap gap-1.5">{r && <Link to={{ kind: 'region', id: r.id }}><Chip>{r.name}</Chip></Link>}<Chip tone="soft">severity <Num>{e.severity.toFixed(2)}</Num></Chip></div>
       </Section>
@@ -592,7 +603,8 @@ function LayerDossier({ layer, regionId, frame, record, idx }: { layer: Layer; r
 function MoonDossier({ record, idx, frame }: { record: RunRecord; idx: number; frame: Frame }) {
   const stageIdx = MOON_STAGES.indexOf(frame.moonStage)
   const space = record.frames.slice(0, idx + 1).map((f) => f.budget.space)
-  const launches = record.frames.slice(0, idx + 1).flatMap((f) => f.newEvents.filter((e) => e.kind === 'launch').map((e) => ({ ...e, date: f.date })))
+  const playheadNow = useStore((s) => s.playhead)
+  const launches = eventsBetween(record, 0, playheadNow).map((x) => x.e).filter((e) => e.kind === 'launch').map((e) => ({ ...e, date: eventDate(e) }))
   return (
     <Drawer kicker="launch program" title={frame.moonStage === 'crewed_landing' ? 'boots on the moon' : 'the moon'}>
       <Section title="moon track"><Bar value={frame.moonProgress} />
@@ -614,8 +626,9 @@ function AgentDossier({ id }: { id: string }) {
   if (!a) return null
   const parents = a.parentIds.map((p) => agents.find((x) => x.id === p)).filter(Boolean) as typeof agents
   const children = agents.filter((x) => x.parentIds.includes(a.id))
-  const summaries = [...mockRuns().map((r) => r.summary), ...runs].filter((r, i, all) => (r.agentId === a.id || a.runIds.includes(r.runId)) && all.findIndex((x) => x.runId === r.runId) === i)
-  const records = mockRuns().filter((r) => r.agentId === a.id)
+  const summaries = runs.filter((r, i, all) => (r.agentId === a.id || a.runIds.includes(r.runId)) && all.findIndex((x) => x.runId === r.runId) === i)
+  // lessons from this agent's real worlds that are loaded (open tabs)
+  const records = Object.values(useStore.getState().tabRecords).filter((r) => r.agentId === a.id)
   const applied = new Set(records.flatMap((r) => r.frames.flatMap((f) => f.decision?.lessonsApplied ?? [])))
   const known = records.flatMap((r) => r.lessons ?? []).filter((l, i, all) => all.findIndex((x) => x.id === l.id) === i)
   return (

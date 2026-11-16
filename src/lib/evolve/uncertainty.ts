@@ -5,6 +5,7 @@ import type { Frame, Frontier, RunRecord } from '../types'
 import { FRONTIER_ORDER } from './agents'
 import { readJson, readRunIndex, writeJson, type IndexedRun } from './store'
 import { currentVersion, versionedPath } from './version'
+import { yearOfTick } from './facts'
 
 export const EXTRA_SEEDS = [9001, 9002, 9003, 9004, 9005]
 export const UNCERTAINTY_TOP = 3
@@ -20,7 +21,7 @@ export function markUncertaintyDone(agentId: string, runIds: string[]) {
 }
 
 const isFull = (runId: string) => /-full-s\d+$/.test(runId)
-const yearOf = (tick: number) => 2026 + Math.floor((tick + 10) / 12)
+const yearOf = yearOfTick
 
 // the year each frontier stage was first reached (dated by the launch or breakthrough behind it)
 export function milestoneYears(rec: RunRecord): Partial<Record<Frontier, number>> {

@@ -145,7 +145,7 @@ export function regionPlaceStats(r: Region, prev?: Region): PlaceStats {
   const one = (x: Region) => {
     const gdpPc = x.gdpUsd / Math.max(1, x.population)
     const economy = clamp(Math.log10(Math.max(500, gdpPc)) / 5 - 0.35 - (x.visual?.damage.level ?? 0) * 0.4)
-    const food = clamp((x.foodKcalPerCapita - 1700) / 1500), safety = clamp(1 - x.unrest * 1.1), health = clamp((x.periodLifeExpectancy - 50) / 40)
+    const food = clamp((x.foodKcalPerCapita - 1700) / 1500), safety = clamp(1 - x.unrest * 1.1), health = x.periodLifeExpectancy > 0 ? clamp((x.periodLifeExpectancy - 50) / 40) : 0.5 /* not computed yet (old records' first frame) */
     const air = clamp(1 - (x.visual?.pollution ?? 0.3)), happiness = clamp(x.approval * 0.6 + safety * 0.2 + food * 0.2)
     return { happiness, economy, livability: clamp((happiness + economy + safety + health + air + food) / 6), food, safety, health, air, jobs: clamp(economy * 0.8 + 0.15 - x.unrest * 0.3) }
   }

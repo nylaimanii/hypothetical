@@ -1,11 +1,10 @@
 'use client'
 import type { Agent, CompareResponse, Divergence, HallEntry, RunRecord, SlimRun } from '@/lib/types'
-import { mockRuns } from '@/lib/mock/run'
-import { buildAgents, computeDivergences, computeHall } from '@/lib/mock/agents'
 import { useStore } from '../state/store'
 import { Offline } from './api'
 import { normalizeRecord } from '../state/normalize'
-import { lazyMock, loadInitial, metaFromSlim, shellFromSlim, slimFromMock, slimFromRecord } from '../state/frames'
+import { controlReady, decisionSplit, describeChange, firstDifference, simVersionOf, type AB, type Control } from './ab'
+import { loadInitial, metaFromSlim, shellFromSlim, slimFromRecord } from '../state/frames'
 
 async function get<T>(url: string): Promise<T> {
   let res: Response
@@ -27,10 +26,8 @@ async function fromSlim(s: SlimRun, center: number): Promise<RunRecord | null> {
 }
 
 // prefer the slim api (long runs load frames lazily); fall back to a full record
-export async function fetchRecord(runId: string, center = 0): Promise<{ rec: RunRecord; source: 'mock' | 'api' } | null> {
-  const mock = mockRuns().find((r) => r.runId === runId)
-  if (mock && lazyMock()) { const rec = await fromSlim(slimFromMock(mock), center); return rec ? { rec, source: 'api' } : null }
-  if (mock) { useStore.getState().setSlim(runId, slimFromRecord(mock)); return { rec: mock, source: 'mock' } }
+// every world shown comes from the records (no mock worlds: an api that has nothing means nothing is shown)
+export async function fetchRecord(runId: string, center = 0): Promise<{ rec: RunRecord; source: 'api' } | null> {
   try {
     const body = await get<SlimRun | RunRecord>(`/api/runs/${encodeURIComponent(runId)}?slim=1`)
     if (isSlim(body)) { const rec = await fromSlim(body, center); if (rec) return { rec, source: 'api' } }
@@ -63,17 +60,17 @@ export async function loadAgents() {
   const s = useStore.getState()
   try {
     const agents = await get<Agent[]>('/api/agents')
-    if (Array.isArray(agents) && agents.length) { s.setAgents(agents, 'api'); return }
-  } catch { /* fall back */ }
-  s.setAgents(buildAgents(mockRuns()), 'mock')
+    if (Array.isArray(agents)) { s.setAgents(agents, 'api'); return }
+  } catch { /* offline: nothing to show */ }
+  s.setAgents([], 'api')
 }
 
 export async function loadHall(): Promise<{ entries: HallEntry[]; mock: boolean }> {
   try {
     const entries = await get<HallEntry[]>('/api/hall')
-    if (Array.isArray(entries) && entries.length) return { entries, mock: false }
-  } catch { /* fall back */ }
-  return { entries: computeHall(mockRuns()), mock: true }
+    if (Array.isArray(entries)) return { entries, mock: false }
+  } catch { /* offline: nothing to show */ }
+  return { entries: [], mock: false }
 }
 
 // one world per agent, on the same seed when possible. the api answers slim; frames load per globe
@@ -99,20 +96,66 @@ async function compareInner(agentIds: string[], tick: number) {
       return rec
     }))
     records = built.filter(Boolean) as RunRecord[]
-  } catch { /* fall back to mock */ }
-  if (records.length < 2) {
-    const pool = mockRuns()
-    const bySeed = new Map<number, number>()
-    for (const r of pool) bySeed.set(r.seed, (bySeed.get(r.seed) ?? 0) + 1)
-    const pickFor = (id: string) => pool.filter((r) => r.agentId === id).sort((a, b) => (bySeed.get(b.seed) ?? 0) - (bySeed.get(a.seed) ?? 0))[0]
-    const picked = ids.map(pickFor).filter(Boolean) as RunRecord[]
-    if (lazyMock()) records = (await Promise.all(picked.map((r) => fromSlim(slimFromMock(r), tick)))).filter(Boolean) as RunRecord[]
-    else { records = picked; for (const r of picked) useStore.getState().setSlim(r.runId, slimFromRecord(r)) }
-    divergences = computeDivergences(picked)
-  }
+  } catch { /* offline: nothing to compare */ }
   if (records.length < 2) { s.setNotice(note ?? 'need at least two agents with worlds to compare'); return false }
   s.setCompare({ agentIds: records.map((r) => r.agentId), records, divergences })
   s.setPlayhead(tick)
   if (note) s.setNotice(note)
   return true
+}
+
+type WhatIfPair = { whatif: { original: string; tick: number; appliedAt: number; change: Parameters<typeof describeChange>[0]; exact: boolean }; divergences: Divergence[] }
+type RerunInfo = { changes: string[]; from?: string; sim?: { text: string | null }; control?: Control | null; supersededBy?: string }
+
+// with a finished control, A is the source rerun unchanged on today's sim and the sim caveat no longer applies
+const withControl = <T extends { a: string; simText?: string }>(l: T, control?: Control | null): T & { control?: Control; original?: string } =>
+  !control ? l : controlReady(control) ? { ...l, a: control.runId, original: l.a, simText: undefined, control } : { ...l, control }
+
+// what world `b` was made from and the one change: a what-if (data/whatif) or a rerun with other assumptions
+async function abLink(b: RunRecord): Promise<(Omit<AB, 'firstDiff'> & { divergences: Divergence[] }) | null> {
+  const regionName = (id: string) => b.frames[0]?.regions.find((r) => r.id === id)?.name
+  if (b.branchedFrom) {
+    const w = await get<WhatIfPair>(`/api/whatif/${encodeURIComponent(b.runId)}`).catch(() => null)
+    if (!w?.whatif) return null
+    return { a: w.whatif.original, b: b.runId, kind: 'whatif', splitTick: w.whatif.appliedAt, change: describeChange(w.whatif.change, regionName), exact: w.whatif.exact, divergences: w.divergences ?? [] }
+  }
+  const r = await get<RerunInfo>(`/api/assumptions?runId=${encodeURIComponent(b.runId)}`).catch(() => null)
+  if (!r?.from) return null
+  return withControl({ a: r.from, b: b.runId, kind: 'rerun' as const, splitTick: 0, change: r.changes.join('; ') || 'other assumptions', simText: r.sim?.text ?? undefined, divergences: [], supersededBy: r.supersededBy }, r.control)
+}
+
+// a rerun or what-if still running (or kept local) lives in data/live: read it whole when the runs api has no such world
+async function fetchAny(runId: string, center: number): Promise<RunRecord | null> {
+  const got = await fetchRecord(runId, center)
+  if (got) return got.rec
+  const body = await get<RunRecord>(`/api/live/${encodeURIComponent(runId)}`).catch(() => null)
+  if (!body?.frames?.length) return null
+  const rec = normalizeRecord(body)
+  useStore.getState().setSlim(runId, slimFromRecord(rec))
+  return rec
+}
+
+// a/b view: world b and the world it was made from, side by side on one timeline, with the split marked
+export async function startAB(bId: string, tick?: number) {
+  const s = useStore.getState()
+  s.setLoading('loading the a/b pair')
+  try {
+    const first = await fetchAny(bId, tick ?? 0)
+    if (!first) { s.setNotice('could not open that world'); return false }
+    const link = await abLink(first)
+    if (!link) { s.setNotice('this world was not made from another by one change, so there is nothing to pair it with'); return false }
+    const at = tick ?? link.splitTick
+    const a = await fetchAny(link.a, at)
+    if (!a) { s.setNotice('the original world is not available'); return false }
+    const b = useStore.getState().slim[bId]?.lazy ? (await fetchAny(bId, at)) ?? first : first
+    const slim = useStore.getState().slim
+    const ma = slim[a.runId] ?? slimFromRecord(a), mb = slim[b.runId] ?? slimFromRecord(b)
+    const split = decisionSplit({ ...ma, runId: a.runId }, { ...mb, runId: b.runId }, link.splitTick)
+    const divergences = link.divergences.length ? link.divergences : split ? [split] : []
+    const sa = simVersionOf(a), sb = simVersionOf(b)
+    const ab: AB = { a: link.a, b: link.b, kind: link.kind, splitTick: link.splitTick, change: link.change, exact: link.exact, simText: link.simText, control: link.control, original: link.original, supersededBy: link.supersededBy, sims: sa !== sb ? { a: sa, b: sb } : undefined }
+    s.setCompare({ agentIds: [a.agentId, b.agentId], records: [a, b], divergences, ab: { ...ab, firstDiff: firstDifference(ma, mb, link.splitTick) } })
+    s.setPlayhead(at)
+    return true
+  } finally { useStore.getState().setLoading(null) }
 }

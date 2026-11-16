@@ -1,0 +1,49 @@
+[
+ {
+  "lifeId": "rerun-mwixcjdc-vs-life-1",
+  "worldId": "rerun-mwixcjdc-vs",
+  "lifeNo": 1,
+  "name": "bilal malik",
+  "sex": "male",
+  "look": {
+   "skinTone": 6,
+   "hair": "ponytail",
+   "hairColor": "black",
+   "adultHeightCm": 176.3,
+   "build": "slim"
+  },
+  "birthplace": {
+   "cityId": "lahore",
+   "city": "Lahore",
+   "countryId": "PAK",
+   "country": "Pakistan",
+   "regionId": "sasia",
+   "lat": 31.55,
+   "lon": 74.34,
+   "fromTick": 0
+  },
+  "deathTick": 1272,
+  "deathAge": 106,
+  "deathCause": "old age, in their sleep",
+  "epitaph": "bilal malik · 2026–2132 · lahore · rural clinic nurse",
+  "status": "done",
+  "score": 0.7177,
+  "twinScore": 0.422,
+  "parts": {
+   "healthyYears": 0.9459,
+   "relationships": 0.4682,
+   "contribution": 0.9392,
+   "meaning": 0.7267,
+   "wellbeing": 0.4489
+  },
+  "lastCity": "Lahore",
+  "job": null,
+  "kids": 0,
+  "lessonsLeft": [
+   "take care of minor health concerns as they arise to avoid bigger problems later.",
+   "keep at least one close friend throughout your life for support and companionship.",
+   "when you're going through hard times, find ways to help others; it can bring a sense of purpose and healing."
+  ],
+  "createdAt": "2026-11-16T11:28:54.510Z"
+ }
+]

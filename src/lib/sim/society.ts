@@ -1,6 +1,7 @@
 // political realism. every law gets per-region support from that region's culture (faith, education,
 // unrest, income). low support means low compliance: the law is mostly ignored and breeds unrest.
 // regions can slide into revolt and attempt secession. the governor cannot simply order things.
+import { A } from './assumptions'
 import type { Law, Layer, ReligionPolicy } from '../types'
 import {
   EDUCATION_LAG_TICKS, EDUCATION_TURNOVER_MONTHS, REVOLT_END_UNREST, REVOLT_ONSET_MONTHS, REVOLT_UNREST,
@@ -58,7 +59,7 @@ export function lawSupport(f: LawFeatures, rs: RegionState): number {
   return clamp(s, 0.02, 0.98)
 }
 
-export type LawEffects = { science: number; energy: number; food: number; education: number; family: number; redistributive: number; security: number; tax: number; backlash: number }
+export type LawEffects = { science: number; energy: number; food: number; education: number; family: number; redistributive: number; security: number; tax: number; backlash: number; health: number }
 
 // recompute support and compliance for every active law, and the per-region effect strength.
 // each effect channel takes the strongest single law, not the sum, so spamming laws does nothing.
@@ -67,7 +68,8 @@ export function stepLaws(w: World): Record<string, LawEffects> {
   const active = w.laws.filter(l => !l.vetoed)
   const feats = new Map(active.map(l => [l.id, classifyLaw(l)]))
   for (const rs of w.regions) {
-    const e: LawEffects = { science: 0, energy: 0, food: 0, education: 0, family: 0, redistributive: 0, security: 0, tax: 0, backlash: 0 }
+    const e: LawEffects = { science: 0, energy: 0, food: 0, education: 0, family: 0, redistributive: 0, security: 0, tax: 0, backlash: 0, health: 0 }
+    rs.forced = 0
     for (const l of active) {
       const f = feats.get(l.id)!
       // social identity: support shifts with how much of the region sits in the groups that win or lose
@@ -78,8 +80,18 @@ export function stepLaws(w: World): Record<string, LawEffects> {
       // compliance with this law = region's general compliance x support (people ignore laws they reject);
       // a pending lawsuit pauses most enforcement
       const sued = (w.lawsuits[l.id] ?? -1) > w.tick ? 0.4 : 1
-      const c = rs.seceded ? 0 : rs.r.compliance * (0.25 + 0.75 * s) * sued
+      // coercive policies can be enforced by force: a large security budget makes people comply whether or not they
+      // agree (collectivization, birth limits, religious bans, conscription were all enforced this way). ESTIMATE
+      const enforceable = f.coercive || ['collectivization', 'birth_limit', 'religion_suppression', 'conscription', 'assembly_limit', 'relocation', 'lockdown', 'slum_clearance'].includes(meta?.policyKind ?? '')
+      const secRatio = Math.max(rs.spend.security * 12 / Math.max(rs.r.population, 1), 1) / Math.max(rs.pc0.security, 1)
+      // a big enough security apparatus enforces past ordinary compliance (soviet collectivization reached >90% of
+      // households by 1937: https://en.wikipedia.org/wiki/Collectivization_in_the_Soviet_Union)
+      const forced = enforceable ? (0.5 + 0.5 * rs.r.compliance) * clamp((secRatio - 1) / 2) : 0
+      // the core administers every law: its compute, legitimacy and resistance scale compliance (power.ts)
+      const c = rs.seceded ? 0 : clamp(Math.max(rs.r.compliance * (0.25 + 0.75 * s), forced) * sued * (rs.powerMult ?? 1) * (rs.peopleMult ?? 1))
       rs.lawSupport[l.id] = s
+      // the part of compliance that only force explains (freedom index, tradeoffs.ts)
+      if (enforceable) rs.forced = Math.max(rs.forced ?? 0, Math.max(0, c - rs.r.compliance * (0.25 + 0.75 * s)))
       rs.lawCompliance[l.id] = c
       e.science = Math.max(e.science, f.science * c)
       e.energy = Math.max(e.energy, f.energy * c)
@@ -91,8 +103,15 @@ export function stepLaws(w: World): Record<string, LawEffects> {
       e.redistributive = Math.max(e.redistributive, f.redistributive * c)
       e.security = Math.max(e.security, f.security * c)
       e.tax = Math.max(e.tax, f.tax * c)
-      // ESTIMATE: every law with under 50% support adds unrest in proportion to how disliked it is
-      e.backlash += Math.max(0, 0.5 - s) * 0.08 * (1 + f.coercive)
+      if (meta && (meta.policyKind === 'healthcare_expansion' || meta.policyKind === 'vaccination')) e.health = Math.max(e.health, c)
+      // ESTIMATE: every law with under 50% support adds unrest in proportion to how disliked it is. people get used to
+      // most laws: anger fades over ~3 years to a 30% residual (support for Ireland's 2004 smoke-free law rose from ~67%
+      // to ~93% among the public within a year of it taking effect, Fong et al. 2006,
+      // https://doi.org/10.1136/tc.2005.013649); deeply coercive laws keep more of their sting
+      const age = Math.max(0, w.tick - (l.enactedTick ?? w.tick))
+      const resid = A(w, 'law_backlash_residual')
+      const habit = (resid + resid * Math.min(1, f.coercive)) + (1 - resid - resid * Math.min(1, f.coercive)) * Math.exp(-age / A(w, 'law_habituation_months'))
+      e.backlash += Math.max(0, 0.5 - s) * A(w, 'law_backlash') * (1 + f.coercive) * habit
     }
     e.backlash = Math.min(e.backlash, 0.3)
     fx[rs.r.id] = e
@@ -107,7 +126,7 @@ export function stepLaws(w: World): Record<string, LawEffects> {
   }
   // tax laws raise revenue share, scaled by compliance
   const taxC = sum(w.regions.map((r, i) => fx[r.r.id].tax * pops[i])) / tot
-  w.revenueShare = clamp(REVENUE_SHARE + 0.08 * taxC, 0, REVENUE_SHARE_MAX)
+  w.revenueShare = clamp(A(w, 'revenue_share') + 0.08 * taxC, 0, REVENUE_SHARE_MAX)
   return fx
 }
 
@@ -172,7 +191,7 @@ export function stepSociety(w: World, fx: Record<string, LawEffects>, researchUs
 
     // ---------- revolt and secession ----------
     if (!rs.seceded) {
-      if (r.unrest > REVOLT_UNREST) rs.revoltPressure++
+      if (r.unrest > A(w, 'revolt_unrest')) rs.revoltPressure++
       else rs.revoltPressure = Math.max(0, rs.revoltPressure - 1)
       if (!rs.inRevolt && rs.revoltPressure >= REVOLT_ONSET_MONTHS) {
         rs.inRevolt = true

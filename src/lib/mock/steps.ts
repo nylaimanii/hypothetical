@@ -26,12 +26,14 @@ const deathsRate = (a: Frame, b: Frame) => Math.max(0, (b.humanCost.deaths - a.h
 function impact(fs: Frame[], tick: number) {
   const before = at(fs, tick - WINDOW), now = at(fs, tick), after = at(fs, tick + WINDOW)
   if (!before || !now || !after || after.tick <= now.tick) return null
+  // life expectancy of 0 means not computed yet (older records' first frame), not a change of 75 years
   const d = (a: Frame, b: Frame) => ({
-    ple: b.globalPeriodLifeExpectancy - a.globalPeriodLifeExpectancy,
+    ple: a.globalPeriodLifeExpectancy > 0 && b.globalPeriodLifeExpectancy > 0 ? b.globalPeriodLifeExpectancy - a.globalPeriodLifeExpectancy : 0,
+    pleKnown: a.globalPeriodLifeExpectancy > 0 && b.globalPeriodLifeExpectancy > 0,
     appr: (b.humanCost.approval ?? 0) - (a.humanCost.approval ?? 0),
     grow: a.globalPopulation ? b.globalPopulation / a.globalPopulation - 1 : 0,
   })
-  const pre = now.tick > before.tick ? d(before, now) : { ple: 0, appr: 0, grow: 0 }
+  const pre = now.tick > before.tick ? d(before, now) : { ple: 0, pleKnown: false, appr: 0, grow: 0 }
   const post = d(now, after)
   const score = (x: typeof post) => x.ple / 2 + x.appr * 3 + x.grow * 10
   const deathsBefore = now.tick > before.tick ? deathsRate(before, now) : 0
@@ -43,7 +45,7 @@ const sign = (v: number, digits = 1) => `${v >= 0 ? '+' : ''}${v.toFixed(digits)
 const people = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)}b` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}m` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : `${Math.round(n)}`)
 
 function whyOf(i: NonNullable<ReturnType<typeof impact>>) {
-  const parts = [`life expectancy ${sign(i.post.ple)}y`, `approval ${sign(i.post.appr * 100, 0)} pts`]
+  const parts = [...(i.post.pleKnown ? [`life expectancy ${sign(i.post.ple)}y`] : []), `approval ${sign(i.post.appr * 100, 0)} pts`]
   if (i.deathsAfter > i.deathsBefore * 1.15 && i.deathsAfter > 1000) parts.push(`deaths up to ${people(i.deathsAfter)} a year`)
   else if (i.deathsBefore > i.deathsAfter * 1.15 && i.deathsBefore > 1000) parts.push(`deaths down to ${people(i.deathsAfter)} a year`)
   return `in the 2 years after: ${parts.join(', ')}`

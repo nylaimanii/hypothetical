@@ -1,5 +1,6 @@
 'use client'
 import type { Agent, Emotion, Frame, Frontier, Mood, RunRecord } from '@/lib/types'
+import { eventsBetween, populationOf, yearIndexOfTick, yearSpan } from '../truth'
 import { EMOTIONS } from '@/lib/mock/mood'
 
 export type ViewWorld = { record: RunRecord; agent?: Agent; color: string; active: boolean; label: string }
@@ -18,7 +19,7 @@ export const ENERGY = [
 export const EMO_SLOTS = ['#2a78d6', '#1baf7a', '#6250d6', '#eda100', '#e87ba4', '#008300']
 export const OTHER = '#9a948a'
 
-export const yearOfTick = (tick: number) => 2026 + Math.floor((tick + 10) / 12)
+export { yearOfTick } from '../truth'
 
 // frames sorted by tick, about one per year for long histories (the last frame of each year)
 export function yearly(rec: RunRecord): Frame[] {
@@ -26,8 +27,8 @@ export function yearly(rec: RunRecord): Frame[] {
   if (fs.length <= 30) return fs
   const out: Frame[] = []
   for (const f of fs) {
-    const y = Math.floor(f.tick / 12)
-    if (out.length && Math.floor(out[out.length - 1].tick / 12) === y) out[out.length - 1] = f
+    const y = yearIndexOfTick(f.tick)
+    if (out.length && yearIndexOfTick(out[out.length - 1].tick) === y) out[out.length - 1] = f
     else out.push(f)
   }
   if (out[0] !== fs[0]) out.unshift(fs[0])
@@ -40,7 +41,7 @@ const weighted = (f: Frame, pick: (r: Frame['regions'][number]) => number) => {
 }
 
 export const metric = {
-  population: (f: Frame) => f.globalPopulation,
+  population: (f: Frame) => populationOf(f),
   ple: (f: Frame) => f.globalPeriodLifeExpectancy,
   approval: (f: Frame) => (f.humanCost?.approval || weighted(f, (r) => r.approval)),
   fertility: (f: Frame) => weighted(f, (r) => r.fertility),
@@ -88,13 +89,10 @@ export function emotionSlots(fs: Frame[]): { key: Emotion | 'other'; label: stri
   return [...top.map((e, i) => ({ key: e, label: e, color: EMO_SLOTS[i] })), { key: 'other' as const, label: 'the other four', color: OTHER }]
 }
 
+// the year's biggest event so far: the calendar year of the playhead, events by their own tick, never past it
 export function biggestEvent(rec: RunRecord, tick: number) {
-  const y = Math.floor(tick / 12)
   let best: { text: string; severity: number } | null = null
-  for (const f of rec.frames) {
-    if (Math.floor(f.tick / 12) !== y) continue
-    for (const e of f.newEvents) if (!best || e.severity > best.severity) best = { text: e.text, severity: e.severity }
-  }
+  for (const { e } of eventsBetween(rec, yearSpan(yearIndexOfTick(tick)).start, tick)) if (!best || e.severity > best.severity) best = { text: e.text, severity: e.severity }
   return best
 }
 

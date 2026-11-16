@@ -1,0 +1,49 @@
+[
+ {
+  "lifeId": "g2-vesper-full-s9005-life-1",
+  "worldId": "g2-vesper-full-s9005",
+  "lifeNo": 1,
+  "name": "alejandro martinez diaz",
+  "sex": "male",
+  "look": {
+   "skinTone": 1,
+   "hair": "ponytail",
+   "hairColor": "dark_brown",
+   "adultHeightCm": 167.7,
+   "build": "slim"
+  },
+  "birthplace": {
+   "cityId": "madrid",
+   "city": "Madrid",
+   "countryId": "ESP",
+   "country": "Spain",
+   "regionId": "europe",
+   "lat": 40.42,
+   "lon": -3.7,
+   "fromTick": 0
+  },
+  "deathTick": 1154,
+  "deathAge": 96.2,
+  "deathCause": "complications of diabetes",
+  "epitaph": "alejandro martinez diaz · 2026–2123 · madrid · factory worker",
+  "status": "done",
+  "score": 0.6118,
+  "twinScore": 0.5204,
+  "parts": {
+   "healthyYears": 0.8855,
+   "relationships": 0.4715,
+   "contribution": 0.6131,
+   "meaning": 0.5005,
+   "wellbeing": 0.499
+  },
+  "lastCity": "Madrid",
+  "job": null,
+  "kids": 0,
+  "lessonsLeft": [
+   "pay attention to early signs of illness or discomfort, don't ignore them. keep moving and staying active even when it's tough.",
+   "keep one close friend through every busy decade. they can be a rock in times of need.",
+   "find ways to help others when you can. it enriches your life as much as theirs."
+  ],
+  "createdAt": "2026-11-16T13:34:12.088Z"
+ }
+]

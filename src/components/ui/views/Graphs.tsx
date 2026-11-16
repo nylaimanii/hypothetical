@@ -3,10 +3,20 @@ import { useMemo, useRef, useState } from 'react'
 import type { RunRecord } from '@/lib/types'
 import { useStore } from '../../state/store'
 import { fmt, Num } from '../bits'
+import un from '../../../../data/real/un-wpp-2024.json'
 import { biggestEvent, deathsPerYear, ENERGY, emotionSlots, energyMix, FRONTIERS, frontierLabel, metric, moodOf, yearly, yearOfTick, type ViewWorld } from './shared'
 
 type Pt = { tick: number; v: number }
-type Series = { id: string; color: string; active: boolean; label: string; pts: Pt[] }
+type Series = { id: string; color: string; active: boolean; label: string; pts: Pt[]; dashed?: boolean }
+
+// the real-world baseline: UN World Population Prospects 2024, medium variant (the same file c's realBaseline reads).
+// a year's value sits at the end of that year (december), like the world's frame in force then
+const UN_COLOR = '#9a948a'
+const unLine = (by: Record<string, number>, d: Domain): Series => ({
+  id: 'un', color: UN_COLOR, active: false, dashed: true, label: 'UN projection',
+  pts: Object.entries(by).map(([y, v]) => ({ tick: (Number(y) - 2026) * 12 + 1, v })).filter((p) => p.tick >= d[0] - 12 && p.tick <= d[1] + 12).sort((a, b) => a.tick - b.tick),
+})
+const unAt = (by: Record<string, number>, tick: number) => by[String(yearOfTick(tick))]
 type Slot = { key: string; label: string; color: string }
 type Domain = [number, number]
 
@@ -94,7 +104,7 @@ function LineChart({ title, sub, series, domain, hover, setHover, yFmt, step = f
       <svg {...h} onPointerEnter={() => setMine(true)} onPointerLeave={() => { setMine(false); h.onPointerLeave() }} viewBox={`0 0 ${W} ${H}`} className="w-full cursor-crosshair text-ink" onClick={() => hover !== null && useStore.getState().setPlayhead(Math.round(hover))}>
         <Axes domain={domain} lo={L} hi={Hh} yFmt={yFmt} hover={hover} playhead={playhead} />
         {ordered.map((s) => s.pts.length > 1 && (
-          <path key={s.id} d={path(s.pts)} fill="none" stroke={s.color} strokeWidth={s.active ? 2.5 : 1} strokeOpacity={s.active ? 1 : 0.35} strokeLinejoin="round" strokeLinecap="round" />
+          <path key={s.id} d={path(s.pts)} fill="none" stroke={s.color} strokeWidth={s.active ? 2.5 : s.dashed ? 1.5 : 1} strokeOpacity={s.active || s.dashed ? 1 : 0.35} strokeDasharray={s.dashed ? '4 3' : undefined} strokeLinejoin="round" strokeLinecap="round" />
         ))}
         {hover !== null && series.map((s) => { const p = nearest(s.pts, hover); return p && <circle key={s.id} cx={x(domain, p.tick)} cy={y(p.v)} r={s.active ? 4 : 2.5} fill={s.color} stroke="var(--bone)" strokeWidth={2} /> })}
       </svg>
@@ -103,7 +113,7 @@ function LineChart({ title, sub, series, domain, hover, setHover, yFmt, step = f
           <div className="mb-1 font-mono text-[10px] text-ink/50">{yearOfTick(hover)}</div>
           {series.map((s) => { const p = nearest(s.pts, hover); return p && (
             <div key={s.id} className="flex items-center gap-1.5">
-              <span className="h-0.5 w-3 shrink-0 rounded" style={{ background: s.color }} />
+              <span className="h-0.5 w-3 shrink-0 rounded" style={s.dashed ? { backgroundImage: `linear-gradient(90deg, ${s.color} 60%, transparent 60%)`, backgroundSize: '4px 2px' } : { background: s.color }} />
               <Num className={s.active ? 'font-semibold' : ''}>{yFmt(p.v)}</Num>
               <span className="truncate text-ink/55">{s.label}</span>
             </div>
@@ -163,24 +173,26 @@ const SHORT = ['earth', 'moon', 'moon base', 'mars crew', 'mars town', 'mars fre
 type DeathKey = 'deaths' | 'famineDeaths' | 'unrestDeaths'
 const DEATHS: { key: DeathKey; label: string }[] = [{ key: 'deaths', label: 'all causes' }, { key: 'famineDeaths', label: 'famine' }, { key: 'unrestDeaths', label: 'unrest' }]
 
-function Table({ rec }: { rec: RunRecord }) {
-  const fs = yearly(rec)
+function Table({ rec, upTo }: { rec: RunRecord; upTo: number }) {
+  const fs = yearly(rec).filter((f) => f.tick <= upTo + 1e-6)
   const deaths = deathsPerYear(fs, 'deaths')
   return (
     <div className="scroll-thin max-h-full overflow-auto rounded-xl border border-ink/10">
       <table className="w-full text-[12px]">
         <thead className="sticky top-0 bg-bone text-left text-[10.5px] uppercase tracking-[0.12em] text-ink/50">
-          <tr>{['year', 'population', 'life expectancy', 'approval', 'deaths that year', 'fertility', 'frontier'].map((h) => <th key={h} className="px-3 py-2 font-normal">{h}</th>)}</tr>
+          <tr>{['year', 'population', 'UN projection', 'life expectancy', 'UN projection', 'approval', 'deaths that year', 'fertility', 'frontier'].map((h) => <th key={h} className="px-3 py-2 font-normal">{h}</th>)}</tr>
         </thead>
         <tbody>
           {fs.map((f, i) => (
             <tr key={f.tick} className="border-t border-ink/5 hover:bg-ink/5" onClick={() => useStore.getState().setPlayhead(f.tick)}>
               <td className="px-3 py-1"><Num>{yearOfTick(f.tick)}</Num></td>
               <td className="px-3 py-1"><Num>{fmt.people(metric.population(f))}</Num></td>
-              <td className="px-3 py-1"><Num>{metric.ple(f).toFixed(1)}</Num></td>
+              <td className="px-3 py-1 text-ink/55">{unAt(un.population.byYear, f.tick) !== undefined && <Num>{fmt.people(unAt(un.population.byYear, f.tick))}</Num>}</td>
+              <td className="px-3 py-1">{metric.ple(f) > 0 && <Num>{metric.ple(f).toFixed(1)}</Num>}</td>
+              <td className="px-3 py-1 text-ink/55">{unAt(un.lifeExpectancy.byYear, f.tick) !== undefined && <Num>{unAt(un.lifeExpectancy.byYear, f.tick).toFixed(1)}</Num>}</td>
               <td className="px-3 py-1"><Num>{fmt.pct(metric.approval(f))}</Num></td>
               <td className="px-3 py-1">{i > 0 && deaths[i - 1].v > 0 ? <Num className="text-ember">{fmt.people(deaths[i - 1].v)}</Num> : null}</td>
-              <td className="px-3 py-1"><Num>{metric.fertility(f).toFixed(2)}</Num></td>
+              <td className="px-3 py-1">{metric.fertility(f) > 0 && <Num>{metric.fertility(f).toFixed(2)}</Num>}</td>
               <td className="px-3 py-1">{frontierLabel(f.frontier)}</td>
             </tr>
           ))}
@@ -195,13 +207,17 @@ export default function Graphs({ worlds }: { worlds: ViewWorld[] }) {
   const [deathKey, setDeathKey] = useState<DeathKey>('deaths')
   const [table, setTable] = useState(false)
   const active = worlds.find((w) => w.active) ?? worlds[0]
-  const data = useMemo(() => worlds.map((w) => ({ w, fs: yearly(w.record) })), [worlds])
+  const playhead = useStore((s) => s.playhead)
+  // the axis spans the loaded record; the worlds' lines stop at the playhead (never the future)
+  const all = useMemo(() => worlds.map((w) => ({ w, fs: yearly(w.record) })), [worlds])
   const domain: Domain = useMemo(() => {
-    const ts = data.flatMap((d) => d.fs.map((f) => f.tick))
+    const ts = all.flatMap((d) => d.fs.map((f) => f.tick))
     return ts.length ? [Math.min(...ts), Math.max(...ts)] : [0, 12]
-  }, [data])
-  const lines = (get: (f: (typeof data)[number]['fs'][number]) => number): Series[] =>
-    data.map(({ w, fs }) => ({ id: w.record.runId, color: w.color, active: w.active, label: w.label, pts: fs.map((f) => ({ tick: f.tick, v: get(f) })) }))
+  }, [all])
+  const data = useMemo(() => all.map(({ w, fs }) => ({ w, fs: fs.filter((f) => f.tick <= playhead + 1e-6) })), [all, playhead])
+  // a value of 0 for life expectancy or fertility means the sim hadn't computed it yet (its first frame): not drawn
+  const lines = (get: (f: (typeof data)[number]['fs'][number]) => number, recorded = false): Series[] =>
+    data.map(({ w, fs }) => ({ id: w.record.runId, color: w.color, active: w.active, label: w.label, pts: fs.map((f) => ({ tick: f.tick, v: get(f) })).filter((p) => !recorded || p.v > 0) }))
   const deathSeries: Series[] = data.map(({ w, fs }) => ({ id: w.record.runId, color: w.color, active: w.active, label: w.label, pts: deathsPerYear(fs, deathKey) }))
   const activeFs = useMemo(() => data.find((d) => d.w === active)?.fs ?? [], [data, active])
   const energyRows = activeFs.map((f) => ({ tick: f.tick, vals: energyMix(f) })).filter((r): r is { tick: number; vals: Record<string, number> } => !!r.vals)
@@ -225,13 +241,14 @@ export default function Graphs({ worlds }: { worlds: ViewWorld[] }) {
             <span className="h-[3px] w-5 rounded" style={{ background: w.color, opacity: w.active ? 1 : 0.5 }} />{w.label}
           </span>
         ))}
+        <span className="flex items-center gap-1.5 text-ink/60"><span className="h-[2px] w-5" style={{ backgroundImage: `linear-gradient(90deg, ${UN_COLOR} 60%, transparent 60%)`, backgroundSize: '5px 2px' }} />UN projection (<a href={un.population.provenance.original} target="_blank" rel="noreferrer" className="underline decoration-ink/25 underline-offset-2">WPP 2024</a>, medium variant)</span>
         <span className="text-ink/45">bold is the world you are in. hover to read values, click to jump the timeline there</span>
         <button onClick={() => setTable(!table)} className="ml-auto rounded-full border border-ink/20 px-3 py-0.5 text-[11.5px] hover:bg-ink hover:text-bone">{table ? 'show charts' : 'show as table'}</button>
       </div>
-      {table ? <Table rec={active.record} /> : (
+      {table ? <Table rec={active.record} upTo={playhead} /> : (
         <div className="scroll-thin grid min-h-0 grid-cols-2 gap-3 overflow-y-auto lg:grid-cols-4">
-          <LineChart title="population" sub="people alive" series={lines(metric.population)} yFmt={fmt.people} {...common} />
-          <LineChart title="life expectancy" sub="period, years" series={lines(metric.ple)} yFmt={(v) => v.toFixed(0)} {...common} />
+          <LineChart title="population" sub="people alive · dashed: UN" series={[...lines(metric.population), unLine(un.population.byYear, domain)]} yFmt={fmt.people} {...common} />
+          <LineChart title="life expectancy" sub="period, years · dashed: UN" series={[...lines(metric.ple, true), unLine(un.lifeExpectancy.byYear, domain)]} yFmt={(v) => v.toFixed(0)} {...common} />
           <LineChart title="approval" sub="of the core" series={lines(metric.approval)} yFmt={fmt.pct} lo={0} hi={1} {...common} />
           <div className="relative">
             <div className="absolute right-3 top-2.5 z-10 flex gap-1">
@@ -239,7 +256,7 @@ export default function Graphs({ worlds }: { worlds: ViewWorld[] }) {
             </div>
             <LineChart title="deaths" sub="" series={deathSeries} yFmt={fmt.people} lo={0} {...common} />
           </div>
-          <LineChart title="fertility" sub="children per woman" series={lines(metric.fertility)} yFmt={(v) => v.toFixed(1)} {...common} />
+          <LineChart title="fertility" sub="children per woman" series={lines(metric.fertility, true)} yFmt={(v) => v.toFixed(1)} {...common} />
           <LineChart title="frontier" sub="how far out humanity lives" series={lines(metric.frontier)} yFmt={(v) => SHORT[Math.round(v)] ?? ''} step lo={0} hi={FRONTIERS.length - 1} {...common} />
           <StackChart title="energy mix" sub={`share of power, ${active.label}`} slots={ENERGY.map((e) => ({ ...e }))} rows={energyRows} domain={domain} hover={hover} setHover={setHover} />
           <StackChart title="emotion mix" sub={`how people feel, ${active.label}`} slots={emoSlots} rows={emoRows} domain={domain} hover={hover} setHover={setHover} />

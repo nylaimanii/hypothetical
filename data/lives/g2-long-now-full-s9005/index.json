@@ -1,0 +1,47 @@
+[
+ {
+  "lifeId": "g2-long-now-full-s9005-life-1",
+  "worldId": "g2-long-now-full-s9005",
+  "lifeNo": 1,
+  "name": "xu hui",
+  "sex": "female",
+  "look": {
+   "skinTone": 3,
+   "hair": "long_straight",
+   "hairColor": "black",
+   "adultHeightCm": 171.4,
+   "build": "broad"
+  },
+  "birthplace": {
+   "cityId": "shanghai",
+   "city": "Shanghai",
+   "countryId": "CHN",
+   "country": "China",
+   "regionId": "easia",
+   "lat": 31.23,
+   "lon": 121.47,
+   "fromTick": 0
+  },
+  "deathTick": 1240,
+  "deathAge": 103.3,
+  "deathCause": "old age, in their sleep",
+  "epitaph": "xu hui · 2026–2130 · shanghai · factory worker",
+  "status": "done",
+  "score": 0.5743,
+  "twinScore": 0.4909,
+  "parts": {
+   "healthyYears": 0.9231,
+   "relationships": 0.381,
+   "contribution": 0.5323,
+   "meaning": 0.4627,
+   "wellbeing": 0.4828
+  },
+  "lastCity": "Shanghai",
+  "job": null,
+  "kids": 0,
+  "lessonsLeft": [
+   "(rule-made) protect your relationships early"
+  ],
+  "createdAt": "2026-11-16T12:04:35.576Z"
+ }
+]

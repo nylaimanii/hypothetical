@@ -1,0 +1,47 @@
+[
+ {
+  "lifeId": "g3-vesper-s1006-life-1",
+  "worldId": "g3-vesper-s1006",
+  "lifeNo": 1,
+  "name": "mitu khan",
+  "sex": "female",
+  "look": {
+   "skinTone": 6,
+   "hair": "bald",
+   "hairColor": "black",
+   "adultHeightCm": 150.8,
+   "build": "slim"
+  },
+  "birthplace": {
+   "cityId": "chennai",
+   "city": "Chennai",
+   "countryId": "IND",
+   "country": "India",
+   "regionId": "sasia",
+   "lat": 13.08,
+   "lon": 80.27,
+   "fromTick": 0
+  },
+  "deathTick": 1248,
+  "deathAge": 104,
+  "deathCause": "old age, in their sleep",
+  "epitaph": "mitu khan · 2026–2130 · chennai · day laborer",
+  "status": "done",
+  "score": 0.6105,
+  "twinScore": 0.6522,
+  "parts": {
+   "healthyYears": 0.9294,
+   "relationships": 0.4499,
+   "contribution": 0.5513,
+   "meaning": 0.5544,
+   "wellbeing": 0.4815
+  },
+  "lastCity": "Chennai",
+  "job": null,
+  "kids": 0,
+  "lessonsLeft": [
+   "(rule-made) protect your relationships early"
+  ],
+  "createdAt": "2026-11-16T11:02:03.353Z"
+ }
+]

@@ -1,4 +1,5 @@
-// npm run evolve -- [--gens 10] [--concurrency 1] [--pop 7]
+// npm run evolve:here -- [--gens 10] [--concurrency 1] [--pop 7] runs this checkout directly (tests, debugging).
+// overnight evolution goes through npm run evolve (scripts/run-evolve.sh: a clean worktree of origin/main)
 // without --gens it keeps going until a world achieves the goal. concurrency defaults to 1 (one gpu)
 // env first, then the fetch counter, so both are in place before the sim modules load
 import '../src/lib/evolve/env'
@@ -6,8 +7,16 @@ import '../src/lib/evolve/usage'
 import { evolve, control } from '../src/lib/evolve/evolve'
 import { startCommands } from '../src/lib/notify/commands'
 import { arg } from './args'
+import { acquireEvolveLock, clearPreBootLocks } from '../src/lib/evolve/instance'
 
 async function main() {
+  // locks left from before a restart can point at reused pids: clear them first
+  const cleared = clearPreBootLocks()
+  if (cleared.length) console.log(`cleared stale locks from before the last restart: ${cleared.join(', ')}`)
+  // one evolve at a time: a second one (a manual start next to the launchd job) would run the same generation twice
+  const lock = acquireEvolveLock()
+  if (!lock.ok) { console.log(`evolve is already running (pid ${lock.pid}); not starting another`); return 0 }
+  process.on('exit', lock.release)
   const gensArg = arg('gens')
   const gens = gensArg ? Number(gensArg) : undefined
   const concurrency = Number(arg('concurrency', '1'))

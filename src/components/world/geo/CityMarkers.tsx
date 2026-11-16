@@ -6,9 +6,9 @@ import * as THREE from 'three'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import type { City, Frame } from '@/lib/types'
-import { C, LAND_TOP, ZOOM_CLOSE, ZOOM_FAR, groundRadius, latLonToVec3, sceneRefs, surfacePoint, toonGradient } from '../lib'
+import { C, ZOOM_CLOSE, ZOOM_FAR, groundRadius, latLonToVec3, sceneRefs, surfacePoint, toonGradient } from '../lib'
 import { useStore } from '../../state/store'
-import { LabelPool, midFade, type LabelItem } from './labels'
+import { midFade } from './labels'
 
 const fmtPop = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n))
 const hash = (s: string, k: number) => { let h = 2166136261 ^ k; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return (h >>> 0) / 4294967296 }
@@ -17,7 +17,8 @@ const TINTS = ['#EFE8DA', '#E6DCC8', '#D9CFBC', '#F3EEE4'].map((h) => new THREE.
 type Block = { city: number; pos: THREE.Vector3; quat: THREE.Quaternion; w: number; h: number; tint: THREE.Color }
 
 export default function CityMarkers({ frame }: { frame: Frame }) {
-  const cities = useMemo(() => frame.cities.filter((c) => !c.offWorld), [frame.cities])
+  // v5: real cities are drawn by RealCities (GHSL blocks + the 5 names); markers are for cities the sim founds
+  const cities = useMemo(() => frame.cities.filter((c) => !c.offWorld && !c.real), [frame.cities])
   const mesh = useRef<THREE.InstancedMesh>(null)
   const plate = useRef<THREE.InstancedMesh>(null)
 
@@ -87,16 +88,12 @@ export default function CityMarkers({ frame }: { frame: Frame }) {
     onPointerOut: () => { document.body.style.cursor = ''; useStore.getState().setTip(null) },
   })
 
-  const items = useMemo<LabelItem[]>(() => cities.map((c) => {
-    const n = latLonToVec3(c.lat, c.lon, 1).normalize()
-    return { key: c.id, text: c.name, pos: n.multiplyScalar(LAND_TOP + 0.75), weight: c.population, onClick: () => useStore.getState().select({ kind: 'city', id: c.id }) }
-  }), [cities])
 
   return (
     <>
       <instancedMesh key={`b${layout.blocks.length}`} ref={mesh} args={[geo, mat, Math.max(1, layout.blocks.length)]} frustumCulled={false} visible={false} castShadow {...handlers(false)} />
       <instancedMesh key={`p${layout.plates.length}`} ref={plate} args={[plateGeo, plateMat, Math.max(1, layout.plates.length)]} frustumCulled={false} visible={false} receiveShadow {...handlers(true)} />
-      <LabelPool items={() => items} opacity={() => midFade(sceneRefs.camDist, ZOOM_CLOSE, ZOOM_FAR)} />
+      {/* names come from RealCities (the 5-name budget); founded cities name themselves on hover */}
     </>
   )
 }

@@ -8,6 +8,9 @@ import { readRunIndex } from './store'
 import { featuresOf, readSteps } from './steps'
 import { agentRanges } from './uncertainty'
 import { epitaphOf } from '../notify/epitaph'
+import { autopsy, autopsyLines, realBaseline, type Autopsy, type RealBaseline } from './evidence'
+import { dateOfTick, yearOfTick } from './facts'
+import { changeLines } from './rerun'
 
 export type Ref = { tick?: number; date?: string; url?: string; runId?: string }
 export type Claim = { text: string; refs: Ref[] }
@@ -16,6 +19,9 @@ export type WorldReport = {
   runId: string; agentId: string; agentName: string; generation: number; seed: number; status: string; endDate: string
   summary: string[] // 5 lines max
   epitaph?: string
+  // the evidence layer: how it died (from the cause chain), and the world against UN projections at the same year
+  autopsy?: Autopsy
+  realBaseline?: RealBaseline
   sections: ReportSection[]
 }
 export type LearningEntry = {
@@ -26,8 +32,7 @@ export type LearningEntry = {
 }
 export type LearningReport = { worlds: number; deaths: number; lessons: number; avoidedShare: number | null; entries: LearningEntry[] }
 
-const yearOf = (tick: number) => 2026 + Math.floor((tick + 10) / 12)
-const dateOf = (tick: number) => { const m = 10 + tick; return `${2026 + Math.floor(m / 12)}-${String((m % 12) + 1).padStart(2, '0')}` }
+const yearOf = yearOfTick, dateOf = dateOfTick
 const at = (tick: number): Ref => ({ tick, date: dateOf(tick) })
 const pop = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(Math.round(n))
 const pct = (x: number) => `${Math.round(x * 100)}%`
@@ -153,7 +158,15 @@ function learned(rec: RunRecord): ReportSection {
 function ending(rec: RunRecord): ReportSection {
   const s = rec.summary
   const claims: Claim[] = []
-  if (s.status === 'destroyed') claims.push({ text: `it died in ${s.endDate.slice(0, 4)}: ${s.causeOfDeath ?? 'collapse'}`, refs: [at(s.ticks)] })
+  const a = s.status === 'destroyed' ? autopsy(rec) : null
+  if (a) {
+    // the autopsy, each line at the tick of the link or decision behind it
+    const [head, ...rest] = autopsyLines(a, 6)
+    claims.push({ text: head.replace(/^autopsy: /, ''), refs: [at(s.ticks)] })
+    const chainLines = rest.slice(0, Math.min(a.chain.length, 6))
+    chainLines.forEach((t, i) => claims.push({ text: t, refs: [at(a.chain[a.chain.length - chainLines.length + i].tick)] }))
+    for (const t of rest.slice(chainLines.length)) claims.push({ text: t, refs: t.startsWith("the core's call") && a.decision ? [at(a.decision.tick)] : [at(s.ticks)] })
+  } else if (s.status === 'destroyed') claims.push({ text: `it died in ${s.endDate.slice(0, 4)}: ${s.causeOfDeath ?? 'collapse'}`, refs: [at(s.ticks)] })
   else claims.push({ text: `it was still standing at ${s.endDate}${s.status === 'goal_achieved' ? ', with the mission achieved' : s.status === 'complete' ? ', the end of the century' : ''}.`, refs: [at(s.ticks)] })
   // how far it got: the milestones, each at the tick of its launch or breakthrough
   const ms = events(rec).filter(e => (e.kind === 'launch' || e.kind === 'breakthrough') && (e.significance ?? 0) >= 0.8 && !/fail/i.test(e.text))
@@ -209,16 +222,21 @@ export function worldReport(rec: RunRecord): WorldReport {
   const lesson = s.lessonsLearned?.[0] ?? null
   const ep = s.status === 'destroyed' ? epitaphOf(s, name, lesson) : undefined
   const firstDecision = rec.frames.filter(f => f.decision).sort((a, b) => a.tick - b.tick)[0]?.decision
+  const base = realBaseline(rec)
+  const dead = s.status === 'destroyed' ? autopsy(rec) : null
+  // a world run with changed assumptions says so first: its numbers are not the default world's
+  const changed = changeLines((rec as RunRecord & { assumptions?: { overridden?: Record<string, number> } }).assumptions?.overridden ?? {})
   const summary = [
+    changed.length ? `this world ran with changed assumptions: ${changed.slice(0, 3).join('; ')}${changed.length > 3 ? `; and ${changed.length - 3} more` : ''}.` : '',
     `${name} governed this world (generation ${rec.generation}, seed ${rec.seed}) from 2026 to ${s.endDate.slice(0, 4)}, and it ${s.status === 'destroyed' ? `died: ${firstSentence(s.causeOfDeath ?? 'collapse')}` : s.status === 'goal_achieved' ? 'achieved the mission' : 'was still standing at the end'}.`,
-    `it reached ${s.frontier === 'none' ? 'no frontier beyond earth' : words(s.frontier)}, with a peak period life expectancy of ${s.peakPeriodLifeExpectancy.toFixed(1)} years and ${pop(s.finalPopulation)} people at the end. score ${s.score}.`,
+    `it reached ${s.frontier === 'none' ? 'no frontier beyond earth' : words(s.frontier)}, with a peak period life expectancy of ${s.peakPeriodLifeExpectancy.toFixed(1)} years and ${Number.isFinite(s.finalPopulation) ? `${pop(s.finalPopulation)} people at the end` : 'no final population on its record (a sim bug that broke the count, fixed in sim 5.10.9)'}. ${Number.isFinite(s.score) ? `score ${s.score}` : 'no score'}${base ? `; against UN projections it ${base.text}` : ''}.`,
     s.humanCost ? `the cost: ${pop(s.humanCost.deaths)} deaths and ${pop(s.humanCost.displaced)} displaced. approval ended at ${pct(s.humanCost.approval)}.` : '',
     firstDecision ? `its first move: ${trim(firstSentence(firstDecision.publicStatement || firstDecision.rationale), 160)}` : '',
     lesson ? `it left a lesson: ${lesson.rule}.` : '',
   ].filter(Boolean).slice(0, 5)
   return {
     runId: rec.runId, agentId: rec.agentId, agentName: name, generation: rec.generation, seed: rec.seed, status: s.status, endDate: s.endDate,
-    summary, ...(ep ? { epitaph: ep.line } : {}),
+    summary, ...(ep ? { epitaph: ep.line } : {}), ...(dead ? { autopsy: dead } : {}), ...(base ? { realBaseline: base } : {}),
     sections: [decided(rec), felt(rec), moved(rec), cost(rec), learned(rec), ending(rec), stepsSection(rec)].filter(x => x.claims.length),
   }
 }

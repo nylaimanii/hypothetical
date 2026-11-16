@@ -96,7 +96,6 @@ function FamilyTree({ agents }: { agents: Agent[] }) {
 
 export function AgentsPanel() {
   const agents = useStore((s) => s.agents)
-  const source = useStore((s) => s.agentsSource)
   const setPanel = useStore((s) => s.setPanel)
   const [tab, setTab] = useState<'roster' | 'family tree'>('roster')
   const [sort, setSort] = useState<'score' | 'generation' | 'name'>('score')
@@ -107,7 +106,7 @@ export function AgentsPanel() {
     <div className="panel dossier-in scroll-thin pointer-events-auto max-h-full w-full max-w-5xl overflow-auto p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-[11px] uppercase tracking-[0.16em] text-ink/45">every governor that has run a world{source === 'mock' ? ' · mock' : ''}</div>
+          <div className="text-[11px] uppercase tracking-[0.16em] text-ink/45">every governor that has run a world</div>
           <div className="font-display text-2xl">agents</div>
         </div>
         <div className="flex items-center gap-2">

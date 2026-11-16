@@ -1,0 +1,45 @@
+[
+ {
+  "lifeId": "g2-vesper-full-s9003-life-1",
+  "worldId": "g2-vesper-full-s9003",
+  "lifeNo": 1,
+  "name": "kristine santos",
+  "sex": "female",
+  "look": {
+   "skinTone": 3,
+   "hair": "short_straight",
+   "hairColor": "black",
+   "adultHeightCm": 169,
+   "build": "slim"
+  },
+  "birthplace": {
+   "cityId": "atlanta",
+   "city": "Atlanta",
+   "countryId": "USA",
+   "country": "United States",
+   "regionId": "na",
+   "lat": 33.75,
+   "lon": -84.39,
+   "fromTick": 0
+  },
+  "deathTick": 1,
+  "deathAge": 0.1,
+  "deathCause": "complications at birth",
+  "epitaph": "kristine santos · 2026–2026 · atlanta",
+  "status": "done",
+  "score": 0.07,
+  "twinScore": 0.07,
+  "parts": {
+   "healthyYears": 0.0017,
+   "relationships": 0.1636,
+   "contribution": 0,
+   "meaning": 0,
+   "wellbeing": 0.1915
+  },
+  "lastCity": "Atlanta",
+  "job": null,
+  "kids": 0,
+  "lessonsLeft": [],
+  "createdAt": "2026-11-16T14:42:53.814Z"
+ }
+]

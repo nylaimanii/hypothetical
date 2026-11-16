@@ -1,0 +1,47 @@
+[
+ {
+  "lifeId": "g3-atlas-x-kestrel-full-s9003-life-1",
+  "worldId": "g3-atlas-x-kestrel-full-s9003",
+  "lifeNo": 1,
+  "name": "william evans",
+  "sex": "male",
+  "look": {
+   "skinTone": 4,
+   "hair": "long_wavy",
+   "hairColor": "dark_brown",
+   "adultHeightCm": 157.9,
+   "build": "slim"
+  },
+  "birthplace": {
+   "cityId": "brisbane",
+   "city": "Brisbane",
+   "countryId": "AUS",
+   "country": "Australia",
+   "regionId": "oceania",
+   "lat": -27.47,
+   "lon": 153.03,
+   "fromTick": 0
+  },
+  "deathTick": 1167,
+  "deathAge": 97.3,
+  "deathCause": "complications of diabetes",
+  "epitaph": "william evans · 2026–2124 · brisbane · nurse",
+  "status": "done",
+  "score": 0.6967,
+  "twinScore": 0.5987,
+  "parts": {
+   "healthyYears": 0.9035,
+   "relationships": 0.4509,
+   "contribution": 0.9112,
+   "meaning": 0.6369,
+   "wellbeing": 0.5355
+  },
+  "lastCity": "Brisbane",
+  "job": null,
+  "kids": 0,
+  "lessonsLeft": [
+   "(rule-made) protect your relationships early"
+  ],
+  "createdAt": "2026-11-16T21:30:21.283Z"
+ }
+]

@@ -2,6 +2,7 @@
 // minimal shell: the globe gets the screen. default chrome is the world name + date, the tabs strip,
 // one stats line and the timeline. one panel at a time, esc closes it, depth lives in "full report".
 import { useEffect, useMemo, useState } from 'react'
+import { populationOf, recorded } from './truth'
 import Link from 'next/link'
 import type { Frame, Region, WorldEvent } from '@/lib/types'
 import { useCurrentFrame, useStore, type Overlay, type View } from '../state/store'
@@ -17,12 +18,13 @@ import LivePanel from './LivePanel'
 import Dossier from './Dossier'
 import { EpitaphCard } from './WorldViews'
 import { agentOf, prettyAgent, worldNumber } from './WorldTabs'
-import { openRun } from './worlds'
+import { openRun, startAB } from './worlds'
+import { mayPair } from './ab'
 import { PlaceCard, PlaceReport, SeaCard } from './PlaceCard'
 import { usePhone } from './usePhone'
+import { lifeHref, lifeNear, useLives } from '../state/useLives'
 import { StoryLine, useLinks } from './chains'
 
-const DEV = process.env.NODE_ENV === 'development'
 
 // ---------- top left: just text ----------
 export function WorldTitle() {
@@ -43,11 +45,13 @@ export function WorldTitle() {
         <span className={`h-2 w-2 rounded-full ${dot}`} title={frame.status} aria-label={frame.status} />
         {compare ? <span>comparing <Num>{compare.records.length}</Num> worlds</span> : <span>{agent?.name ?? prettyAgent(record.agentId)} <span className="text-ink/55">· world #<Num>{worldNumber(record.runId, runs)}</Num></span></span>}
         {source === 'live' && !compare && <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink/60">live</span>}
-        {DEV && source === 'mock' && !compare && <span className="rounded border border-dashed border-ink/35 px-1 font-mono text-[9px] tracking-[0.2em] text-ink/50">MOCK</span>}
       </div>
       <Num className="mt-0.5 block text-[12.5px] text-ink/65">{formatDay(d)} · {formatTime(d)}</Num>
       {!compare && record.branchedFrom && (
         <button onClick={() => openRun(record.branchedFrom!.runId, record.branchedFrom!.tick)} className="mt-0.5 block text-[11px] text-ink/50 underline decoration-ink/20 underline-offset-2 hover:text-ink">branched from world #<Num>{worldNumber(record.branchedFrom.runId, runs)}</Num></button>
+      )}
+      {!compare && mayPair(record.runId) && (
+        <button onClick={() => startAB(record.runId, playhead)} className="mt-0.5 block text-[11px] text-ink/50 underline decoration-ink/20 underline-offset-2 hover:text-ink">compare with the original, side by side</button>
       )}
     </div>
   )
@@ -78,6 +82,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 export function SideMenu({ onLive }: { onLive: () => void }) {
   const menu = useStore((s) => s.menu)
   const liveRunId = useStore((s) => s.liveRunId)
+  const caps = useStore((s) => s.caps)
   const phone = usePhone()
   if (!menu) return null
   const s = useStore.getState()
@@ -94,8 +99,11 @@ export function SideMenu({ onLive }: { onLive: () => void }) {
           <Item label="worlds" hint="leaderboard, learning" onClick={() => s.setSheet('worlds')} />
           <Item label="agents" onClick={() => s.setPanel('agents')} />
           <Item label="hall of history" onClick={() => s.setPanel('hall')} />
-          <Item label="mission control" href="/mission" />
-          <Item label={liveRunId ? 'live: on' : 'play live'} onClick={() => { s.setMenu(false); onLive() }} />
+          <Item label="the story so far" hint="every world, every lesson" href="/story" />
+          <Item label="assumptions" hint="the rules, with sources" href="/assumptions" />
+          <Item label="tradeoffs" hint="what each world gave up" href="/tradeoffs" />
+          {caps.evolveNow && <Item label="mission control" href="/mission" />}
+          {caps.playLive && <Item label={liveRunId ? 'live: on' : 'play live'} onClick={() => { s.setMenu(false); onLive() }} />}
         </Group>
         <Group title="this world">
           <Item label="the daily" onClick={view('daily')} />
@@ -122,7 +130,7 @@ export function StatsLine() {
   const { frame, mode } = useCurrentFrame()
   const cost = frame.humanCost
   const parts: React.ReactNode[] = []
-  if (frame.globalPopulation > 0) parts.push(<span key="p"><Num>{fmt.people(frame.globalPopulation)}</Num> people</span>)
+  if (populationOf(frame) > 0) parts.push(<span key="p"><Num>{fmt.people(populationOf(frame))}</Num> people</span>)
   if (frame.globalPeriodLifeExpectancy > 0) parts.push(<span key="l">life <Num>{frame.globalPeriodLifeExpectancy.toFixed(1)}</Num>y</span>)
   parts.push(<span key="f">{frontierLabel(frame.frontier)}</span>)
   if (cost.approval > 0) parts.push(<span key="a">approval <Num>{fmt.pct(cost.approval)}</Num></span>)
@@ -186,7 +194,7 @@ function regionStats(r: Region): Stats {
   const economy = clamp(Math.log10(Math.max(500, gdpPc)) / 5 - 0.35 - (r.visual?.damage.level ?? 0) * 0.4)
   const food = clamp((r.foodKcalPerCapita - 1700) / 1500)
   const safety = clamp(1 - r.unrest * 1.1)
-  const health = clamp((r.periodLifeExpectancy - 50) / 40)
+  const health = recorded(r.periodLifeExpectancy) ? clamp((r.periodLifeExpectancy - 50) / 40) : 0.5 // not computed yet: neutral
   const air = clamp(1 - (r.visual?.pollution ?? 0.3))
   const happiness = clamp(r.approval * 0.6 + safety * 0.2 + food * 0.2)
   return { happiness, economy, livability: clamp((happiness + economy + safety + health + air + food) / 6) }
@@ -374,9 +382,11 @@ export function CityBar() {
   const hour = useStore((s) => s.hour)
   const playing = useStore((s) => s.playing)
   const pinned = useStore((s) => s.hourPinned)
-  const { frame } = useCurrentFrame()
+  const { frame, record } = useCurrentFrame()
+  const lives = useLives(cityView ? record.runId : undefined)
   const city = frame.cities.find((c) => c.id === cityView)
   if (!city) return null
+  const life = lifeNear(lives, city.lat, city.lon)
   const local = localHour(utcHourOf(worldDate(playhead, hour, playing)), city.lon)
   const country = city.countryId ? frame.countries?.find((c) => c.id === city.countryId) : undefined
   // set a local hour: convert back to utc
@@ -391,6 +401,7 @@ export function CityBar() {
       </div>
       <input type="range" min={0} max={23.9} step={0.1} value={local} onChange={(e) => setLocal(Number(e.target.value))} className="w-28 accent-[var(--ink)]" aria-label="time of day" />
       {pinned && <button onClick={() => useStore.getState().setHour(useStore.getState().hour, false)} className="text-[11px] text-ink/50 underline decoration-ink/20 underline-offset-2">let the day run</button>}
+      {life && lives && <a href={lifeHref(lives, life)} target="_blank" rel="noreferrer" className="text-[11.5px] underline decoration-ink/25 underline-offset-2">watch this life: {life.name}</a>}
     </div>
   )
 }

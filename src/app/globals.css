@@ -61,3 +61,13 @@ input[type="range"] { accent-color: var(--ink); }
 .skel { background: linear-gradient(90deg, color-mix(in srgb, var(--ink) 6%, transparent) 25%, color-mix(in srgb, var(--ink) 12%, transparent) 50%, color-mix(in srgb, var(--ink) 6%, transparent) 75%); background-size: 200% 100%; animation: skel 1.4s ease-in-out infinite; }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 .fade-in { animation: fade-in 1.2s ease-out both; }
+
+/* reading pages (report, story): they scroll inside their own container because the globe app pins the body */
+.page-scroll { height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+@media print {
+  html, body, .page-scroll { height: auto !important; overflow: visible !important; }
+  body { background: #fff !important; }
+  .no-print { display: none !important; }
+  .print-keep { break-inside: avoid; }
+  a { color: inherit !important; text-decoration: none !important; }
+}

@@ -1,0 +1,18 @@
+#!/bin/sh
+# every commit, from any agent and any worktree, runs tests/consistency: every name, age, date and number a page,
+# report or telegram shows agrees with the sim records. runs the checks of the committing worktree against the
+# project's real data (the newest 3 worlds and 3 lives). it stops the commit only for a failing check in a test for
+# a file the commit changes, on a world or life of the current sim version (or a check of no data); failures on
+# older data or in untouched tests are printed as warnings (the user's rule, 2026-11-16: no cross-agent deadlocks).
+# installed for all worktrees by scripts/hooks/install.sh
+top=$(git rev-parse --show-toplevel) || exit 1
+common=$(cd "$(git rev-parse --git-common-dir)" && pwd)
+project=$(dirname "$common")
+# no checks written yet in this checkout: nothing to run
+[ -d "$top/tests/consistency" ] || exit 0
+runner="$top/scripts/consistency.ts"
+[ -f "$runner" ] || runner="$project/scripts/consistency.ts"
+tsx="$project/node_modules/tsx/dist/cli.mjs"
+[ -f "$tsx" ] || { echo "consistency: tsx is not installed in $project, cannot check this commit" >&2; exit 1; }
+echo "consistency: checking this commit against the latest real worlds and lives..." >&2
+cd "$project" && HYP_CODE_ROOT="$top" node "$tsx" --tsconfig "$top/tsconfig.json" "$runner" --hook

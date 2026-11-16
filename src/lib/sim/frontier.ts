@@ -1,6 +1,7 @@
 // the frontier track after the first crewed moon landing. every milestone needs finished requirement
 // nodes, real money from the space budget, and for mars a launch window, a closing delta-v budget,
 // a crew dose under the limit and a landing that can fail.
+import { A } from './assumptions'
 import type { City, Frontier } from '../types'
 import { DOSE_LIMIT_SV, HOHMANN_MONTHS, MARS_DV, isMarsWindow, lifeSupportClosure, missionDoseSv, reqDone, reqProgress } from './requirements'
 import { SPACE_ABSORB_USD_YEAR, achievableDv, globalTech } from './space'
@@ -40,7 +41,7 @@ function offWorldCity(w: World, name: string, where: 'moon' | 'mars', pop: numbe
 const costPerSettler = (w: World) => Math.max(2e6, 20e6 * (1 - 0.6 * reqProgress(w, 'super_heavy_lift') * reqProgress(w, 'orbital_refueling') - 0.3 * reqProgress(w, 'nuclear_thermal')))
 
 export function frontierAbsorbCap(w: World, launchStrength: number): number {
-  return SPACE_ABSORB_USD_YEAR * (1 + 1.5 * reqProgress(w, 'super_heavy_lift') + reqProgress(w, 'orbital_refueling') + launchStrength)
+  return A(w, 'space_absorb_usd_year') * (1 + 1.5 * reqProgress(w, 'super_heavy_lift') + reqProgress(w, 'orbital_refueling') + launchStrength)
 }
 
 export function stepFrontier(w: World, spaceUsd: number, researchUsd: number, launchStrength: number) {

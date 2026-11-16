@@ -10,7 +10,8 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
   } catch {
     throw new Offline('runner offline')
   }
-  if (res.status === 404 || res.status === 501 || res.status === 503) throw new Offline('runner offline')
+  if (res.status === 404) throw new Offline('not found')
+  if (res.status === 501 || res.status === 503) throw new Offline('runner offline')
   if (!res.ok) throw new Error(`${res.status}`)
   return res.json() as Promise<T>
 }

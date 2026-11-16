@@ -23,7 +23,7 @@ function trimWords(text: string, max = 250) {
 async function chat(prompt: string): Promise<string | null> {
   if (!llmEnabled()) return null
   // B's lockfile: never use ollama while another job holds it
-  const release = await acquireOllamaLock('evolve mutation')
+  const release = await acquireOllamaLock('evolve mutation', { priority: 0 })
   try {
     return await llmChat({ system: 'You revise constitutions for a simulated world government. Reply with JSON only.', user: prompt, json: true, temperature: 0.8, maxTokens: 4096 })
   } catch (e) {

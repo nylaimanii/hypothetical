@@ -1,0 +1,47 @@
+[
+ {
+  "lifeId": "g2-vesper-full-s9004-life-1",
+  "worldId": "g2-vesper-full-s9004",
+  "lifeNo": 1,
+  "name": "daniela morales lopez",
+  "sex": "female",
+  "look": {
+   "skinTone": 1,
+   "hair": "long_straight",
+   "hairColor": "dark_brown",
+   "adultHeightCm": 167.5,
+   "build": "broad"
+  },
+  "birthplace": {
+   "cityId": "lima",
+   "city": "Lima",
+   "countryId": "PER",
+   "country": "Peru",
+   "regionId": "latam",
+   "lat": -12.05,
+   "lon": -77.04,
+   "fromTick": 0
+  },
+  "deathTick": 572,
+  "deathAge": 47.7,
+  "deathCause": "cancer",
+  "epitaph": "daniela morales lopez · 2026–2074 · lima · factory worker",
+  "status": "done",
+  "score": 0.3638,
+  "twinScore": 0.4194,
+  "parts": {
+   "healthyYears": 0.47,
+   "relationships": 0.4471,
+   "contribution": 0,
+   "meaning": 0.4325,
+   "wellbeing": 0.4644
+  },
+  "lastCity": "Lima",
+  "job": "factory worker",
+  "kids": 0,
+  "lessonsLeft": [
+   "(rule-made) protect your contribution early"
+  ],
+  "createdAt": "2026-11-16T16:24:17.015Z"
+ }
+]

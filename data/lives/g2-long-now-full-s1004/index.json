@@ -1,0 +1,47 @@
+[
+ {
+  "lifeId": "g2-long-now-full-s1004-life-1",
+  "worldId": "g2-long-now-full-s1004",
+  "lifeNo": 1,
+  "name": "regina ramirez gonzalez",
+  "sex": "female",
+  "look": {
+   "skinTone": 4,
+   "hair": "short_straight",
+   "hairColor": "dark_brown",
+   "adultHeightCm": 157,
+   "build": "average"
+  },
+  "birthplace": {
+   "cityId": "mexico_city",
+   "city": "Mexico City",
+   "countryId": "MEX",
+   "country": "Mexico",
+   "regionId": "latam",
+   "lat": 19.43,
+   "lon": -99.13,
+   "fromTick": 0
+  },
+  "deathTick": 1154,
+  "deathAge": 96.2,
+  "deathCause": "old age, in their sleep",
+  "epitaph": "regina ramirez gonzalez · 2026–2123 · mexico city · day laborer",
+  "status": "done",
+  "score": 0.4615,
+  "twinScore": 0.5788,
+  "parts": {
+   "healthyYears": 0.8777,
+   "relationships": 0.4377,
+   "contribution": 0,
+   "meaning": 0.4472,
+   "wellbeing": 0.4368
+  },
+  "lastCity": "Mexico City",
+  "job": null,
+  "kids": 0,
+  "lessonsLeft": [
+   "(rule-made) protect your contribution early"
+  ],
+  "createdAt": "2026-11-16T14:37:46.355Z"
+ }
+]

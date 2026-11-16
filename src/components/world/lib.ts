@@ -19,6 +19,12 @@ export const ZOOM_FAR = 36
 export const ZOOM_CLOSE = 21
 export const MIN_DIST = 12.7
 export const MAX_DIST = 75
+// the moon: 0.27 of earth's size (the real ratio), on an orbit well outside the globe and outside the camera's
+// whole globe range (it zooms out to MAX_DIST), so it never passes through either. the real distance is 60 earth
+// radii; 9 keeps it in the picture
+export const MOON_R = R * 0.27
+export const MOON_ORBIT = R * 9
+export const MOON_TILT = 0.26
 
 export const C = {
   bone: '#EFE8DA',
@@ -77,7 +83,9 @@ export function surfaceQuat(normal: THREE.Vector3, forward: THREE.Vector3, out =
 let toonTex: THREE.DataTexture | null = null
 export function toonGradient() {
   if (!toonTex) {
-    toonTex = new THREE.DataTexture(new Uint8Array([90, 90, 90, 255, 170, 170, 170, 255, 255, 255, 255, 255]), 3, 1, THREE.RGBAFormat)
+    // four steps: faces turned well away from the sun get almost nothing (true night, so moonlight and city
+    // lights carry the dark side); the terminator keeps the old 35% twilight band; the day side reads as before
+    toonTex = new THREE.DataTexture(new Uint8Array([14, 14, 14, 255, 90, 90, 90, 255, 170, 170, 170, 255, 255, 255, 255, 255]), 4, 1, THREE.RGBAFormat)
     toonTex.minFilter = THREE.NearestFilter
     toonTex.magFilter = THREE.NearestFilter
     toonTex.generateMipmaps = false
@@ -223,6 +231,13 @@ export const sceneRefs = {
   focus: new THREE.Vector3(0, 0, R),
   camDist: 50,
   sunDir: new THREE.Vector3(1, 0.3, 0.5).normalize(), // written by the key light
+  // the world clock: seconds of world motion so far, and this frame's step. both stand still while paused, so
+  // everything that moves in the world (moon, clouds, people, traffic, flights) stops with it
+  wt: 0,
+  wdt: 0,
+  // how much of what the camera looks at is in night, 0..1 (written by the key light): windows, street
+  // lights, city glow and the sky all follow it
+  night: 0,
 }
 
 export const LAYERS = ['government', 'economy', 'tech', 'religion', 'media', 'family', 'biology', 'physics'] as const

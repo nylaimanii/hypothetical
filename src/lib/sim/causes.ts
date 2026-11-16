@@ -18,7 +18,7 @@ export type CauseLink = {
   sig?: number // 0..1, how much this link matters (frames keep links >= CAUSE_SIG_MIN)
 }
 
-export const CAUSE_SIG_MIN = 0.3
+export const CAUSE_SIG_MIN = 0.4
 export type Trend = { stat: string; direction: 'rising' | 'declining' | 'stable'; change: number; text: string }
 export type Story = { year: number; sentences: string[]; chainIds: string[][] }
 export type CauseInput = { because?: string; byWhom?: ByWhom; causeIds?: string[]; lawId?: string; value?: number }
@@ -160,6 +160,10 @@ export function stepYear(w: World) {
     rs.story = { year, ...storyFor(w, rs, year) }
     rs.yearAcc = {}
   }
+  // the world keeps two years of events (frames keep every event); move the frame cursor with the trim
+  const old = w.events.findIndex(e => e.tick >= w.tick - 24)
+  const drop = old < 0 ? w.events.length : old
+  if (drop > 0) { w.events = w.events.slice(drop); w.frameCursor = Math.max(0, w.frameCursor - drop) }
   // keep ten years of links in the live state (frames keep the rest)
   const cut = w.tick - 120
   if (w.causes.length && w.causes[0].tick < cut) w.causes = w.causes.filter(c => c.tick >= cut)

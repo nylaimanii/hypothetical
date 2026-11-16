@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import type { Activity, Citizen, City, Frame, Workplace } from '@/lib/types'
-import { C, HAIR_HEX, MONK, toonGradient } from '../lib'
+import { C, HAIR_HEX, MONK, sceneRefs, toonGradient } from '../lib'
 import { localHour, utcHourOf, worldDate } from '../time'
 import { useStore } from '../../state/store'
 import { useCallouts, type Callout } from '../explain'
@@ -15,7 +15,6 @@ import { pathBetween, spotIn, type Layout, type Lot, type V2 } from './layout'
 
 export const GROUND_Y = 0.25
 const MAX = 150
-const NAMES = ['ama', 'teo', 'rin', 'sol', 'iva', 'kofi', 'lena', 'omar', 'yuki', 'zara', 'ben', 'mei', 'ade', 'noor', 'ravi', 'ines', 'kai', 'luz', 'tomas', 'hana', 'eli', 'sade', 'jun', 'mira']
 const CLOTH = ['#7E9CB5', '#C9A46A', '#8FAE84', '#B98370', '#9C8CB8', '#D2B48C', '#6F8F95', '#B5A27E', '#A5788F', '#7FA39A']
 
 const hash = (s: string) => { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0 }
@@ -23,7 +22,9 @@ function rng(seed: number) { let a = seed || 1; return () => { a = (a + 0x6d2b79
 
 type Pose = 'walk' | 'ride' | 'stand' | 'sit' | 'kneel' | 'armsUp' | 'sign' | 'bob' | 'machine' | 'hammer'
 type Pip = {
-  idx: number; baseId: string; c: Citizen; name: string; age: number
+  // real: one of the world's recorded people (name and age from the record). the rest are unnamed passersby who
+  // fill the street; they show no name or age and open no one's dossier
+  idx: number; baseId: string; c: Citizen; real: boolean; name: string; age: number
   skin: THREE.Color; cloth: THREE.Color; legCol: THREE.Color; hair: THREE.Color | null
   size: number; kid: boolean; jitter: number; plan: PlanStep[]
   home: Lot; work: Lot | null; bike: boolean; tram: boolean
@@ -65,7 +66,7 @@ function makePips(city: City, base: Citizen[], layout: Layout, total: number): P
     const hairColor = real ? c.hairColor : (['black', 'dark_brown', 'brown', 'blonde', 'red', 'gray'] as const)[Math.floor(r() * 6)]
     const bald = (real ? c.hair : (r() < 0.12 ? 'bald' : c.hair)) === 'bald'
     out.push({
-      idx: k, baseId: c.id, c, name: real ? c.name.split(' ')[0].toLowerCase() : NAMES[Math.floor(r() * NAMES.length)], age,
+      idx: k, baseId: c.id, c, real, name: real ? c.name : '', age,
       skin: new THREE.Color(MONK[tone - 1]), cloth: new THREE.Color(CLOTH[(c.personalitySeed + k * 7) % CLOTH.length]),
       legCol: new THREE.Color(CLOTH[(c.personalitySeed + k * 3 + 5) % CLOTH.length]).multiplyScalar(0.62),
       hair: bald ? null : new THREE.Color(HAIR_HEX[hairColor] ?? '#2a2420'),
@@ -173,10 +174,12 @@ export default function CityPips({ city, frame, layout, onLot }: { city: City; f
   // ---- the frame loop ----
   const _M = useMemo(() => ({ base: new THREE.Matrix4(), t: new THREE.Matrix4(), a: new THREE.Matrix4(), q: new THREE.Quaternion(), e: new THREE.Euler(), v: new THREE.Vector3(), s: new THREE.Vector3(), torso: new THREE.Matrix4(), head: new THREE.Matrix4(), arm: new THREE.Matrix4(), leg: new THREE.Matrix4(), out: new THREE.Matrix4() }), [])
   const occAcc = useRef(0)
-  useFrame(({ clock }, dt) => {
+  useFrame(() => {
+    // the world clock: everyone stands still while paused
+    const dt = sceneRefs.wdt
     const st = useStore.getState()
     const lh = localHour(utcHourOf(worldDate(st.playhead, st.hour, st.playing)), city.lon)
-    const t = clock.elapsedTime
+    const t = sceneRefs.wt
     const fastForward = st.playing
     let n = 0, nb = 0, nbox = 0, ns = 0, nbike = 0, nst = 0, nh = 0
     const R = refs
@@ -302,9 +305,9 @@ export default function CityPips({ city, frame, layout, onLot }: { city: City; f
       const list: Callout[] = []
       const aid = count('aid_line'), prot = count('protesting'), cel = count('celebrating')
       const clinic = layout.byKind.get('clinic'), square = layout.byKind.get('square')
-      if (aid && clinic) list.push({ id: 'city-aid', pos: new THREE.Vector3(clinic.door.x + 2, 2.2, clinic.door.z), title: 'aid line', text: `${aid} people queueing at the clinic. they lost their jobs`, weight: 3, danger: true })
-      if (prot && square) list.push({ id: 'city-protest', pos: new THREE.Vector3(square.x, 2.6, square.z), title: 'protest', text: `${prot} people in the square instead of at work`, weight: 3, danger: true })
-      if (cel && square) list.push({ id: 'city-party', pos: new THREE.Vector3(square.x, 2.6, square.z + 1), title: 'celebration', text: `${cel} people celebrating in the square`, weight: 2 })
+      if (aid && clinic) list.push({ id: 'city-aid', pos: new THREE.Vector3(clinic.door.x + 2, 2.2, clinic.door.z), title: 'aid line', text: 'people queueing for aid at the clinic', weight: 3, danger: true })
+      if (prot && square) list.push({ id: 'city-protest', pos: new THREE.Vector3(square.x, 2.6, square.z), title: 'protest', text: 'people protesting in the square', weight: 3, danger: true })
+      if (cel && square) list.push({ id: 'city-party', pos: new THREE.Vector3(square.x, 2.6, square.z + 1), title: 'celebration', text: 'people celebrating in the square', weight: 2 })
       const sig = list.map((x) => x.id + x.text).join('|')
       if (sig !== lastNotes.current) { lastNotes.current = sig; setNotes(list) }
     }
@@ -316,10 +319,10 @@ export default function CityPips({ city, frame, layout, onLot }: { city: City; f
   const tipFor = (e: ThreeEvent<PointerEvent>) => {
     const p = pipAt(e)
     if (!p) return
-    useStore.getState().setTip({ title: `${p.name}, ${p.age}`, text: `${p.place} until ${fmtH(p.until)}`, x: e.nativeEvent.clientX, y: e.nativeEvent.clientY })
+    useStore.getState().setTip({ title: p.real ? `${p.name}, ${p.age}` : 'a passerby', text: `${p.place} until ${fmtH(p.until)}`, x: e.nativeEvent.clientX, y: e.nativeEvent.clientY })
   }
   const events = {
-    onClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); const p = pipAt(e); if (p) useStore.getState().select({ kind: 'pip', id: p.baseId }) },
+    onClick: (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); const p = pipAt(e); if (p?.real) useStore.getState().select({ kind: 'pip', id: p.baseId }) },
     onPointerOver: (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer'; tipFor(e) },
     onPointerMove: tipFor,
     onPointerOut: () => { document.body.style.cursor = ''; useStore.getState().setTip(null) },

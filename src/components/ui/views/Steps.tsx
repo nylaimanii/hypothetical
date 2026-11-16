@@ -1,10 +1,11 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import type { Step } from '@/lib/types'
-import { mockSteps, worldSteps, type WorldStep } from '@/lib/mock/steps'
+import { worldSteps, type WorldStep } from '@/lib/mock/steps'
 import { useStore } from '../../state/store'
 import { Num } from '../bits'
 import { yearOfTick, type ViewWorld } from './shared'
+import { AutopsyTimeline, useAutopsy } from '../Autopsy'
 
 const HELP = '#3f6b4e' // green-ish ink: helped
 const KINDS: Record<Step['kind'], string> = { law: 'law', budget: 'budget', policy: 'policy', city: 'city', research: 'research' }
@@ -64,19 +65,26 @@ function useRecipe(worlds: ViewWorld[]) {
       .catch(() => {})
     return () => { stop = true }
   }, [ids])
-  const fallback = useMemo(() => mockSteps(worlds.map((w) => w.record)), [worlds])
-  return api && api.ids === ids ? { steps: api.steps, mock: false } : { steps: fallback, mock: true }
+  // the recipe only from the api (no invented confidence): nothing until it answers
+  return api && api.ids === ids ? { steps: api.steps, mock: false } : { steps: [] as Step[], mock: false }
 }
 
 export default function Steps({ worlds }: { worlds: ViewWorld[] }) {
   const active = worlds.find((w) => w.active) ?? worlds[0]
   const mine = useMemo(() => (active ? worldSteps(active.record) : []), [active])
   const recipe = useRecipe(worlds)
+  // the autopsy only once the timeline has reached the death: no panel shows the future
+  const playhead = useStore((s) => s.playhead)
+  // long runs hold only a window of frames: the last tick comes from the slim index when there is one
+  const lastTick = useStore((s) => (active ? s.slim[active.record.runId]?.lastTick : undefined)) ?? active?.record.frames.at(-1)?.tick ?? Infinity
+  const deadNow = !!active && active.record.summary.status === 'destroyed' && playhead >= lastTick - 1e-6
+  const autopsy = useAutopsy(active?.record.runId ?? '', deadNow)
   if (!active) return null
-  const dead = active.record.summary.status === 'destroyed'
-  const killers = dead ? [...mine].filter((s) => s.effect < 0).sort((a, b) => a.effect - b.effect).slice(0, 5) : []
-  const ranked = mine.slice(0, 16)
-  const max = Math.max(0.001, ...mine.map((s) => Math.abs(s.effect)))
+  // nothing past the playhead; a step's effect needs its 2 years after to be on the timeline too
+  const shown = mine.filter((s) => s.tick + 24 <= playhead + 1e-6)
+  const killers = deadNow && !autopsy ? [...shown].filter((s) => s.effect < 0).sort((a, b) => a.effect - b.effect).slice(0, 5) : []
+  const ranked = shown.slice(0, 16)
+  const max = Math.max(0.001, ...shown.map((s) => Math.abs(s.effect)))
   const help = recipe.steps.filter((s) => s.effect > 0).slice(0, 10)
   const avoid = [...recipe.steps].filter((s) => s.effect < 0).sort((a, b) => a.effect * b.confidence - b.effect * a.confidence).slice(0, 6)
   const rmax = Math.max(0.001, ...recipe.steps.map((s) => Math.abs(s.effect)))
@@ -98,10 +106,11 @@ export default function Steps({ worlds }: { worlds: ViewWorld[] }) {
   return (
     <div className="grid h-full min-h-0 grid-cols-1 gap-3 lg:grid-cols-2">
       <section className="scroll-thin flex min-h-0 flex-col gap-3 overflow-y-auto rounded-xl border border-ink/10 bg-bone/60 p-3">
+        {deadNow && autopsy && <AutopsyTimeline a={autopsy} />}
         {killers.length > 0 && (
           <div id="steps-killed">
-            <h3 className="font-display text-[17px] text-ember">the steps that killed it</h3>
-            <p className="mb-1 text-[11.5px] text-ink/55">{active.label}: the decisions followed by the worst turns, worst first</p>
+            <h3 className="font-display text-[17px]">the decisions followed by the worst turns</h3>
+            <p className="mb-1 text-[11.5px] text-ink/55">{active.label}: worst first. these came before bad years; the record does not say they caused them</p>
             <ul>{killers.map((s) => <StepRow key={s.key} s={s} max={max} />)}</ul>
           </div>
         )}

@@ -1,0 +1,45 @@
+[
+ {
+  "lifeId": "g2-vesper-full-s9002-life-1",
+  "worldId": "g2-vesper-full-s9002",
+  "lifeNo": 1,
+  "name": "wanjiru kamau",
+  "sex": "female",
+  "look": {
+   "skinTone": 9,
+   "hair": "short_coily",
+   "hairColor": "black",
+   "adultHeightCm": 157.6,
+   "build": "broad"
+  },
+  "birthplace": {
+   "cityId": "ibadan",
+   "city": "Ibadan",
+   "countryId": "NGA",
+   "country": "Nigeria",
+   "regionId": "ssa",
+   "lat": 7.38,
+   "lon": 3.94,
+   "fromTick": 0
+  },
+  "deathTick": 9,
+  "deathAge": 0.8,
+  "deathCause": "pneumonia",
+  "epitaph": "wanjiru kamau · 2026–2027 · ibadan",
+  "status": "done",
+  "score": 0.0612,
+  "twinScore": 0.0612,
+  "parts": {
+   "healthyYears": 0.0078,
+   "relationships": 0.154,
+   "contribution": 0,
+   "meaning": 0,
+   "wellbeing": 0.1383
+  },
+  "lastCity": "Ibadan",
+  "job": null,
+  "kids": 0,
+  "lessonsLeft": [],
+  "createdAt": "2026-11-16T06:38:28.410Z"
+ }
+]

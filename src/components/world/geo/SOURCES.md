@@ -30,7 +30,7 @@ a miss takes the state with the nearest boundary point within 3 degrees. every t
 named marine polygon containing it, or the nearest named one. only states and seas that some tile points at
 are kept (1272 states, 234 seas). per tile indices are stored base 36.
 
-state populations are an ESTIMATE, never real data:
+state populations: for 1163 of the 1272 states, GHS-POP 2025 summed over the state (SOURCED, https://ghsl.jrc.ec.europa.eu/download.php?ds=pop, taken from agent B's data/geo/admin1.json, matched by iso_3166_2 id). for the other 109 (no match in B's file) they remain an ESTIMATE, derived as follows:
   state population = country 2026 population x (w_state / sum of w over the country's states)
   w_state = 0.5 x (state summed pop_max / country summed pop_max)
           + 0.5 x (state count of populated places / country count of populated places)

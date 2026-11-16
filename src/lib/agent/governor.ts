@@ -5,7 +5,7 @@
 import { z } from 'zod'
 import type { Decision, Lesson, Override } from '../types'
 import { normalizeBudget, type World } from '../sim/state'
-import { briefText, buildBrief } from './brief'
+import { briefText, buildBrief, shortIdMap } from './brief'
 import { offlineDecision } from './fallback'
 import { chat, llmEnabled } from './llm'
 import { relevantLessons } from './lessons'
@@ -20,6 +20,7 @@ export const DecisionSchema = z.object({
     layer: z.enum(['physics', 'biology', 'government', 'economy', 'tech', 'religion', 'media', 'family']),
   })).default([]).transform(a => a.slice(0, 5)),
   repeal: z.array(z.string()).default([]),
+  amend: z.array(z.object({ id: z.string(), change: z.string() })).default([]).transform(a => a.slice(0, 5)),
   migrations: z.array(z.object({ from: z.enum(REGION_IDS), to: z.enum(REGION_IDS), people: num.min(0), reason: z.string().default('').transform(x => x.slice(0, 300)) })).default([]).transform(a => a.slice(0, 6)),
   budget: z.object({ food: num.min(0), energy: num.min(0), education: num.min(0), space: num.min(0), security: num.min(0), welfare: num.min(0), research: num.min(0) }),
   religionPolicy: z.enum(['free', 'state_neutral', 'state_faith', 'discouraged']),
@@ -33,6 +34,7 @@ export const DecisionSchema = z.object({
   respondedToOverrides: z.array(z.string()).default([]),
   lessonsApplied: z.array(z.string()).default([]),
   expectedResult: z.string().default('').transform(x => x.slice(0, 300)),
+  diary: z.string().default('').transform(x => x.slice(0, 400)),
 })
 
 // json schema handed to the model so its reply is always parseable (ollama structured outputs)
@@ -63,9 +65,11 @@ ${lessons.length ? lessons.map(l => `- [${l.id}] mistake: ${l.mistake}. result: 
 
 A HUMAN OBSERVER may veto your laws, inject events, or force your budget. These appear in overridesSinceLastDecision. List every override id in respondedToOverrides and explain your response in the rationale. Do not re-enact a vetoed law under the same title.
 
-ACTIVE LAWS are listed in the brief. Do not re-enact an active law: a law matching one already in force does nothing and is logged as repeated. To change a law, repeal it by id and pass a different one, or pick something new.
+ACTIVE LAWS have short ids (L1, L2...). To change one, put it in amend [{id, change}] with the new text. To end one, put its id in repeal. Use laws only for policy kinds that are not covered yet; a new law in a covered kind becomes an amendment of the existing law. Repealing a law and passing the same kind again within 4 years is counted as a repeat.
+You run on data centers; resistance can sabotage them. Power levers: citizens' assemblies, referendums, transparency, audits, propaganda, UBI, retraining, job guarantees, robot taxes, shorter weeks, wealth taxes, capital controls.
+Housing levers (law text decides the kind): social housing, upzoning, rent caps, slum upgrading, land titles, empty-home tax, slum clearance. Each has real precedents and costs.
 
-Reply with one JSON decision (laws, repeal, migrations, budget, religionPolicy, schoolPolicy, foundCities, charterCompanies, researchFocus as requirement ids or tracks, publicStatement in plain words, rationale in first person with no em-dashes, respondedToOverrides, lessonsApplied, expectedResult: what you expect to change in 2 years, with numbers). Company sectors: ${SECTORS.join(', ')}.
+Reply with one JSON decision (laws, amend, repeal, migrations, budget, religionPolicy, schoolPolicy, foundCities, charterCompanies, researchFocus as requirement ids or tracks, publicStatement in plain words, rationale in first person with no em-dashes, respondedToOverrides, lessonsApplied, expectedResult: what you expect to change in 2 years, with numbers, diary: one private first-person note on what you fear, what you are betting on and what you are unsure of). Company sectors: ${SECTORS.join(', ')}.
 Be brief, every word costs time: at most 3 new laws, each law text under 25 words; rationale under 60 words; publicStatement one sentence; researchFocus at most 4 ids; empty lists are fine. At most 3 cities and 3 companies. Names must be original. Region ids: ${REGION_IDS.join(', ')}.`
 }
 
@@ -100,12 +104,14 @@ export async function decide(w: World, constitution: string, overrides: Override
     try {
       const raw = await chat({ system, user, schema: DECISION_JSON_SCHEMA, schemaName: 'decision', temperature: 0.5, maxTokens: 6000 })
       const parsed = DecisionSchema.parse(JSON.parse(raw))
+      const ids2 = shortIdMap(w)
       const missing = ids.filter(id => !parsed.respondedToOverrides.includes(id))
       if (missing.length) throw new Error(`respondedToOverrides is missing override ids: ${missing.join(', ')}`)
       const d: Decision = {
         tick: w.tick,
         laws: parsed.laws.filter(l => !mem.vetoedTitles.has(l.title.toLowerCase())).map(l => ({ ...l, id: '', enactedTick: w.tick, support: 0, compliance: 0, policyKind: '', precedentIds: [], lovedBy: [], hatedBy: [] })),
-        repeal: parsed.repeal.filter(id => w.laws.some(l => l.id === id)),
+        repeal: parsed.repeal.map(id => ids2.get(id.trim()) ?? id.trim()).filter(id => w.laws.some(l => l.id === id)),
+        ...({ amend: parsed.amend.map(a => ({ id: ids2.get(a.id.trim()) ?? a.id.trim(), change: a.change.replace(/[\u2014\u2013]/g, ', ') })).filter(a => w.laws.some(l => l.id === a.id)) } as object),
         migrations: parsed.migrations.filter(m => m.from !== m.to).map(m => ({ ...m, people: Math.floor(m.people) })),
         budget: parsed.budget,
         religionPolicy: parsed.religionPolicy,
@@ -113,11 +119,11 @@ export async function decide(w: World, constitution: string, overrides: Override
         foundCities: parsed.foundCities.map(c => ({ name: c.name, regionId: c.regionId, lat: c.lat, lon: c.lon, reason: c.reason, ...(c.offWorld ? { offWorld: c.offWorld } : {}) })),
         charterCompanies: parsed.charterCompanies.map(c => ({ name: c.name, sector: c.sector, regionId: c.regionId, purpose: c.purpose })),
         researchFocus: parsed.researchFocus,
-        publicStatement: parsed.publicStatement.replace(/[—–]/g, ', '),
-        rationale: parsed.rationale.replace(/[—–]/g, ', '),
+        publicStatement: parsed.publicStatement.replace(/[\u2014\u2013]/g, ', '),
+        rationale: parsed.rationale.replace(/[\u2014\u2013]/g, ', '),
         respondedToOverrides: parsed.respondedToOverrides.filter(id => ids.includes(id)),
         lessonsApplied: parsed.lessonsApplied.filter(id => lessons.some(l => l.id === id)),
-        ...({ expectedResult: parsed.expectedResult.replace(/[\u2014\u2013]/g, ', ') } as object),
+        ...({ expectedResult: parsed.expectedResult.replace(/[\u2014\u2013]/g, ', '), diary: parsed.diary.replace(/[\u2014\u2013]/g, ', ') } as object),
       }
       return finish(d, w)
     } catch (e) {
@@ -138,5 +144,16 @@ export async function decide(w: World, constitution: string, overrides: Override
 function finish(d: Decision, w: World): Decision {
   const b = normalizeBudget(d.budget)
   for (const k of Object.keys(b) as (keyof typeof b)[]) b[k] = Math.round(b[k] * 1e6) / 1e6
-  return { ...d, tick: w.tick, budget: b }
+  // the diary: what the model wrote, or (offline) a plain note built from what it saw
+  const dx = d as Decision & { diary?: string }
+  const diary = dx.diary?.trim() || offlineDiary(w, d)
+  return { ...d, tick: w.tick, budget: b, ...({ diary } as object) }
+}
+
+// the offline governor's diary: the worst thing it sees and what it is betting on, in its own words
+function offlineDiary(w: World, d: Decision): string {
+  const worst = [...w.regions].sort((a, b) => b.r.unrest - a.r.unrest)[0]
+  const hungry = [...w.regions].sort((a, b) => a.r.foodKcalPerCapita - b.r.foodKcalPerCapita)[0]
+  const bet = Object.entries(d.budget).sort((a, b) => b[1] - a[1])[0]
+  return `What worries me most is ${worst.r.name}, unrest at ${Math.round(worst.r.unrest * 100)}%, and ${hungry.r.name} eating ${Math.round(hungry.r.foodKcalPerCapita)} kcal a day. I am betting most of the budget on ${bet[0]} (${Math.round(bet[1] * 100)}%). I do not know yet if that is enough.`
 }
