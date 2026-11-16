@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
+import { landClassOf } from './geo-lib'
 
 const GEO = path.join(process.cwd(), 'data', 'geo')
 const RAW = path.join(GEO, 'raw')
@@ -71,17 +72,16 @@ function bakeRasters(cities: { lat: number; lon: number; pop: number; id: string
     const t = tavg.map(a => a[i]), p = prec.map(a => a[i])
     const hasClimate = t.some(x => x !== 0) || p.some(x => x !== 0)
     if (hasClimate) land++
-    const meanT = t.reduce((a, b) => a + b, 0) / 12, sumP = p.reduce((a, b) => a + b, 0)
     // ESTIMATE land class from climate + built (ESA WorldCover is 10 m tiles, too large to bake; see sources.md)
     // 0 water, 1 ice, 2 tundra, 3 desert, 4 grass/scrub, 5 forest, 6 tropical forest, 7 cropland-ish, 8 built
-    const cls = !hasClimate ? 0 : built > 0.25 ? 8 : Math.max(...t) < 0 ? 1 : meanT < -2 ? 2 : sumP < 250 ? 3 : sumP < 500 ? 4 : meanT > 22 && sumP > 1500 ? 6 : pp[i] / (area / 1e6) > 50 ? 7 : 5
     const o = i * LAYERS
     buf[o] = Math.round(built * 255)
     buf[o + 1] = Math.min(255, Math.round(height))
     buf[o + 2] = pp[i] > 0 ? Math.min(255, Math.round(Math.log10(pp[i] + 1) * 30)) : 0
     buf[o + 3] = Math.min(255, Math.round(lights[i]))
-    buf[o + 4] = cls
     for (let m = 0; m < 12; m++) { buf[o + 5 + m] = hasClimate ? Math.max(0, Math.min(255, Math.round(t[m] + 60))) : 0; buf[o + 17 + m] = hasClimate ? Math.min(255, Math.round(p[m] / 4)) : 0 }
+    // land class from the stored (quantized) bytes, so geo-landclass.ts can redo it without a rebake
+    buf[o + 4] = landClassOf(buf, o, cellAreaKm2(row, RES, 0))
   }
   const farSize = writeGz('grid-025.bin.gz', buf)
   // near windows: 0.05 deg, 1 x 1 deg around every city over 1M

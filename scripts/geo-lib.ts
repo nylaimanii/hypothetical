@@ -109,3 +109,26 @@ export function buildNameIndex(countries: Country[]): (name: string) => string |
   return (name: string) => idx.get(norm(name))
 }
 
+
+// ESTIMATE land class from climate, population and built-up (ESA WorldCover is 10 m tiles, too large to bake; see
+// sources.md). 0 water, 1 ice, 2 tundra, 3 desert, 4 grass/scrub/savanna, 5 forest, 6 tropical forest, 7 cropland, 8 built.
+// reads one grid-025 cell: [built, height, popLog30, lights, class, 12 x temp+60, 12 x precip/4]. koppen-style rules:
+// ice if the warmest month is below 0 C, tundra if below 10 C (koppen ET); rainforest needs warmth, >1200 mm and at most
+// 3 dry months (<60 mm), otherwise tropical savanna; cropland is temperate/subtropical, 400-1100 mm and lived in
+// (>3 people/km2: farm belts like iowa ~15, the kansas wheat belt ~5), or anywhere settled above 50/km2 outside
+// rainforest; boreal land with >=250 mm is forest (taiga), wetter or emptier temperate land is forest
+export function landClassOf(buf: Uint8Array, o: number, cellKm2: number): number {
+  const t = Array.from({ length: 12 }, (_, m) => buf[o + 5 + m] - 60), p = Array.from({ length: 12 }, (_, m) => buf[o + 17 + m] * 4)
+  if (t.every(x => x === -60) && p.every(x => x === 0)) return 0
+  const built = buf[o] / 255, pop = buf[o + 2] ? Math.pow(10, buf[o + 2] / 30) - 1 : 0, dens = pop / cellKm2
+  const meanT = t.reduce((a, b) => a + b, 0) / 12, maxT = Math.max(...t), sumP = p.reduce((a, b) => a + b, 0), dry = p.filter(x => x < 60).length
+  if (built > 0.25) return 8
+  if (maxT < 0) return 1
+  if (maxT < 10) return 2
+  if (sumP < 250) return meanT < 0 ? 2 : 3 // cold and dry is polar tundra, not sand
+  if (meanT > 20 && sumP > 1200 && dry <= 3) return 6
+  if ((meanT >= 3 && meanT <= 24 && sumP >= 400 && sumP <= 1100 && dens > 3) || (dens > 50 && meanT <= 24)) return 7
+  if (meanT < 3) return sumP >= 250 ? 5 : 4
+  if (sumP < 500 || (meanT > 18 && dry >= 4) || (sumP < 800 && dens <= 3)) return 4
+  return 5
+}
