@@ -80,7 +80,7 @@ function applyOverride(w: World, o: Override, mem: GovernorMemory) {
 export type RunOpts = RunOptions & { agentId?: string; startFrom?: { runId: string; tick: number }; untilTick?: number }
 
 // repeated-law rate of the last finished world in this process (logged; not yet in the RunSummary contract)
-export let lawStats = { proposed: 0, repeated: 0 }
+export let lawStats = { proposed: 0, repeated: 0, amended: 0, converted: 0 }
 
 export async function runWorld(opts: RunOpts): Promise<RunSummary> {
   // fail fast: a real run never quietly drops to the offline governor
@@ -90,10 +90,10 @@ export async function runWorld(opts: RunOpts): Promise<RunSummary> {
   const usage: Usage = { llmCalls: 0, tokens: 0 }
   const t0 = Date.now()
   let summary: RunSummary
-  lawStats = { proposed: 0, repeated: 0 }
+  lawStats = { proposed: 0, repeated: 0, amended: 0, converted: 0 }
   Object.assign(briefStats, { calls: 0, maxTokens: 0, totalTokens: 0, compressed: 0 })
   try { summary = await withUsage(usage, () => runInner(opts, usage)) } finally { release() }
-  console.log(`[usage] ${opts.runId}: ${usage.llmCalls} llm calls, ${usage.tokens} tokens, ${((Date.now() - t0) / 1000).toFixed(1)}s wall, repeated laws ${lawStats.repeated}/${lawStats.proposed}, brief max ${briefStats.maxTokens} avg ${briefStats.calls ? Math.round(briefStats.totalTokens / briefStats.calls) : 0} tokens (cap ${BRIEF_TOKEN_CAP}, compressed ${briefStats.compressed}x)`)
+  console.log(`[usage] ${opts.runId}: ${usage.llmCalls} llm calls, ${usage.tokens} tokens, ${((Date.now() - t0) / 1000).toFixed(1)}s wall, laws: ${lawStats.proposed} new proposed, ${lawStats.converted} converted to amendments, ${lawStats.amended} amended, ${lawStats.repeated} no-op repeats, brief max ${briefStats.maxTokens} avg ${briefStats.calls ? Math.round(briefStats.totalTokens / briefStats.calls) : 0} tokens (cap ${BRIEF_TOKEN_CAP}, compressed ${briefStats.compressed}x)`)
   return summary
 }
 
@@ -153,10 +153,12 @@ async function tickBody(w: World, ctx: Ctx, decideFn: (w: World) => Promise<Deci
     const d = await decideFn(w)
     if (d) {
       const prev = ctx.mem.last
-      const { migrations } = applyDecision(w, d)
+      const { migrations, amended } = applyDecision(w, d)
       // record the enacted laws (real ids, metadata, support) and the migrations as ordered; how many really
       // moved is logged as an event. keeping the order (not the outcome) lets a branch replay this exactly.
+      // amendments are recorded as applied (real ids, converted ones included) so a replay does exactly the same
       decision = { ...d, laws: w.laws.filter(l => l.enactedTick === w.tick).map(l => ({ ...l })) }
+      Object.assign(decision, { amend: amended })
       const expected = ((d as Decision & { expectedResult?: string }).expectedResult || d.rationale.split(/(?<=[.!?])\s/)[0] || '').slice(0, 300)
       const reasoning: Reasoning = { saw, chose: choseOf(prev, d, decision.laws), expected }
       Object.assign(decision, { reasoning })
@@ -287,7 +289,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   }
   while (twin.status === 'alive' && (opts.untilTick === undefined || twin.tick < opts.untilTick)) stepTwin()
   if (w.status === 'alive' && opts.untilTick !== undefined && frames[frames.length - 1]?.tick !== w.tick) emit()
-  lawStats = { proposed: w.lawsProposed, repeated: w.lawsRepeated }
+  lawStats = { proposed: w.lawsProposed, repeated: w.lawsRepeated, amended: w.lawsAmended, converted: w.lawsConverted }
   if (w.status === 'destroyed') lessonsLearned = await extractLessons(rec(true))
   const final = rec(true)
   writeJsonAtomic(path.join(process.cwd(), 'data', 'runs', `${opts.runId}.json`), final)

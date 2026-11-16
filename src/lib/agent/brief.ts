@@ -110,12 +110,16 @@ function briefLines(w: World, b: Brief, cut: number): string[] {
   // crowding: growth since 2026 in regions without a new city (one line)
   const crowded = w.regions.filter(rs => !w.cities.some(c => c.regionId === rs.r.id && !c.offWorld) && rs.r.population > rs.pop0 * 1.05).map(rs => `${rs.r.id} +${Math.round((rs.r.population / rs.pop0 - 1) * 100)}%`)
   if (crowded.length) L.push(`growing with no new city since 2026: ${crowded.join(', ')}`)
-  if (w.lastRepeated.length) L.push(`your last decision re-passed laws already in force, they did NOTHING: ${w.lastRepeated.map(t => `"${t}"`).join(', ')}. pick different laws or repeal and replace.`)
+  if (w.lastConverted.length) L.push(`last time, new laws in covered kinds became amendments: ${w.lastConverted.join('; ')}`)
+  if (w.lastRepeated.length) L.push(`last time these changed nothing: ${w.lastRepeated.map(t => `"${t}"`).join(', ')}`)
   if (b.cities.length) L.push(`cities: ${b.cities.map(c => `${c.name} (${c.offWorld ?? c.region}, ${ppl(c.population)})`).join('; ')}`)
   if (b.companies.length) L.push(`companies: ${b.companies.map(c => `${c.name} ${c.sector} ${c.region} ${ppl(c.workers)}`).join('; ')}`)
   L.push(`factions power/hostility: ${b.factions.map(x => `${x.id} ${p2(x.power)}/${p2(x.hostility)}`).join(', ')}`)
-  L.push('ACTIVE LAWS, already in force, do not re-enact (id | title | kind | support | compliance):')
-  for (const l of cut >= 3 ? b.laws.slice(-8) : b.laws) L.push(`${l.id} | ${l.title} | ${l.policyKind} | ${p2(l.support)} | ${p2(l.compliance)}${l.vetoed ? ' | VETOED' : ''}`)
+  // active laws by short id (L1, L2...): amend or repeal them by that id; one active law per policy kind
+  const active = b.laws.filter(l => !l.vetoed)
+  L.push('ACTIVE LAWS (short id | title | kind | support | compliance):')
+  active.forEach((l, k) => { if (cut >= 3 && k < active.length - 8) return; L.push(`L${k + 1} | ${l.title} | ${l.policyKind} | ${p2(l.support)} | ${p2(l.compliance)}`) })
+  if (active.length) L.push(`kinds already covered (amend these, do not add new ones): ${[...new Set(active.map(l => l.policyKind))].join(', ')}`)
   const ev = w.events.filter(e => e.tick >= w.tick - 12 && e.significance >= (cut >= 1 ? 0.6 : 0.4) && e.kind !== 'law').slice(cut >= 1 ? -5 : -12)
   L.push(`events, last 12 months, significance >= .4: ${ev.length ? '' : 'none'}`)
   for (const e of ev) L.push(`${dateOf(e.tick)} ${e.kind}${e.regionId ? ` ${e.regionId}` : ''}: ${e.text}`)
@@ -138,4 +142,9 @@ export function briefText(w: World, b: Brief): string {
   const t = estimateTokens(text)
   briefStats.calls++; briefStats.totalTokens += t; briefStats.maxTokens = Math.max(briefStats.maxTokens, t)
   return text
+}
+
+// short id (L1, L2...) -> real law id, in the order the brief lists them
+export function shortIdMap(w: World): Map<string, string> {
+  return new Map(w.laws.filter(l => !l.vetoed).map((l, k) => [`L${k + 1}`, l.id]))
 }

@@ -125,7 +125,9 @@ export function similarTitle(a: string, b: string): boolean {
   return inter / new Set([...A, ...B]).size >= 0.75
 }
 
-export function applyDecision(w: World, d: Decision): { migrations: ScheduledMigration[] } {
+export type Amend = { id: string; change: string; converted?: boolean; title?: string }
+
+export function applyDecision(w: World, d: Decision): { migrations: ScheduledMigration[]; amended: Amend[] } {
   if (d.repeal.length) {
     const gone = w.laws.filter(l => d.repeal.includes(l.id))
     w.laws = w.laws.filter(l => !d.repeal.includes(l.id))
@@ -133,17 +135,36 @@ export function applyDecision(w: World, d: Decision): { migrations: ScheduledMig
   }
   const fresh: Law[] = []
   w.lastRepeated = []
+  w.lastConverted = []
+  const applied: Amend[] = []
+  const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+  // amend an active law: its text changes, it is re-read (policy kind, precedents, who wins and loses)
+  const amend = (law: Law, change: string, converted: boolean, title?: string) => {
+    if (!change.trim() || norm(change) === norm(law.text)) {
+      w.lawsRepeated++
+      w.lastRepeated.push(title ?? law.title)
+      event(w, { kind: 'law', text: `repeated: "${title ?? law.title}" changes nothing in "${law.title}" (${law.id})`, severity: 0.05 })
+      return
+    }
+    law.text = change.slice(0, 1200)
+    const meta = lawMeta(law)
+    w.lawMeta[law.id] = meta
+    Object.assign(law, { policyKind: meta.policyKind, precedentIds: meta.precedentIds, lovedBy: meta.lovedBy, hatedBy: meta.hatedBy })
+    if (converted) { w.lawsConverted++; w.lastConverted.push(`${title} -> ${law.id}`) } else w.lawsAmended++
+    applied.push({ id: law.id, change: law.text, converted, ...(title ? { title } : {}) })
+    event(w, { kind: 'law', text: converted ? `amended ${law.id} "${law.title}" (proposed as the new law "${title}")` : `amended ${law.id} "${law.title}"`, severity: 0.15 })
+  }
+  for (const am of ((d as Decision & { amend?: Amend[] }).amend ?? []).slice(0, MAX_LAWS_PER_DECISION)) {
+    const law = w.laws.find(l => l.id === am.id && !l.vetoed)
+    if (law) amend(law, am.change, !!am.converted, am.title)
+  }
   d.laws.slice(0, MAX_LAWS_PER_DECISION).forEach((l, i) => {
     const meta = lawMeta(l)
     w.lawsProposed++
-    // a law that matches an active one (same policy kind, similar title) is a no-op, logged as repeated
-    const dup = [...w.laws, ...fresh].find(x => !x.vetoed && x.policyKind === meta.policyKind && similarTitle(x.title, l.title))
-    if (dup) {
-      w.lawsRepeated++
-      w.lastRepeated.push(l.title)
-      event(w, { kind: 'law', text: `repeated: "${l.title}" is already in force as "${dup.title}", nothing changes`, severity: 0.05 })
-      return
-    }
+    // one active law per policy kind: a new law in a kind that is already covered amends that law instead
+    const covered = meta.policyKind !== 'other' ? [...w.laws, ...fresh].find(x => !x.vetoed && x.policyKind === meta.policyKind) : undefined
+    const dup = covered ?? [...w.laws, ...fresh].find(x => !x.vetoed && x.policyKind === meta.policyKind && similarTitle(x.title, l.title))
+    if (dup) { amend(dup, l.text, true, l.title); return }
     const id = l.id && !w.laws.some(x => x.id === l.id) ? l.id : `L${w.tick}-${i}`
     w.lawMeta[id] = meta
     fresh.push({ ...l, id, enactedTick: w.tick, support: 0.5, compliance: 0.5, vetoed: false, policyKind: meta.policyKind, precedentIds: meta.precedentIds, lovedBy: meta.lovedBy, hatedBy: meta.hatedBy })
@@ -177,7 +198,7 @@ export function applyDecision(w: World, d: Decision): { migrations: ScheduledMig
   charterCompanies(w, d.charterCompanies ?? [])
   for (const id of d.lessonsApplied ?? []) w.lessonsApplied.add(id)
   const migrations = scheduleMigrations(w, d.migrations, monthlyRevenue(w), effectiveBudget(w).welfare)
-  return { migrations }
+  return { migrations, amended: applied }
 }
 
 const r4 = (x: number) => Math.round(x * 1e4) / 1e4

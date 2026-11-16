@@ -5,7 +5,7 @@
 import { z } from 'zod'
 import type { Decision, Lesson, Override } from '../types'
 import { normalizeBudget, type World } from '../sim/state'
-import { briefText, buildBrief } from './brief'
+import { briefText, buildBrief, shortIdMap } from './brief'
 import { offlineDecision } from './fallback'
 import { chat, llmEnabled } from './llm'
 import { relevantLessons } from './lessons'
@@ -20,6 +20,7 @@ export const DecisionSchema = z.object({
     layer: z.enum(['physics', 'biology', 'government', 'economy', 'tech', 'religion', 'media', 'family']),
   })).default([]).transform(a => a.slice(0, 5)),
   repeal: z.array(z.string()).default([]),
+  amend: z.array(z.object({ id: z.string(), change: z.string() })).default([]).transform(a => a.slice(0, 5)),
   migrations: z.array(z.object({ from: z.enum(REGION_IDS), to: z.enum(REGION_IDS), people: num.min(0), reason: z.string().default('').transform(x => x.slice(0, 300)) })).default([]).transform(a => a.slice(0, 6)),
   budget: z.object({ food: num.min(0), energy: num.min(0), education: num.min(0), space: num.min(0), security: num.min(0), welfare: num.min(0), research: num.min(0) }),
   religionPolicy: z.enum(['free', 'state_neutral', 'state_faith', 'discouraged']),
@@ -63,9 +64,9 @@ ${lessons.length ? lessons.map(l => `- [${l.id}] mistake: ${l.mistake}. result: 
 
 A HUMAN OBSERVER may veto your laws, inject events, or force your budget. These appear in overridesSinceLastDecision. List every override id in respondedToOverrides and explain your response in the rationale. Do not re-enact a vetoed law under the same title.
 
-ACTIVE LAWS are listed in the brief. Do not re-enact an active law: a law matching one already in force does nothing and is logged as repeated. To change a law, repeal it by id and pass a different one, or pick something new.
+ACTIVE LAWS have short ids (L1, L2...). To change one, put it in amend [{id, change}] with the new text. To end one, put its id in repeal. Use laws only for policy kinds that are not covered yet; a new law in a covered kind becomes an amendment of the existing law.
 
-Reply with one JSON decision (laws, repeal, migrations, budget, religionPolicy, schoolPolicy, foundCities, charterCompanies, researchFocus as requirement ids or tracks, publicStatement in plain words, rationale in first person with no em-dashes, respondedToOverrides, lessonsApplied, expectedResult: what you expect to change in 2 years, with numbers). Company sectors: ${SECTORS.join(', ')}.
+Reply with one JSON decision (laws, amend, repeal, migrations, budget, religionPolicy, schoolPolicy, foundCities, charterCompanies, researchFocus as requirement ids or tracks, publicStatement in plain words, rationale in first person with no em-dashes, respondedToOverrides, lessonsApplied, expectedResult: what you expect to change in 2 years, with numbers). Company sectors: ${SECTORS.join(', ')}.
 Be brief, every word costs time: at most 3 new laws, each law text under 25 words; rationale under 60 words; publicStatement one sentence; researchFocus at most 4 ids; empty lists are fine. At most 3 cities and 3 companies. Names must be original. Region ids: ${REGION_IDS.join(', ')}.`
 }
 
@@ -100,12 +101,14 @@ export async function decide(w: World, constitution: string, overrides: Override
     try {
       const raw = await chat({ system, user, schema: DECISION_JSON_SCHEMA, schemaName: 'decision', temperature: 0.5, maxTokens: 6000 })
       const parsed = DecisionSchema.parse(JSON.parse(raw))
+      const ids2 = shortIdMap(w)
       const missing = ids.filter(id => !parsed.respondedToOverrides.includes(id))
       if (missing.length) throw new Error(`respondedToOverrides is missing override ids: ${missing.join(', ')}`)
       const d: Decision = {
         tick: w.tick,
         laws: parsed.laws.filter(l => !mem.vetoedTitles.has(l.title.toLowerCase())).map(l => ({ ...l, id: '', enactedTick: w.tick, support: 0, compliance: 0, policyKind: '', precedentIds: [], lovedBy: [], hatedBy: [] })),
-        repeal: parsed.repeal.filter(id => w.laws.some(l => l.id === id)),
+        repeal: parsed.repeal.map(id => ids2.get(id.trim()) ?? id.trim()).filter(id => w.laws.some(l => l.id === id)),
+        ...({ amend: parsed.amend.map(a => ({ id: ids2.get(a.id.trim()) ?? a.id.trim(), change: a.change.replace(/[\u2014\u2013]/g, ', ') })).filter(a => w.laws.some(l => l.id === a.id)) } as object),
         migrations: parsed.migrations.filter(m => m.from !== m.to).map(m => ({ ...m, people: Math.floor(m.people) })),
         budget: parsed.budget,
         religionPolicy: parsed.religionPolicy,
