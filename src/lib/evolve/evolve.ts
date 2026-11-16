@@ -310,6 +310,20 @@ function publishNow(g: GenerationFile, current: { runId: string; agentId: string
 const hhmm = (t: number) => new Date(t).toTimeString().slice(0, 5)
 const bestRunOf = (c: Candidate) => c.full ?? [...(c.runs ?? [])].sort((a, b) => b.score - a.score)[0]
 
+// one explain-gaps job at a time; its last line goes to the log
+let gapsRunning = false
+function startGapReplays(log: (l: string) => void) {
+  if (gapsRunning) return
+  gapsRunning = true
+  try {
+    const child = spawn(process.execPath, [path.join(codeRoot(), 'node_modules', 'tsx', 'dist', 'cli.mjs'), '--tsconfig', path.join(codeRoot(), 'tsconfig.json'), path.join(codeRoot(), 'scripts', 'explain-gaps.ts')], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, LLM_PROVIDER: 'offline' } })
+    let out = ''
+    child.stdout.on('data', d => { out += d })
+    child.stderr.on('data', d => { out += d })
+    child.on('exit', () => { gapsRunning = false; for (const l of out.trim().split('\n').filter(l => l.startsWith('explain-gaps:'))) log(l) })
+  } catch (e) { gapsRunning = false; log(`explain-gaps could not start: ${(e as Error).message}`) }
+}
+
 function updateLeaderboard(g: GenerationFile): LeaderboardEntry[] {
   const all = [...readLeaderboard()]
   for (const c of g.population) {
@@ -517,6 +531,8 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
     moved = pb.lessons.filter(l => l.previous !== null && l.confidence !== null).sort((a, b) => Math.abs(b.confidence! - b.previous!) - Math.abs(a.confidence! - a.previous!))[0]
     if (moved && moved.confidence === moved.previous) moved = undefined
   } catch (e) { deps.log(`playbook failed: ${(e as Error).message}`) }
+  // why the top entries beat the next, tested by replay: a background job (pure replays, no model, no lock)
+  startGapReplays(deps.log)
   const topStep = steps.helped[0], deadliest = steps.hurt[0]
   const stepLines = [
     topStep ? `top step so far: ${topStep.text} (effect +${topStep.effect}, ${topStep.helpedWorlds.length} worlds helped)` : '',

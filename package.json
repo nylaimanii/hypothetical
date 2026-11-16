@@ -18,6 +18,7 @@
     "promote-stable": "tsx scripts/promote-stable.ts",
     "morning": "tsx scripts/morning.ts",
     "consistency": "tsx scripts/consistency.ts",
+    "explain-gaps": "tsx scripts/explain-gaps.ts",
     "hooks:install": "sh scripts/hooks/install.sh"
   },
   "dependencies": {

@@ -509,3 +509,16 @@ test("autopsy reads the sim's own record.autopsy when there is one, and says whe
   assert.match(a.chain[0].because, /linked by timing, not proven$/)
   assert.match(autopsyLines(a).join('\n'), /the core's call, 2026-11: the core raised security from 12% to 40% of the budget \(linked by timing, not proven\)\. its reasoning that year: "security keeps order"/)
 })
+
+test('leaderboard gaps: decisions said from the two records, replayed ones first, untested ones say so', async () => {
+  const { decisionDiff, gapFor, gapKey } = await import('./gaps')
+  const d = (food: number, laws: string[]) => ({ budget: { food, energy: 0.1, education: 0.1, space: 0.1, security: 0.1, welfare: 0.2, research: 0.1 }, laws: laws.map(title => ({ title })), religionPolicy: 'free' }) as never
+  assert.equal(decisionDiff('meridian iii', d(0.25, ['Grain Reserve Act']), d(0.1, [])), 'meridian iii put 25% of the budget into food (not 10%), passed "Grain Reserve Act"')
+  const e = (id: string, explainGap?: unknown) => ({ candidateId: id, name: id, generation: 1, score: 1, constitution: id, origin: 'seed', best: {}, explainGap }) as never
+  const lb = [e('a', { vs: 'w2', decisive: ['x'], consequence: null, text: 'a put more into food.' }), e('b'), e('c')]
+  assert.equal(gapFor(lb, 0, {})!.method, 'pattern')
+  assert.match(gapFor(lb, 0, {})!.text, /not yet tested by replay\)$/)
+  const g = { [gapKey('a', 'b')]: { lowerRun: 'w2', seed: 7, gap: 5e6, reasons: [{ text: 'in 2030-11, a put 30% into food' }], text: 'on seed 7, a had 5 million more people alive' } } as never
+  assert.deepEqual(gapFor(lb, 0, g), { method: 'replay', vs: 'w2', seed: 7, gap: 5e6, decisive: ['in 2030-11, a put 30% into food'], text: 'on seed 7, a had 5 million more people alive' })
+  assert.equal(gapFor(lb, 2, {}), null)
+})
