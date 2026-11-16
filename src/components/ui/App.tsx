@@ -54,7 +54,8 @@ function Waiting() {
   const runsSource = useStore((s) => s.runsSource)
   const runs = useStore((s) => s.runs)
   const offline = useStore((s) => s.runnerOffline)
-  const text = offline ? 'the world runner is offline' : runsSource === 'api' && runs.length === 0 ? 'no worlds have run yet' : 'loading worlds'
+  const live = useStore((s) => s.liveRunId)
+  const text = offline ? 'the world runner is offline' : live && live !== 'sandbox' ? 'the world is starting' : runsSource === 'api' && runs.length === 0 ? 'no worlds have run yet' : 'loading worlds'
   return <main className="flex h-screen w-screen items-center justify-center bg-bone"><p className="font-display text-[17px] text-ink/60">{text}</p></main>
 }
 
@@ -77,7 +78,8 @@ function useLive() {
     const tick = async () => {
       try {
         const rec = await api.live(liveRunId)
-        if (stop) return
+        // a world that has just started has no frames yet: keep waiting (the waiting screen says so)
+        if (stop || !rec?.frames?.length) return
         const s = useStore.getState()
         const atEnd = s.playhead >= (s.record.frames.at(-1)?.tick ?? 0) - 0.01
         if (s.source !== 'live' || s.record.runId !== rec.runId) s.setRecord(rec, 'live')
@@ -141,10 +143,13 @@ function useUrlState() {
         if (tabs.length) useStore.getState().setTabs(run && !tabs.includes(run) ? [...tabs, run] : tabs)
         if (run && run !== useStore.getState().record.runId) await openRun(run, t)
         // no world in the url: open the best real world once the run list is in (never the placeholder)
-        if (!run && useStore.getState().source === 'mock') await openDefaultWorld()
+        if (!run && !q.get('live') && useStore.getState().source === 'mock') await openDefaultWorld()
         if (!useStore.getState().tabs.length && useStore.getState().source !== 'mock') useStore.getState().setTabs([useStore.getState().record.runId])
       }
       if (t !== undefined && isFinite(t)) useStore.getState().setPlayhead(t)
+      // ?live=<runId>: follow a live world (a rerun started from /assumptions)
+      const live = q.get('live')
+      if (live && /^[\w.-]+$/.test(live) && useStore.getState().liveRunId !== live) { useStore.getState().setIntro(false); useStore.getState().setLive(live) }
       // ?place=<country>: fly to that country (iso3 code or name, any case), used by the one-life site's world button
       const place = q.get('place')?.trim().toLowerCase()
       if (place) {

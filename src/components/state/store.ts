@@ -29,8 +29,8 @@ export type Zoom = 'far' | 'mid' | 'close'
 export type Quality = 'high' | 'fast'
 export type Source = 'mock' | 'api' | 'live'
 // what this server can do (GET /api/capabilities): on the deployed site these are all off, and the controls hide
-export type Caps = { readOnly: boolean; playLive: boolean; petitions: boolean; whatIf: boolean; branch: boolean; override: boolean; ask: boolean; evolveNow: boolean }
-export const NO_CAPS: Caps = { readOnly: true, playLive: false, petitions: false, whatIf: false, branch: false, override: false, ask: false, evolveNow: false }
+export type Caps = { readOnly: boolean; playLive: boolean; petitions: boolean; whatIf: boolean; rerun: boolean; branch: boolean; override: boolean; ask: boolean; evolveNow: boolean }
+export const NO_CAPS: Caps = { readOnly: true, playLive: false, petitions: false, whatIf: false, rerun: false, branch: false, override: false, ask: false, evolveNow: false }
 // a visual effect trigger, from frame events or local injections
 export type Juice = { id: number; kind: WorldEvent['kind']; regionId?: string; severity: number; text: string; at: number; tick?: number }
 // a camera shot: a region or the core, asked for by the director, the feed, or the user
