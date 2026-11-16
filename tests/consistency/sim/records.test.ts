@@ -93,6 +93,13 @@ for (const id of worldIds()) {
     assert.equal(t.population, Math.round(r.frames.at(-1)!.globalPopulation), 'tradeoff population vs the last frame')
   })
 
+  test(`${id}: no frame shows a life expectancy or fertility of 0 while people are alive`, { skip: atLeast(version, '5.10.4') ? false : 'made by a sim older than 5.10.4' }, () => {
+    for (const f of r.frames) {
+      if (f.globalPopulation > 0) assert.ok(f.globalPeriodLifeExpectancy > 0, `${f.date}: world life expectancy 0`)
+      for (const reg of f.regions) if (reg.population > 0) { assert.ok(reg.periodLifeExpectancy > 0, `${reg.id} ${f.date}: life expectancy 0`); assert.ok(reg.fertility > 0, `${reg.id} ${f.date}: fertility 0`) }
+    }
+  })
+
   test(`${id}: its no-ai twin shares the seed, the regions and the calendar`, () => {
     const f = path.join(process.cwd(), 'data', 'runs', `${id}.twin.json`)
     if (!fs.existsSync(f)) return

@@ -28,7 +28,8 @@ export function populationAt(r: Rec, tick: number, regionId?: string): number {
   return regionId ? Math.round(f.regions.find(x => x.id === regionId)?.population ?? 0) : Math.round(f.regions.reduce((a, x) => a + x.population, 0))
 }
 export const frontierAt = (r: Rec, tick: number) => frameAt(r, tick)?.frontier
-export const lifeExpectancyAt = (r: Rec, tick: number) => frameAt(r, tick)?.globalPeriodLifeExpectancy
+// undefined (never 0) where a record did not compute it (frames before the first simulated year, sims before 5.10.4)
+export const lifeExpectancyAt = (r: Rec, tick: number) => { const v = frameAt(r, tick)?.globalPeriodLifeExpectancy; return v && v > 0 ? v : undefined }
 
 // deaths by cause up to a tick (cumulative since 2026). causes the sim counts: all deaths, famine, pandemic, riots,
 // disasters, health and social spending vs 2026 (welfare), air, water, despair, housing

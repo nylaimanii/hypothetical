@@ -330,6 +330,8 @@ export function initWorld(seed: number, twin: boolean, assumptions?: Record<stri
     const P = cs.reduce((a, c) => a + c.bands.reduce((x, y) => x + y, 0), 0)
     if (P > 0) rs.periodLE = cs.reduce((a, c) => a + c.ple * c.bands.reduce((x, y) => x + y, 0), 0) / P
     if (P > 0) rs.gompertzA = cs.reduce((a, c) => a + c.gompertzA * c.bands.reduce((x, y) => x + y, 0), 0) / P
+    // the public region fields carry the 2026 values from the first frame (no 0 before the first year is simulated)
+    if (P > 0) { rs.cohortLE = rs.periodLE; rs.r.periodLifeExpectancy = Math.round(rs.periodLE * 10) / 10; rs.r.lifeExpectancy = Math.round(rs.periodLE * 10) / 10; rs.r.fertility = Math.round(cs.reduce((a, c) => a + c.tfr * c.bands.reduce((x, y) => x + y, 0), 0) / P * 1000) / 1000 }
   }
   for (const c of world.countries) c.daily = initDaily(world, c, world.regions.find(r => r.r.id === c.regionId)!)
   initPower(world)
