@@ -96,3 +96,19 @@ enforce it in code, not just by looking:
 - GET /api/hall -> HallEntry[]
 - POST /api/branch { runId, tick, agentId } -> { runId } (a new live world from that run's snapshot at tick, governed by agentId)
 - GET /api/steps?runs=<id,id,...> -> Step[] (the cross-world recipe: decisions ranked by how much they helped or hurt across worlds)
+
+## ragdoll rules
+
+applies to every ragdoll / pip / person in the whole project, main site and life site. run this checklist on every scene before showing anything, and enforce it in code (dev-time checks that log who, where and what), not only by looking.
+
+- bodies never clip into other bodies, walls, furniture, poles, or the ground
+- held/carried things sit in the hands or arms, in front of the body, with arms visibly wrapped around them (arm ik). nothing sinks into a chest or floats beside someone
+- babies are always held, carried, in a crib, or in a stroller with an adult right there. kids under ~8 are never alone in public
+- feet on the ground, no floating, no sliding. sitting means on a chair, bench, stoop, or the ground in a natural pose, and the chair is under them
+- people face what they're doing: whoever they're talking to, their work, the direction they're walking
+- actions fit the time, place, age, and job (no one cooking in the street at 3am, no 5-year-old at a factory, no office worker in a field)
+- crowds keep personal space, walk around each other, and don't stack
+- objects are the right size relative to people (chairs, doors, cars, tables)
+- nothing appears or vanishes suddenly
+
+enforcement: dev builds run per-frame checks (body/prop overlap and penetration, held-item-to-hand distance, feet-to-ground distance, child-without-adult, facing walls) and log every violation. a qa script runs 3 full sim days across different cities and ages and reports every violation; zero violations before a commit that touches people.
