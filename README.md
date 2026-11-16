@@ -116,9 +116,18 @@ Full records are about 34MB, and evolution makes about 130 a day, so retention r
 - **Stable deploys, daily between 3 and 6am:** a clean copy of `origin/main` is typechecked, built and tested. If all three pass, `stable` fast-forwards to it.
   - Vercel should deploy production from `stable` (set the production branch in the Vercel project settings).
   - `vercel.json` turns off deploys of `main` and `data-backup`.
-- **Morning digest, 8am:** one telegram with the night's worlds, the best world, new lessons, deaths, D's life stories when there are any, and disk and health.
+- **Morning digest, 8am:** one telegram with everything since the last digest: the most interesting world, the tally by sim version, new lessons, deaths, a sim switch if there was one, a short lives section (the most interesting chosen life that ended, 2 lines at most), and disk and health.
+  - Evolve's watchdog sends it, and so does the `com.hypothetical.morning` launchd job at 8:05 (retries at 9:05, 10:05 and 12:05). A mac asleep at 8 sends it on wake.
+  - A claim file per day (`data/.morning-<date>`) stops a double send. A failed send gives the claim back for the next try. `npm run morning -- --dry` previews it.
+- **Lives in the gaps:** B's `runWorld` holds the ollama lock for a whole world, so evolution always comes first. Between two worlds, when D's chosen lives are running, evolve opens a gap (`data/.ollama.gap`, up to `HYP_LIFE_GAP_S`, default 60s, `0` turns it off). It ends early once the lives stop asking. While evolution is paused, the gap stays open.
 - **Quality check, weekly:** between worlds, the champion's best full world is replayed with `qwen2.5:14b` (`QUALITY_MODEL`). The report says whether the result holds up against the 7b screening (same survival, score within 20%). It is saved to `data/quality/`.
 - **Restarts:** the runner also restarts at a generation boundary when the evolution code itself changes on `origin/main`, with no version rollover.
+- **After a reboot:** `scripts/launchd/install.sh` installs `com.hypothetical.evolve`, which starts the runner at login and again after a crash (a normal stop stays stopped). Undo with `scripts/launchd/install.sh --uninstall`.
+  - The jobs start after login. With FileVault on, a restarted mac waits at the login screen until someone logs in.
+  - Only one supervisor and one evolve run at a time (`data/.evolve-supervisor.pid`, `data/.evolve.lock`). A second start exits, or adopts a running evolve that has no supervisor, before any git command.
+  - Locks and queue tickets written before the last boot are cleared at start, since their pids may now belong to other programs.
+  - The generation in progress resumes: finished worlds are kept, and the world that was interrupted runs again.
+  - `npm run evolve` goes through the runner (a clean worktree of `origin/main`). `npm run evolve:here` runs the working copy directly, for tests only.
 
 ## reality check
 
@@ -158,6 +167,10 @@ Telegram, the morning digest and the front of the PDF digest are written by a na
 | `/agents` | the top 5 agents |
 | `/pause`, `/resume` | stop and restart new worlds being started |
 | `/ask <question>` | asks the governor about the current best world |
+| `/worlds` | this generation's worlds: agent, seed, status, score and a link (a report for finished worlds, the globe for the running one), then what is queued |
+| `/lives` | everyone being lived right now, by continent, with whose world they live in |
+| `/life <name>`, `/mute`, `/unmute`, `/quiet`, `/loud` | D's life commands, answered by the same listener (one poller per bot) |
+| `/help` | the command list |
 
 ## email reports
 
@@ -197,6 +210,7 @@ PDFs styled like the site go out over gmail and are always saved to `data/report
 | `POST /api/petition` `{ runId, tick, text }` | the petition, `status: 'pending'`. the core answers in the background from the world as it stood at that tick. until the sim supports petitions the answer changes nothing (`effect: null`, `simulated: false`). 503 in read-only |
 | `GET /api/petitions/[runId]` | every petition for that world, oldest first, with the core's answers |
 | `POST /api/whatif` `{ runId, tick, change }` | `{ runId, original, appliedAt, exact }`, a new world from that moment with one override flipped (`inject_event`, `veto_law` or `force_budget`), same agent, full speed. a budget forced on a decision tick lands one tick later, since the governor takes a forced budget back at its next decision. `exact: false` until the sim can replay the original decisions. 409 when the original was made by another sim version. 503 in read-only |
+| `GET /api/status` | local only (404 on a deploy or a non-local host): evolution progress, the ollama lock, queue and lives gap, lives by continent, disk, the last 10 telegram messages, and each agent's latest commit on `origin/main`. `?view=html` is the page A mounts at `/status`, refreshing every 15s |
 | `GET /api/whatif/[id]` | the what-if and its original side by side (slim), the decisions that diverged from the flip on, and whether it is still running |
 | `GET /api/runs/[id]` | `RunRecord`; with `?slim=1` a `SlimRun` (no frames, yearly rows and decision rows) |
 | `POST /api/live/start` `{ constitution?, seed? }` | `{ runId }`, spawns a live world at 1 second per month |

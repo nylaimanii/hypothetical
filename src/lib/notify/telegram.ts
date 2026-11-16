@@ -1,4 +1,6 @@
 // telegram notifications. missing env logs once and every call becomes a no-op. never throws.
+import fs from 'node:fs'
+import path from 'node:path'
 import type { HallEntry, Lesson, RunRecord, RunSummary } from '../types'
 import { readAgents } from '../evolve/agents'
 import { epitaphOf } from './epitaph'
@@ -32,7 +34,24 @@ export async function tg<T = unknown>(method: string, body: Record<string, unkno
 export async function send(text: string): Promise<boolean> {
   const env = telegramEnv()
   if (!env) return false
-  return !!(await tg('sendMessage', { chat_id: env.chatId, text: text.slice(0, 4000), disable_web_page_preview: true }))
+  const ok = !!(await tg('sendMessage', { chat_id: env.chatId, text: text.slice(0, 4000), disable_web_page_preview: true }))
+  logSent(text, ok)
+  return ok
+}
+
+// the last 50 messages (text only, never the token or chat id) for the local status page
+export const sentLogFile = () => path.join(process.cwd(), 'data', 'telegram-log.json')
+export type SentMessage = { at: string; ok: boolean; text: string; from: string }
+function logSent(text: string, ok: boolean) {
+  try {
+    let list: SentMessage[] = []
+    try { list = JSON.parse(fs.readFileSync(sentLogFile(), 'utf8')) as SentMessage[] } catch { /* first one */ }
+    const from = path.basename(process.argv[1] ?? 'node').replace(/\.ts$/, '')
+    list = [...list, { at: new Date().toISOString(), ok, text: text.slice(0, 1200), from }].slice(-50)
+    const tmp = `${sentLogFile()}.${process.pid}.tmp`
+    fs.writeFileSync(tmp, JSON.stringify(list))
+    fs.renameSync(tmp, sentLogFile())
+  } catch { /* logging must never break a message */ }
 }
 
 export const fmtPop = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(0)}k` : String(Math.round(n))
