@@ -102,7 +102,8 @@ export function stepDemography(w: World, fx: Record<string, LawEffects>): { birt
   for (const rs of w.regions) {
     const pop = regionPop(rs)
     if (pop <= 0) continue
-    const welfarePC = rs.spend.welfare * 12 / pop
+    // rising pension bills squeeze what is left for health and social care (physical.ts)
+    const welfarePC = Math.max(0, rs.spend.welfare * 12 / pop - (rs.pensionSqueeze ?? 0))
     // ESTIMATE: health and social spending cut mortality up to 15% at saturation, relative to 2026 levels
     const welfareMult = (1 - 0.15 * fWelfare(welfarePC)) / (1 - 0.15 * fWelfare(rs.pc0.welfare))
     // health laws: primary care and vaccination drives cut mortality as they are followed, most where health is poorest.

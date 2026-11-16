@@ -3,6 +3,7 @@
 import { housingLine } from '../sim/housing'
 import { dailyLines } from '../sim/daily'
 import { powerLines } from '../sim/power'
+import { physicalLines } from '../sim/physical'
 import type { Override, WorldEvent } from '../types'
 import { dateOf } from '../sim/constants'
 import { monthlyRevenue } from '../sim/physics'
@@ -114,6 +115,7 @@ function briefLines(w: World, b: Brief, cut: number): string[] {
   if (hl) L.push(hl)
   L.push(...dailyLines(w))
   L.push(...powerLines(w))
+  L.push(...physicalLines(w))
   // what health and social spending is doing to deaths, so a governor can see the cost of cutting it
   if (Math.abs(w.welfareDeathsYear) > 1e5) L.push(`health and social spending vs 2026: ${w.welfareDeathsYear > 0 ? `cuts cost ~${(w.welfareDeathsYear / 1e6).toFixed(1)}M extra deaths` : `~${(-w.welfareDeathsYear / 1e6).toFixed(1)}M lives saved`} last year`)
   // crowding: growth since 2026 in regions without a new city (one line)

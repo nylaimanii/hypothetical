@@ -70,7 +70,8 @@ export function stepEnergy(w: World, fx: Record<string, LawEffects>, sectors: Re
     const consumption = Math.min(demand, rs.capacityTWh)
     why(rs, 'energyTWh', 'demand met by capacity', consumption - rs.r.energyTWh)
     rs.r.energyTWh = consumption
-    rs.energyRatio = demand > 0 ? consumption / demand : 1
+    // a closed chokepoint takes LNG away from gas-fired power (physical.ts)
+    rs.energyRatio = (demand > 0 ? consumption / demand : 1) * (1 - (rs.chokeEnergy ?? 0))
   }
 }
 
@@ -96,7 +97,7 @@ export function stepFood(w: World, fx: Record<string, LawEffects>, sectors: Reco
     const drought = (w.tick < rs.droughtUntil ? rs.droughtSev : 0) * (1 - 0.4 * reqProgress(w, 'drought_crops'))
     // ESTIMATE: farm output scales with energy availability^0.25 (fertilizer, irrigation, transport)
     // climate: staple yields fall ~5% per C of warming above 2026 (Zhao et al. 2017)
-    const p = rs.foodBase * rs.yieldIdx * Math.pow(rs.energyRatio, 0.25) * (1 - drought) * (rs.inRevolt ? 0.92 : 1) * climateYield(w) * rs.collectiveMult
+    const p = rs.foodBase * rs.yieldIdx * Math.pow(rs.energyRatio, 0.25) * (1 - drought) * (rs.inRevolt ? 0.92 : 1) * climateYield(w) * rs.collectiveMult * (rs.physFood ?? 1)
     prod.push(Math.min(p, KCAL_CAP * pop))
   }
   // the world government pools part of every surplus above 2,700 kcal and ships it to regions under 2,400.
@@ -170,6 +171,8 @@ export function stepEconomy(w: World, popBefore: number[]) {
     g -= drag
     // automation productivity and capital flight (power.ts)
     g += (rs.autoGrowth ?? 0) - (rs.flightDrag ?? 0)
+    // closed chokepoints (oil shock, rerouting) and the working-age share beyond its 2026 trend (physical.ts)
+    g += (rs.demoGrowth ?? 0) - (rs.chokeDrag ?? 0)
     const agglom = 0.2 * clamp(rs.newCityPop / Math.max(pop, 1) * 10)
     g += 0.01 * agglom
     why(rs, 'gdpUsd', 'strikes and protests', -drag * rs.r.gdpUsd / 12)
