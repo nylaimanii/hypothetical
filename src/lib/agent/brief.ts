@@ -1,5 +1,6 @@
 // the observation the governor sees. only public state: no rng, no future events, no hidden formulas
 // beyond the published rules of the world.
+import { housingLine } from '../sim/housing'
 import type { Override, WorldEvent } from '../types'
 import { dateOf } from '../sim/constants'
 import { monthlyRevenue } from '../sim/physics'
@@ -107,6 +108,8 @@ function briefLines(w: World, b: Brief, cut: number): string[] {
     .sort((x, y) => Math.abs(y.dl) + Math.abs(y.dp) - Math.abs(x.dl) - Math.abs(x.dp)).slice(0, 10)
   if (moved.length) L.push(`countries moving most: ${moved.map(m => `${m.c.name} livability ${m.dl >= 0 ? '+' : ''}${Math.round(m.dl * 100)}pt${m.c.damage > 0.1 ? ' (damaged)' : ''}`).join(', ')}`)
   L.push(`climate: +${w.climate.anomalyC.toFixed(2)} C, ${w.climate.gtPerYear.toFixed(1)} Gt CO2 a year`)
+  const hl = housingLine(w)
+  if (hl) L.push(hl)
   // crowding: growth since 2026 in regions without a new city (one line)
   const crowded = w.regions.filter(rs => !w.cities.some(c => c.regionId === rs.r.id && !c.offWorld) && rs.r.population > rs.pop0 * 1.05).map(rs => `${rs.r.id} +${Math.round((rs.r.population / rs.pop0 - 1) * 100)}%`)
   if (crowded.length) L.push(`growing with no new city since 2026: ${crowded.join(', ')}`)

@@ -80,7 +80,7 @@ export function stepLaws(w: World): Record<string, LawEffects> {
       const sued = (w.lawsuits[l.id] ?? -1) > w.tick ? 0.4 : 1
       // coercive policies can be enforced by force: a large security budget makes people comply whether or not they
       // agree (collectivization, birth limits, religious bans, conscription were all enforced this way). ESTIMATE
-      const enforceable = f.coercive || ['collectivization', 'birth_limit', 'religion_suppression', 'conscription', 'assembly_limit', 'relocation', 'lockdown'].includes(meta?.policyKind ?? '')
+      const enforceable = f.coercive || ['collectivization', 'birth_limit', 'religion_suppression', 'conscription', 'assembly_limit', 'relocation', 'lockdown', 'slum_clearance'].includes(meta?.policyKind ?? '')
       const secRatio = Math.max(rs.spend.security * 12 / Math.max(rs.r.population, 1), 1) / Math.max(rs.pc0.security, 1)
       const forced = enforceable ? rs.r.compliance * clamp((secRatio - 1) / 2) : 0
       const c = rs.seceded ? 0 : Math.max(rs.r.compliance * (0.25 + 0.75 * s), forced) * sued

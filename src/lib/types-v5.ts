@@ -58,3 +58,7 @@ export const WHY_SOURCES: Record<string, string> = {
   'research and diffusion': 'https://uis.unesco.org/en/topic/research-and-development',
   'settling back': 'https://www.worldbank.org/en/publication/worldwide-governance-indicators',
 }
+
+// where a pip lives (phase 2 housing). rentShare: rent or mortgage as a share of the household's income
+export type HomeKind = 'owned' | 'rented' | 'social' | 'informal' | 'camp' | 'family'
+export type Home = { home: HomeKind; rentShare: number }

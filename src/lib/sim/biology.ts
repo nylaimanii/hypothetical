@@ -95,7 +95,7 @@ export function periodLifeExpectancy(rs: MortalityParams, mult: number, pandemic
 }
 
 // one demographic unit: a country (or a region that has no country data)
-type Unit = { bands: number[]; tfr: number; gompertzA: number; infantMort: number; kcal: number; monthsUnder: number; ple: number; pop: () => number }
+type Unit = { bands: number[]; tfr: number; gompertzA: number; infantMort: number; kcal: number; monthsUnder: number; ple: number; pop: () => number; homeMort: number; homeTfr: number }
 
 export function stepDemography(w: World, fx: Record<string, LawEffects>): { births: number; deaths: number } {
   let births = 0, deaths = 0
@@ -136,18 +136,20 @@ export function stepDemography(w: World, fx: Record<string, LawEffects>): { birt
     // the units: this region's countries, each with its own calibrated mortality, fertility and food supply
     const cs = countriesOf(w, rs.r.id)
     const units: Unit[] = cs.length
-      ? cs.map(c => ({ bands: c.bands, tfr: c.tfr, gompertzA: c.gompertzA, infantMort: c.infantMort, kcal: c.kcal, monthsUnder: c.foodMonthsUnder, ple: c.ple, pop: () => countryPop(c) }))
-      : [{ bands: rs.bands, tfr: rs.tfr, gompertzA: rs.gompertzA, infantMort: rs.infantMort, kcal: rs.r.foodKcalPerCapita, monthsUnder: rs.foodMonthsUnder, ple: rs.periodLE, pop: () => regionPop(rs) }]
+      ? cs.map(c => ({ bands: c.bands, tfr: c.tfr, gompertzA: c.gompertzA, infantMort: c.infantMort, kcal: c.kcal, monthsUnder: c.foodMonthsUnder, ple: c.ple, pop: () => countryPop(c), homeMort: c.housing?.mortMult ?? 1, homeTfr: c.housing?.tfrMult ?? 1 }))
+      : [{ bands: rs.bands, tfr: rs.tfr, gompertzA: rs.gompertzA, infantMort: rs.infantMort, kcal: rs.r.foodKcalPerCapita, monthsUnder: rs.foodMonthsUnder, ple: rs.periodLE, pop: () => regionPop(rs), homeMort: 1, homeTfr: 1 }]
     let rTotalDead = 0, rFamine = 0, rPandemicDead = 0, rBorn = 0, wTfr = 0, wPle = 0, wPop = 0
     units.forEach((u, ui) => {
       const params = { gompertzA: u.gompertzA, infantMort: u.infantMort, agingSlope: rs.agingSlope, causeMult: rs.causeMult, oldAgeFloor: rs.oldAgeFloor }
       const foodMult = foodMortality(u.kcal, u.monthsUnder)
-      const mult = welfareMult * foodMult * lawMult
+      // housing (slums, camps) is part of the baseline, not famine; its excess over 2026 is counted on its own
+      const mult = welfareMult * foodMult * lawMult * u.homeMort
       const dead = new Array(NBANDS).fill(0)
       let baseDead = 0, pandemicDead = 0
       for (let i = 0; i < NBANDS; i++) {
         const pw = pandemic * (0.2 + 1.6 * BAND_MID[i] / 85)
-        const base = annualMortality(params, i, welfareMult * lawMult)
+        const base = annualMortality(params, i, welfareMult * lawMult * u.homeMort)
+        if (u.homeMort !== 1) { const hd = u.bands[i] * (annualMortality(params, i, welfareMult * lawMult * u.homeMort) - annualMortality(params, i, welfareMult * lawMult)) / 12; w.housingDeaths += hd; w.humanCost.deaths += Math.max(0, hd) }
         const annual = annualMortality(params, i, mult) + pw
         dead[i] = u.bands[i] * (1 - Math.exp(-annual / 12))
         baseDead += u.bands[i] * (1 - Math.exp(-base / 12))
@@ -159,7 +161,7 @@ export function stepDemography(w: World, fx: Record<string, LawEffects>): { birt
       w.humanCost.deaths += Math.max(0, totalDead - baseDead)
       // fertility: long-run decline toward a floor (UN WPP trend), plus the region's policy and mood shift
       u.tfr += (TFR_FLOOR - u.tfr) * TFR_DECLINE * eduPull / 12
-      const effTfr = clamp(u.tfr + tfrShift, 0.5, 7)
+      const effTfr = clamp((u.tfr + tfrShift) * u.homeTfr, 0.5, 7)
       const women = 0.5 * sum(u.bands.slice(3, 10))
       // ESTIMATE: hunger suppresses births (deficit below 2,100 kcal cuts conception proportionally)
       const born = effTfr / 35 * women * (1 - clamp((2100 - u.kcal) / 2100)) / 12

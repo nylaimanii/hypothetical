@@ -3,6 +3,7 @@ import type { BaselineFrame, Decision, Frame, Law, Region, Why } from '../types'
 import { dateOf } from './constants'
 import { addCrowd, stepRegionBehavior, valence } from './behavior'
 import { stepCountries, updateCountryStats } from './places'
+import { stepHousing } from './housing'
 import { dressCitizen, stepClimate, stepCountryInfra, stepRealCities, trafficFrame } from './world-layer'
 import { stepDemography, stepMedicine } from './biology'
 import { migrateCitizens } from './citizens'
@@ -52,7 +53,7 @@ export function stepWorld(w: World) {
   stepSociety(w, fx, research * (1 - TREE_SHARE) * (1 + 0.3 * sectors.computing), outrage)
   stepCountries(w)
   stepClimate(w)
-  if (w.tick % 12 === 11) { stepCountryInfra(w); stepRealCities(w) }
+  if (w.tick % 12 === 11) { stepCountryInfra(w); stepRealCities(w); stepHousing(w) }
   if (w.tick === 0) for (const rs of w.regions) rs.valence0 = valence(rs.mood)
   if (w.tick % 12 === 11) updateCountryStats(w, rs => valence(rs.mood))
   stepFactions(w)

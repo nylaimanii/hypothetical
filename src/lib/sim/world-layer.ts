@@ -2,6 +2,9 @@
 // climate normals, every pip lives in a real city with a local job, a commute, clothes for the weather and a
 // day plan. power plants, rail and cities change over time and are recorded as diffs from the real 2026
 // baseline. states and cities get yearly stats, stories and trends in a compact lazy file per run.
+import { homeOf } from './housing'
+import { addLifeEvent } from './behavior'
+import type { HomeKind } from '../types-v5'
 import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
@@ -292,6 +295,22 @@ export function localLife(w: World, c: Citizen) {
     let u = unit(c.personalitySeed, 'commute'), mode = 'walk'
     for (const [k, v] of Object.entries(share)) { u -= v; if (u <= 0) { mode = k; break } }
     commuteMode = (c.age < 18 && (mode === 'car' || mode === 'motorbike')) ? 'transit' : mode as CommuteMode
+  }
+  // home: stable per pip (drawn once from the country's tenure mix for its income band), moved by evictions
+  const cx = c as Citizen & { home?: HomeKind; rentShare?: number }
+  if (country?.housing) {
+    const h = country.housing
+    const year = Math.floor(w.tick / 12)
+    if (!cx.home) cx.home = homeOf(country, band, unit(c.personalitySeed, 'home'))
+    // evicted this year: the country's eviction rate, doubled for the poorest (Eviction Lab: low-income renters most at risk)
+    const evRate = h.evictedYear / Math.max(h.rented, 1) * (band === 'low' ? 2 : band === 'high' ? 0.3 : 1)
+    if (cx.home === 'rented' && c.age >= 18 && unit(c.personalitySeed, `evict${year}`) < evRate) {
+      cx.home = unit(c.personalitySeed, `evicted-to${year}`) < 0.3 ? 'family' : homeOf(country, band, unit(c.personalitySeed, `rehome${year}`))
+      if (cx.home === 'owned') cx.home = 'rented'
+      addLifeEvent(w, c, `evicted, ${cx.home === 'family' ? 'moved in with family' : cx.home === 'informal' ? 'moved to an informal settlement' : cx.home === 'camp' ? 'ended up in a camp' : 'found another rental'}`)
+    }
+    // rent (renters, social at about half), mortgage (owners ~ a fifth), nothing for family or camps. ESTIMATE
+    cx.rentShare = Math.round((cx.home === 'rented' ? h.rentBurden * (band === 'low' ? 1.4 : band === 'high' ? 0.6 : 1) : cx.home === 'social' ? 0.5 * h.rentBurden : cx.home === 'owned' ? 0.2 : cx.home === 'informal' ? 0.1 : 0) * 20) / 20 // steps of 5%: fewer frame deltas
   }
   Object.assign(c, { workplace: employed || workplace === 'school' ? workplace : 'none', employed, income, spending, commuteMode })
 }
