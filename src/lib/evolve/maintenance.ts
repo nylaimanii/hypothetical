@@ -12,7 +12,8 @@ import path from 'node:path'
 import type { RunSummary } from '../types'
 import { readAgents } from './agents'
 import { readLessons } from './lessons'
-import { readJson, readRunIndex, writeJson } from './store'
+import { readJson, readRunIndex, readRunRecord, writeJson } from './store'
+import { worldStory } from '../notify/story'
 import { codeRoot, currentVersion } from './version'
 import { diskLine } from './retention'
 import { ollamaUp } from './ollama'
@@ -116,7 +117,7 @@ export async function morningDigest(): Promise<string> {
   const usage = [day(0), day(1)].flatMap(d => readJson<{ worlds: { runId: string; outcome: string; at: string; wallMs: number }[] }>(path.join(process.cwd(), 'data', 'reports', `usage-${d}.json`))?.worlds ?? [])
   const index = new Map(readRunIndex().map(r => [r.runId, r]))
   // worlds still in the run index (discarded or archived worlds do not count)
-  const night = usage.filter(w => w.outcome === 'finished' && Date.parse(w.at) >= since && index.has(w.runId))
+  const night = [...new Map(usage.filter(w => w.outcome === 'finished' && Date.parse(w.at) >= since && index.has(w.runId)).map(w => [w.runId, w])).values()]
   const runs = night.map(w => index.get(w.runId)).filter((r): r is RunSummary & { seed: number } => !!r)
   const best = [...runs].sort((a, b) => b.score - a.score)[0]
   const deaths = runs.filter(r => r.status === 'destroyed')
@@ -124,18 +125,17 @@ export async function morningDigest(): Promise<string> {
   const st = readState()
   const newLessons = st.morningLessons !== undefined ? lessons.slice(st.morningLessons) : []
   const names = new Map(readAgents().map(a => [a.id, a.name]))
-  const stories = lifeStories(since)
   const up = await ollamaUp()
   const pace = paceStats(1)
-  const lines = [
-    `good morning. overnight: ${night.length} worlds on sim ${currentVersion()}`,
-    best ? `best: ${names.get(best.agentId) ?? best.agentId}, ${best.runId}, score ${best.score}, ${best.frontier.replace(/_/g, ' ')}, life expectancy ${best.peakPeriodLifeExpectancy.toFixed(1)}` : '',
-    deaths.length ? `deaths: ${deaths.length} (${deaths.slice(0, 3).map(d => `${names.get(d.agentId) ?? d.agentId} ${d.endDate.slice(0, 4)}`).join(', ')}${deaths.length > 3 ? ', ...' : ''})` : 'deaths: none',
-    newLessons.length ? `new lessons: ${newLessons.length}\n${newLessons.slice(0, 3).map(l => `- ${l.rule}`).join('\n')}` : 'new lessons: none',
-    ...(stories.length ? ['life stories:', ...stories.slice(0, 3).map(s => `- ${s}`)] : []),
-    `health: ollama ${up ? 'up' : 'DOWN'}${pace ? `, ${pace.avgMinutesPerWorld} min per world` : ''}. ${diskLine()}`,
-    st.stableNote ? `stable: ${st.stableNote}` : '',
-  ]
+  // lead with the most interesting true thing that happened overnight (the narrator picks it)
+  const stories = [...deaths, ...[...runs].sort((a, b) => (b.humanCost?.famineDeaths ?? 0) - (a.humanCost?.famineDeaths ?? 0)).slice(0, 3), ...(best ? [best] : [])]
+    .map(r => { const rec = readRunRecord(r.runId); return rec ? worldStory(rec, names.get(r.agentId) ?? r.agentId) : null })
+    .filter((x): x is NonNullable<typeof x> => !!x).sort((a, b) => b.score - a.score)
+  const lead = stories[0]?.lines.slice(0, 2) ?? [night.length ? `${night.length} worlds overnight and nothing worth waking you for.` : 'no worlds finished overnight.']
+  const tally = night.length ? `${night.length} worlds overnight${deaths.length ? `, ${deaths.length} died` : ', nobody died'}${newLessons.length ? `, ${newLessons.length} new lesson${newLessons.length > 1 ? 's' : ''}` : ''}${best && stories[0] ? `. best was ${names.get(best.agentId) ?? best.agentId}` : ''}.` : ''
+  const lifeLine = lifeStories(since)[0]
+  const health = `${up ? 'ollama up' : 'ollama is DOWN'}${pace ? `, ${Math.round(pace.avgMinutesPerWorld)} min a world` : ''}, ${diskLine().replace(/^disk: /, '')}.`
+  const lines = [...lead, tally, ...(lifeLine ? [lifeLine] : []), health].filter(Boolean).slice(0, 4)
   saveState({ lastMorning: new Date().toISOString(), morningLessons: lessons.length })
   return lines.filter(Boolean).join('\n')
 }

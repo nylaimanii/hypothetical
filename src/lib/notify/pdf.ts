@@ -9,6 +9,7 @@ import type { LearningRow } from '../evolve/lessons'
 import type { StepsFile } from '../evolve/steps'
 import { learningReport, worldReport, type LearningReport, type Ref, type ReportSection, type WorldReport } from '../evolve/report'
 import { epitaphOf } from './epitaph'
+import { moonYear, people, turningPoint, twin } from './story'
 import { readRealityCheck, type RealityCheck } from '../evolve/reality'
 import { familyTree, readAgents } from '../evolve/agents'
 import { agentRanges } from '../evolve/uncertainty'
@@ -326,17 +327,65 @@ function learningStory(doc: Doc, rep: LearningReport, last = 15) {
 export type DigestInput = {
   generation: GenerationFile; leaderboard: LeaderboardEntry[]; bestRecord: RunRecord | null; allRuns: RunSummary[]
   learning?: LearningRow[]; lessonsKnown?: number; steps?: StepsFile
+  // the narrator's generation story (same lines as the telegram); the last line is the fake takeaway
+  story?: string[]
+  // the record behind the generation's worst story, for its turning point
+  worstRecord?: RunRecord | null
+  champion?: string
+}
+
+// the front of the digest: the story in plain words, then the turning point, comparisons and the takeaway.
+// everything else is the appendix
+function storyFront(doc: Doc, g: GenerationFile, input: DigestInput) {
+  const lines = input.story ?? []
+  const takeaway = lines.find(l => /takeaway, probably/.test(l))
+  const body = lines.filter(l => l !== takeaway)
+  const headline = body[0] ? body[0].replace(/^./, c => c.toUpperCase()).replace(/\.$/, '') : `Generation ${g.generation}`
+  doc.font('mono').fontSize(8.5).fillColor(C.muted).text(`HYPOTHETICAL / GENERATION ${g.generation} DIGEST`, { characterSpacing: 1.5 })
+  doc.moveDown(0.4).font('display').fontSize(24).fillColor(C.ink).text(headline, M, doc.y, { width: width(doc) })
+  rule(doc)
+  for (const l of body.slice(1)) para(doc, l.replace(/^./, c => c.toUpperCase()))
+  const w = input.worstRecord
+  const tp = w ? turningPoint(w) : null
+  if (w && tp) {
+    h2(doc, `The turning point: ${tp.year}`)
+    para(doc, `In ${tp.year} the core ${tp.what}. Over the next ten years ${people(tp.deaths)} people died.`)
+    if (tp.quote) para(doc, `Its reasoning, in its own words: "${tp.quote.replace(/^./, c => c.toUpperCase())}."`)
+  }
+  // compare, always: the no-ai world, the last generation, the rival
+  const cmp: string[] = []
+  const b = input.bestRecord
+  if (b) {
+    const t = twin(b), mine = moonYear(b)
+    if (t.moonBy) cmp.push(mine === null ? `The best world never reached the moon. A world running on 2026 autopilot got there by ${t.moonBy}.` : mine <= t.moonBy ? `The best world reached the moon in ${mine}, ahead of the 2026-autopilot world (by ${t.moonBy}).` : `The best world reached the moon in ${mine}, ${mine - t.moonBy} years behind a world running on 2026 autopilot.`)
+    const gap = t.people - (b.summary.finalPopulation || 0)
+    if (Math.abs(gap) > 5e7) cmp.push(gap > 0 ? `The autopilot world also ended with ${people(gap)} more people.` : `It also ended with ${people(-gap)} more people than the autopilot world.`)
+  }
+  const rows = (input.learning ?? []).filter(r => !r.lineage)
+  const prev = rows.filter(r => r.generation < g.generation).pop(), cur = rows.find(r => r.generation === g.generation)
+  if (prev && cur) cmp.push(cur.bestScore > prev.bestScore ? `That is better than generation ${prev.generation}'s best world.` : `That is worse than generation ${prev.generation}'s best world.`)
+  const ranked = [...g.population].filter(c => c.score !== undefined).sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+  if (ranked.length >= 2 && ranked[0].score) {
+    const gapPct = Math.round((1 - (ranked[1].score ?? 0) / ranked[0].score!) * 100)
+    cmp.push(`${ranked[0].name} led the screening; ${ranked[1].name} was ${gapPct <= 2 ? 'close behind' : `${gapPct}% behind`}.`)
+  }
+  if (cmp.length) { h2(doc, 'Compared with'); for (const c of cmp) para(doc, c) }
+  if (takeaway) { doc.moveDown(0.6); para(doc, takeaway.replace(/^./, c => c.toUpperCase()), C.muted) }
+  doc.addPage()
+  doc.font('mono').fontSize(8.5).fillColor(C.muted).text('APPENDIX: THE DETAIL BEHIND THE STORY', { characterSpacing: 1.5 })
+  doc.moveDown(0.6)
 }
 
 // same structure as the site's reports (GET /api/report/[runId], /api/report/learning), so both read the same
-export async function digestPdf({ generation: g, leaderboard, bestRecord, allRuns, learning = [], lessonsKnown, steps }: DigestInput): Promise<Buffer> {
+export async function digestPdf(input: DigestInput): Promise<Buffer> {
+  const { generation: g, leaderboard, bestRecord, allRuns, learning = [], lessonsKnown, steps } = input
   const { doc, done } = makeDoc(`generation ${g.generation} digest`)
   const ranked = [...g.population].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
   const best = ranked[0]
   const goals = allRuns.filter(isWin).length
   const deaths = allRuns.filter(r => r.status === 'destroyed')
-  cover(doc, 'hypothetical / generation digest', `generation ${g.generation}`,
-    `${g.population.length} constitutions screened for 50 years on seeds ${g.seeds.join(' and ')}, the top 2 run for 100. ${deaths.length} of ${allRuns.length} worlds died${goals ? `, ${goals} achieved the goal` : ''}.${lessonsKnown !== undefined ? ` ${lessonsKnown} lessons known.` : ''}`)
+  storyFront(doc, g, input)
+  mono(doc, `${g.population.length} constitutions screened for 50 years on seeds ${g.seeds.join(' and ')}, the top 2 run for 100. ${deaths.length} of ${allRuns.length} worlds died${goals ? `, ${goals} achieved the goal` : ''}.${lessonsKnown !== undefined ? ` ${lessonsKnown} lessons known.` : ''}`)
 
   learningCurve(doc, learning)
 

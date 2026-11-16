@@ -2,6 +2,8 @@
 import type { HallEntry, Lesson, RunRecord, RunSummary } from '../types'
 import { readAgents } from '../evolve/agents'
 import { epitaphOf } from './epitaph'
+import { deathStory, hallStory } from './story'
+import { readLessons } from '../evolve/lessons'
 
 let warned = false
 export function telegramEnv(): { token: string; chatId: string } | null {
@@ -56,8 +58,9 @@ export function deathMessage(s: RunSummary, ctx: DeathContext): string {
   return lines.filter(Boolean).join('\n')
 }
 
-export async function notifyWorldDied(s: RunSummary, _record: RunRecord | null, ctx: DeathContext) {
-  await send(deathMessage(s, ctx))
+// deaths are told by the narrator (story.ts): the irony first, the turning point in the core's own words
+export async function notifyWorldDied(s: RunSummary, record: RunRecord | null, ctx: DeathContext) {
+  await send(deathStory(record, s, { ...ctx, lessonsKnown: readLessons().length }))
 }
 
 export async function notifyGoal(s: RunSummary, record: RunRecord, ctx: { generation: number; agentName: string }) {
@@ -79,14 +82,9 @@ export async function notifyGeneration(line: string) {
   await send(line)
 }
 
-// one message per generation for all its new hall of history entries, e.g. "🏆 first mars city ever: halcyon ii, 2071"
-export async function notifyHallBatch(generation: number, entries: HallEntry[]) {
+// one message per generation for its new hall of history entries: the biggest one leads, the rest in one line
+export async function notifyHallBatch(_generation: number, entries: HallEntry[]) {
   if (!entries.length) return
   const names = new Map(readAgents().map(a => [a.id, a.name]))
-  const lines = entries.map(e => {
-    const year = 2026 + Math.floor((e.tick + 10) / 12)
-    const icon = e.kind === 'catastrophe' ? '💀' : e.kind === 'milestone' ? '🌍' : '🏆'
-    return `${icon} ${e.kind === 'record' ? `new record, ${e.title}` : e.title}: ${names.get(e.agentId) ?? e.agentId}, ${year}`
-  })
-  await send([`hall of history, gen ${generation}:`, ...lines].join('\n'))
+  await send(hallStory(entries.map(e => ({ title: e.title, agentName: names.get(e.agentId) ?? e.agentId, year: 2026 + Math.floor((e.tick + 10) / 12), text: e.text, kind: e.kind }))))
 }

@@ -130,6 +130,15 @@ Once a month, the evolve watchdog compares the no-AI twin with real published da
 - **Not comparable:** life expectancy, GDP and energy, because the twin only records population and food.
 - **Output:** results go to `data/reality-check.json`, a section of the PDF digest, and `GET /api/reality-check`. Drift also sends a telegram.
 
+## voice
+
+Telegram, the morning digest and the front of the PDF digest are written by a narrator (`src/lib/notify/story.ts`). It works from the records, with no LLM:
+
+- It finds the most interesting true thing about a world: money spent on a moon it never reached, the core promising "survival" while people starved, a space-first agent that never launched, losing to the 2026-autopilot twin, the decision that turned a world.
+- It says it deadpan, in 2 to 4 short lowercase lines, quoting the core's own rationale.
+- The joke is always on the AI, its agents or the system, never on the people who suffered.
+- Generation summaries end with the champion's fake-wise lesson, marked "probably" so it is never mistaken for something the core said.
+
 ## telegram
 
 - **Every destroyed world:** world number, generation, date, its epitaph and cause; what it got wrong and the lesson it added; how far it got (frontier, period life expectancy, population); and its human cost.

@@ -12,7 +12,7 @@ import { LONG_NOW_TEXT, SEEDS } from './seeds'
 import { crossover, mutate } from './mutate'
 import { crossoverName, mutationName, slug } from './names'
 import {
-  dirs, indexRun, isWin, leaderboardFile, placeholderSummary, readJson, readLeaderboard, readRunIndex, writeJson,
+  dirs, indexRun, isWin, leaderboardFile, placeholderSummary, readJson, readLeaderboard, readRunIndex, readRunRecord, writeJson,
   type Candidate, type GenerationFile, type LeaderboardEntry,
 } from './store'
 import { lessonsForPrompt, matchesKnownLesson, mergeLessons, readLearning, readLessons, writeLearning } from './lessons'
@@ -26,6 +26,7 @@ import { isTransient, realClock, runQueue, type Clock } from './queue'
 import { trackWorld } from './usage'
 import { lineageRoots, recordAgentRun, registerPopulation, settleGeneration } from './agents'
 import { indexFeatures, recomputeSteps } from './steps'
+import { generationStory } from '../notify/story'
 import { diskReport, gb, sweep, writeSlim } from './retention'
 import { backupDue, backupToGit, markQuality, morningDigest, morningDue, qualityDue, stableDue } from './maintenance'
 import { codeRoot } from './version'
@@ -504,8 +505,20 @@ async function runGeneration(g: GenerationFile, concurrency: number, deps: Deps,
   log(line)
   for (const l of stepLines) log(`  ${l}`)
   if (g.stats?.newHall?.length) await notifyHallBatch(g.generation, g.stats.newHall)
-  await notifyGeneration([line, ...stepLines].join('\n'))
-  await sendDigest({ generation: g, leaderboard, bestRecord, allRuns, learning: learning.rows.filter(r => !r.lineage), lessonsKnown, steps })
+  // telegram gets the story, not the stats: the most interesting world, the deadliest step if there is room,
+  // and the champion's fake-wise takeaway (marked "probably")
+  const storyRecords = new Map<string, RunRecord>()
+  const interesting = [...allRuns.filter(r => r.status === 'destroyed'), ...[...allRuns].sort((a, b) => (b.humanCost?.famineDeaths ?? 0) - (a.humanCost?.famineDeaths ?? 0)).slice(0, 3), bestRun].filter(Boolean) as RunSummary[]
+  for (const r of interesting.slice(0, 6)) { const rec = records.get(r.runId) ?? readRunRecord(r.runId); if (rec) storyRecords.set(r.runId, rec) }
+  const story = generationStory({
+    generation: g.generation, champion: champion?.name ?? best.name, runs: allRuns.filter(r => storyRecords.has(r.runId)), records: storyRecords,
+    names: new Map(readAgents().map(a => [a.id, a.name])), firsts: (g.stats?.newHall ?? []).filter(e => e.kind === 'first' || e.kind === 'milestone').map(e => e.title),
+  }).split('\n')
+  if (deadliest && story.length < 4) story.splice(story.length - 1, 0, `deadliest habit so far: "${deadliest.text}".`)
+  await notifyGeneration(story.join('\n'))
+  const worstRun = [...allRuns].sort((a, b) => (b.humanCost?.deaths ?? 0) - (a.humanCost?.deaths ?? 0))[0]
+  await sendDigest({ generation: g, leaderboard, bestRecord, allRuns, learning: learning.rows.filter(r => !r.lineage), lessonsKnown, steps,
+    story, worstRecord: worstRun ? storyRecords.get(worstRun.runId) ?? readRunRecord(worstRun.runId) : null, champion: champion?.name })
 }
 
 // background chores while evolve runs: lastHeartbeat every minute, a telegram heartbeat every hour, a warning
