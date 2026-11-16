@@ -43,3 +43,16 @@ for (const f of requests) {
     assert.equal(rec!.agentId, src!.agentId, `the rerun ${runId} was governed by ${rec!.agentId}, but its source ${req.sourceRunId} by ${src!.agentId}`)
   })
 }
+
+// a rerun runs on today's sim. when its source ran on another version, the rerun said so (request.sim.text), so the
+// gap between them is never shown as coming only from the changed assumptions
+for (const f of requests) {
+  const runId = f.replace(/\.assumptions\.json$/, '')
+  const req = JSON.parse(fs.readFileSync(path.join(live, f), 'utf8')) as { sourceRunId?: string; sim?: { source: string | null; rerun: string; same: boolean; text: string | null } }
+  const rec = loadRecord(runId) as (ReturnType<typeof loadRecord> & { simVersion?: string }) | null
+  test(`the rerun ${runId} says when it ran on a different sim from its source`, { skip: rec?.simVersion ? false : `${runId} has not written its sim version yet` }, () => {
+    assert.ok(req.sim, `the rerun ${runId} does not record which sim its source ran on, so a sim change could pass for an effect of the changed assumptions`)
+    assert.equal(req.sim!.rerun, rec!.simVersion, `the rerun ${runId} said it would run on sim ${req.sim!.rerun}, but its record says ${rec!.simVersion}`)
+    if (req.sim!.source !== rec!.simVersion) assert.match(req.sim!.text ?? '', /comes from changes to the sim/, `the rerun ${runId} ran on sim ${rec!.simVersion} and its source on ${req.sim!.source ?? 'an unrecorded version'}, but it never said so`)
+  })
+}

@@ -45,9 +45,19 @@ export function planRerun(source: Pick<RunRecord, 'runId'> & { assumptions?: { o
   }
 }
 
-export function saveRequest(runId: string, plan: RerunPlan, sourceRunId: string) {
+// a rerun runs on the sim code of today; when its source ran on another sim version (or an older one that did not
+// record its version), part of any difference between them comes from the sim, not only from the changed numbers.
+// said in the rerun's response and kept with the request, so the a/b view and the consistency check can show it
+export type SimCompare = { source: string | null; rerun: string; same: boolean; text: string | null }
+export function simCompare(sourceVersion: string | undefined | null, rerunVersion: string): SimCompare {
+  const source = sourceVersion ?? null, same = source === rerunVersion
+  const was = source ? `sim ${source}` : 'an older sim that did not record its version'
+  return { source, rerun: rerunVersion, same, text: same ? null : `the original world ran on ${was} and this rerun runs on sim ${rerunVersion}, so part of any difference between them comes from changes to the sim, not only from the changed assumptions` }
+}
+
+export function saveRequest(runId: string, plan: RerunPlan, sourceRunId: string, sim?: SimCompare) {
   fs.mkdirSync(dirs.live, { recursive: true })
-  fs.writeFileSync(requestFile(runId), JSON.stringify({ sourceRunId, asked: plan.overrides, overridden: plan.overridden, clamped: plan.clamped, at: new Date().toISOString() }))
+  fs.writeFileSync(requestFile(runId), JSON.stringify({ sourceRunId, asked: plan.overrides, overridden: plan.overridden, clamped: plan.clamped, ...(sim ? { sim } : {}), at: new Date().toISOString() }))
   fs.writeFileSync(overridesFile(runId), JSON.stringify(plan.overridden))
   return overridesFile(runId)
 }
