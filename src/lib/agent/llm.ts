@@ -9,6 +9,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import fs from 'node:fs'
 import http from 'node:http'
+import os from 'node:os'
 import path from 'node:path'
 
 export type Provider = 'ollama' | 'groq' | 'offline'
@@ -146,24 +147,40 @@ function ollamaPost(url: string, body: Record<string, unknown>, timeoutMs: numbe
 // data/.ollama.lock holds the pid of the process running llm worlds. other processes wait for it. the lock is
 // reentrant inside one process (evolve can run several worlds in parallel) and a lock whose pid is dead is stale.
 // HYP_OLLAMA_LOCK points runs started from another worktree at the shared lock. waiters take a ticket in
-// .ollama.queue/ next to the lock and are served in arrival order, so a back-to-back job cannot starve the rest.
+// .ollama.queue/ next to the lock, named <priority>-<ms>-<pid>: lower priority class first (0 = worlds and
+// mutations, 9 = background lives), then arrival order. a ticket gains one class for every 10 minutes it waits, so
+// a low class cannot starve. after a reboot pids get reused, so any lock or ticket file older than the boot time is
+// stale whatever its pid says.
 const LOCK = () => process.env.HYP_OLLAMA_LOCK ?? path.join(process.cwd(), 'data', '.ollama.lock')
 const QUEUE = () => path.join(path.dirname(LOCK()), '.ollama.queue')
 let held = 0
 const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
+const BOOT_MS = Date.now() - os.uptime() * 1000
+const fromBeforeBoot = (file: string) => { try { return fs.statSync(file).mtimeMs < BOOT_MS - 5000 } catch { return false } }
+// ticket names: new <prio>-<ms>-<pid>, old <ms>-<pid> (read as priority 5)
+const parseTicket = (t: string) => { const p = t.split('-'); return p.length >= 3 ? { prio: Number(p[0]), ms: Number(p[1]), pid: Number(p[2]) } : { prio: 5, ms: Number(p[0]), pid: Number(p[1]) } }
+const WAIT_BONUS_MS = 10 * 60 * 1000
+const rank = (t: string, now: number) => { const k = parseTicket(t); return { eff: Math.max(0, k.prio - Math.floor((now - k.ms) / WAIT_BONUS_MS)), ms: k.ms } }
 
-export async function acquireOllamaLock(label: string): Promise<() => void> {
+export async function acquireOllamaLock(label: string, opts: { priority?: number } = {}): Promise<() => void> {
   if (provider() !== 'ollama') return () => {}
   if (held > 0) { held++; return releaser() }
   let warned = false
   fs.mkdirSync(QUEUE(), { recursive: true })
-  const ticket = path.join(QUEUE(), `${String(Date.now()).padStart(15, '0')}-${process.pid}`)
+  const prio = Math.max(0, Math.min(9, Math.round(opts.priority ?? 5)))
+  const ticket = path.join(QUEUE(), `${prio}-${String(Date.now()).padStart(15, '0')}-${process.pid}`)
   fs.writeFileSync(ticket, label)
   try {
     for (;;) {
-      // only the oldest live ticket may take the lock (dead tickets are cleared)
-      const tickets = fs.readdirSync(QUEUE()).sort()
-      const live = tickets.filter(t => { const pid = Number(t.split('-')[1]); if (alive(pid)) return true; try { fs.unlinkSync(path.join(QUEUE(), t)) } catch { /* raced */ } return false })
+      // only the first live ticket (by effective priority, then age) may take the lock; dead tickets and tickets
+      // from before the last boot are cleared
+      const now = Date.now()
+      const live = fs.readdirSync(QUEUE()).filter(t => {
+        const f = path.join(QUEUE(), t), { pid } = parseTicket(t)
+        if (pid && alive(pid) && !fromBeforeBoot(f)) return true
+        try { fs.unlinkSync(f) } catch { /* raced */ }
+        return false
+      }).sort((a, b) => { const ra = rank(a, now), rb = rank(b, now); return ra.eff - rb.eff || ra.ms - rb.ms || (a < b ? -1 : 1) })
       const mine = path.basename(ticket)
       if (live[0] === mine || !live.includes(mine)) {
         try {
@@ -174,7 +191,7 @@ export async function acquireOllamaLock(label: string): Promise<() => void> {
           let pid = 0
           try { pid = (JSON.parse(fs.readFileSync(LOCK(), 'utf8')) as { pid: number }).pid } catch { /* half written */ }
           if (pid === process.pid) { held = 1; break }
-          if (pid && !alive(pid)) { try { fs.unlinkSync(LOCK()) } catch { /* raced */ } continue }
+          if ((pid && !alive(pid)) || fromBeforeBoot(LOCK())) { try { fs.unlinkSync(LOCK()) } catch { /* raced */ } continue }
         }
       }
       if (!warned) { console.error(`[ollama lock] waiting for ollama (queue position ${Math.max(1, live.indexOf(mine) + 1)})...`); warned = true }

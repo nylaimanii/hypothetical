@@ -86,7 +86,7 @@ export async function runWorld(opts: RunOpts): Promise<RunSummary> {
   // fail fast: a real run never quietly drops to the offline governor
   await assertLlmReady()
   // one ollama-heavy job at a time across processes (run-one, evolve, live): data/.ollama.lock
-  const release = await acquireOllamaLock(opts.runId)
+  const release = await acquireOllamaLock(opts.runId, { priority: 0 }) // worlds first: lives and other background calls queue behind
   const usage: Usage = { llmCalls: 0, tokens: 0 }
   const t0 = Date.now()
   let summary: RunSummary
