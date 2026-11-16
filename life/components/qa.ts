@@ -100,7 +100,7 @@ export class Qa {
         if (foot >= 0) { const e = foot === 0 ? fl : fr; pos[0] = e[0]; pos[1] = e[1] }
         if (pv?.stance && pv.stanceFoot === foot && foot >= 0) {
           const slip = Math.min(Math.hypot(pos[0].x - pv.stance[0].x, pos[0].z - pv.stance[0].z), Math.hypot(pos[1].x - pv.stance[1].x, pos[1].z - pv.stance[1].z))
-          if (slip > Math.max(0.025, Math.hypot(b.x - pv.x, b.z - pv.z) * 0.35)) add('feet sliding', b, `planted foot slid ${slip.toFixed(3)} in one frame`)
+          if (slip > Math.max(0.025, Math.hypot(b.x - pv.x, b.z - pv.z) * 0.35)) add('feet sliding', b, `planted foot slid ${slip.toFixed(3)} in one frame` + (process.env.QA_WHO ? ` [foot ${foot} now (${pos[0].x.toFixed(3)},${pos[0].y.toFixed(3)},${pos[0].z.toFixed(3)})/(${pos[1].x.toFixed(3)},${pos[1].y.toFixed(3)},${pos[1].z.toFixed(3)}) was (${pv.stance[0].x.toFixed(3)},${pv.stance[0].z.toFixed(3)})/(${pv.stance[1].x.toFixed(3)},${pv.stance[1].z.toFixed(3)})]` : ''))
         }
         this.prev.set(b.id, { x: b.x, z: b.z, presence: b.presence, stance: pos, stanceFoot: foot })
       }

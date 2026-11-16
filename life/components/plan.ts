@@ -82,7 +82,7 @@ export function marketPlan(lot: Lot): MarketPlan {
   // shoulder to shoulder (~0.75 m) across, a step (~0.55 m) front to back: a busy market aisle, nobody inside anyone
   // rows of standing places with a clear walking row between each (people get to their place without squeezing past)
   let row = 0
-  for (let v = -band; v <= band + 1e-6; v += 0.42 / K, row++) { if (row % 2) continue; for (let u = -half; u <= half + 1e-6; u += 0.44 / K) aisle.push(toXZ(u, v, v > 0 ? 0 : Math.PI)) }
+  for (let v = -band; v <= band + 1e-6; v += 0.42 / K, row++) { if (row % 2) continue; for (let u = -half; u <= half + 1e-6; u += 0.5 / K) aisle.push(toXZ(u, v, v > 0 ? 0 : Math.PI)) }
   aisle.sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z))
   const plan = { stalls, vendors, aisle }
   marketCache.set(key, plan)

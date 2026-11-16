@@ -64,11 +64,12 @@ export default memo(function Scene({ record, layout, homeType, live, world, pres
   const her = useMemo(() => new Her(), [])
   // a cut (a documentary dip, a seek, a speed change): the clock jumps, and everyone is simply where they are then
   const lastHour = useRef<number | null>(null)
+  const cutCount = useRef(0)
   useFrame(() => {
     const W = world.current
     if (!W) return
     const h = W.day * 24 + W.hour
-    if (lastHour.current !== null && Math.abs(h - lastHour.current) > 0.12) { pop.cut(); traffic.cut() }
+    if (lastHour.current !== null && Math.abs(h - lastHour.current) > 0.12) { pop.cut(); traffic.cut(); cutCount.current++ }
     lastHour.current = h
   })
   // the building she is in: her lot when she is indoors, or (safety net) any building whose box contains her
@@ -92,7 +93,7 @@ export default memo(function Scene({ record, layout, homeType, live, world, pres
       <Crowd pop={pop} world={world} live={live} budget={budget} bodies={bodies} />
       <Vehicles traffic={traffic} world={world} live={live} bodies={bodies} />
       <Furniture pop={pop} world={world} />
-      {process.env.NODE_ENV === 'development' && <RagdollQa pop={pop} her={her} bodies={bodies} world={world} live={live} record={record} />}
+      {process.env.NODE_ENV === 'development' && <RagdollQa pop={pop} her={her} bodies={bodies} world={world} live={live} record={record} cuts={cutCount} />}
       <Rain live={live} world={world} />
       <ChosenPerson look={record.look} live={live} cloth={cloth} her={her} />
       <FillLight />
@@ -322,18 +323,22 @@ function Furniture({ pop, world }: { pop: Population; world: React.RefObject<Wor
 
 // ---------- dev only: the ragdoll rules (CLAUDE.md), checked every frame against what is drawn ----------
 // logs each new violation once (who, where, what) under [ragdoll], and keeps the list on window.__qa
-function RagdollQa({ pop, her, bodies, world, live, record }: { pop: Population; her: Her; bodies: React.RefObject<FrameBodies>; world: React.RefObject<WorldNow>; live: React.RefObject<LiveState>; record: LifeRecord }) {
-  const qa = useMemo(() => new Qa(), [])
+function RagdollQa({ pop, her, bodies, world, live, record, cuts }: { pop: Population; her: Her; bodies: React.RefObject<FrameBodies>; world: React.RefObject<WorldNow>; live: React.RefObject<LiveState>; record: LifeRecord; cuts: React.RefObject<number> }) {
+  const qa = useRef(new Qa())
+  const seenCut = useRef(0)
   const seen = useRef(new Set<string>())
   const frames = useRef(0)
   useFrame((_, dt) => {
     const W = world.current, L = live.current
     // the first second is the scene settling in behind the loading veil (the first clock tick has not landed yet)
     if (!W || !L || frames.current++ < 60) return
+    // a cut (seek, dip, speed change): a fresh look, and the first second after it is the scene landing (as in the qa script)
+    if (cuts.current !== seenCut.current) { seenCut.current = cuts.current; qa.current = new Qa(); frames.current = 30 }
+    if (frames.current < 60) return
     const herBody: QaBody = { id: 'her', who: `${record.name} (${L.age.toFixed(1)})`, age: L.age, root: her.root, x: L.seat?.x ?? L.pos.x, z: L.seat?.z ?? L.pos.z, heading: L.heading, action: her.last?.action ?? 'stand', walking: L.walking, presence: L.pos.y > 0.2 ? 0 : 1, body: her.last?.body ?? bodies.current!.list[0]?.body, sol: her.sol, holding: null, heldBy: L.carrier, cradle: null, indoors: W.indoors, lotId: W.lotId, lotKind: '', seat: L.seat, door: null, her: true }
     if (!herBody.body) return
     const list = [...(bodies.current?.list ?? []), herBody]
-    const vs = [...qa.check(list, { hour: W.hour, fabric: pop.fabric, solids: pop.solids, seats: [...pop.seats.values()], herLot: W.indoors ? W.lotId : -1, herPos: L.pos }, Math.min(dt, 0.05)), ...checkTraffic(list, [], W.hour, L.pos)]
+    const vs = [...qa.current.check(list, { hour: W.hour, fabric: pop.fabric, solids: pop.solids, seats: [...pop.seats.values()], herLot: W.indoors ? W.lotId : -1, herPos: L.pos }, Math.min(dt, 0.05)), ...checkTraffic(list, [], W.hour, L.pos)]
     const w = window as unknown as { __qa?: unknown[] }
     for (const v of vs) {
       const k = `${v.rule}|${v.who}`

@@ -74,7 +74,7 @@ for (const c of CASES) {
       }
       const vehs = traffic!.step(W, L, bodies.filter(b => b.presence > 0.3 && !b.indoors).map(b => ({ x: b.x, z: b.z, r: radiusOf(b.body), crossing: b.walking && b.role !== 'passer' })), dt)
       // QA_TRACE="<case label>|<minute of day>|<body id>": every frame of that watch, the body and the vehicles near it
-      if (process.env.QA_TRACE) { const [tc, tm, tid] = process.env.QA_TRACE.split('|'); if (c.label.startsWith(tc) && minute === Number(tm)) { const b = bodies.find(x => x.id === tid); if (b) console.log(`trace ${f} ${W.hour.toFixed(3)} ${tid} (${b.x.toFixed(2)},${b.z.toFixed(2)}) h${b.heading.toFixed(2)} ${b.action} p${b.presence.toFixed(2)} in:${b.indoors} lot:${b.lotId} to:${b.talkingTo} | ` + vehs.filter(v => Math.hypot(v.x - b.x, v.z - b.z) < 2.5).map(v => `${v.kind}${v.id} (${v.x.toFixed(2)},${v.z.toFixed(2)}) v${v.speed.toFixed(2)} p${v.presence.toFixed(2)}`).join(' ') + ' || ' + bodies.filter(o => o !== b && (Math.hypot(o.x - b.x, o.z - b.z) < 0.6 || o.id === b.talkingTo)).map(o => `${o.id} (${o.x.toFixed(2)},${o.z.toFixed(2)}) h${o.heading.toFixed(2)} ${o.action} [${o.note}]`).join(' ')) } }
+      if (process.env.QA_TRACE) { const [tc, tm, tid] = process.env.QA_TRACE.split('|'); if (c.label.startsWith(tc) && minute === Number(tm)) { const b = bodies.find(x => x.id === tid); if (b) console.log(`trace ${f} ${W.hour.toFixed(3)} ${tid} (${b.x.toFixed(3)},${b.z.toFixed(3)}) feet ${[2, 5].map(i => { const q = b.sol.bones[i].a.clone().applyMatrix4(b.root); return `(${q.x.toFixed(3)},${q.y.toFixed(3)},${q.z.toFixed(3)})` }).join('')} h${b.heading.toFixed(2)} ${b.action} p${b.presence.toFixed(2)} in:${b.indoors} lot:${b.lotId} to:${b.talkingTo} | ` + vehs.filter(v => Math.hypot(v.x - b.x, v.z - b.z) < 2.5).map(v => `${v.kind}${v.id} (${v.x.toFixed(2)},${v.z.toFixed(2)}) v${v.speed.toFixed(2)} p${v.presence.toFixed(2)}`).join(' ') + ' || ' + bodies.filter(o => o !== b && (Math.hypot(o.x - b.x, o.z - b.z) < 0.6 || o.id === b.talkingTo)).map(o => `${o.id} (${o.x.toFixed(2)},${o.z.toFixed(2)}) h${o.heading.toFixed(2)} ${o.action} [${o.note}]`).join(' ')) } }
       lastVehs = vehs.filter(v => v.id !== 99).map(v => ({ x: v.x, z: v.z, w: v.w, l: v.l, heading: v.heading }))
       frames++
       if (f < SETTLE_S * FPS) { qa.check([...bodies, herBody], ctx(), dt); continue }
@@ -86,6 +86,7 @@ for (const c of CASES) {
         counts.set(v.rule, (counts.get(v.rule) ?? 0) + 1)
         const wk = `${c.label} | ${v.rule} | ${v.who}`; worst.set(wk, { n: (worst.get(wk)?.n ?? 0) + 1, last: `${v.where}: ${v.what}` })
         const key = `${v.rule}|${v.who}`
+        if (process.env.QA_WHO && v.who === process.env.QA_WHO && v.rule === (process.env.QA_HISTORY ?? v.rule)) { const b = bodies.find(x => x.who === v.who); if (b) console.log(`every ${c.label} ${W.hour.toFixed(3)} ${v.what}\n  ` + (hist.get(b.id) ?? []).slice(-3).join('\n  ')) }
         if (!firstSeen.has(key)) { firstSeen.add(key); all.push({ ...v, case: c.label }); if (process.env.QA_HISTORY && v.rule === process.env.QA_HISTORY) { const b = bodies.find(x => x.who === v.who); if (b) console.log(`history ${v.who}:\n  ` + (hist.get(b.id) ?? []).join('\n  ')) } }
       }
       function ctx() { return { hour: W.hour, fabric, solids: pop!.solids, seats: [...pop!.seats.values()], herLot: W.indoors ? W.lotId : -1, herPos: L.pos } }

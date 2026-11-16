@@ -15,7 +15,7 @@ import type { LifeRecord, Workplace } from '@/lib/life/types'
 import type { LiveState } from './ChosenPerson'
 import type { WorldNow } from './Scene'
 import { hash01, planDay, schedule, whereIn, spotsAt, STREETS_W, K, type Act, type DayPlan, type Where, type Stop } from './plan'
-import { bodyFor, gait, poseFor, solve, makeSolved, blendInto, clonePose, reachArm, cradleFor, footOverlap, type Action, type Body, type Pose, type Solved } from './rig'
+import { bodyFor, gait, poseFor, solve, makeSolved, blendInto, clonePose, reachArm, cradleFor, footOverlap, lockFeet, newFootLock, type FootLock, type Action, type Body, type Pose, type Solved } from './rig'
 import type { CityStyle } from './style'
 import { buildFabric, fabricSolids, LANE_HALF, FACADE_FROM_STREET, type Fabric, type Solid } from './fabric'
 
@@ -105,7 +105,7 @@ export class Population {
   agents: Agent[] = []
   key = ''
   seats = new Map<string, Seat>() // every seat anyone uses today (furniture stays when they stand up)
-  private pass = Array.from({ length: 30 }, () => ({ presence: 0, phase: 0, street: '', last: V(), started: false, sol: makeSolved(), heading: undefined as number | undefined, s: undefined as number | undefined, lat: undefined as number | undefined, walkT: 0 as number | undefined, latV: 0 as number | undefined, pose: null as Pose | null, on: false, v: 0, wasMoving: false, cutCheck: false, stoodT: 0 as number | undefined, stoodPrev: 0 as number | undefined }))
+  private pass = Array.from({ length: 30 }, () => ({ presence: 0, phase: 0, street: '', last: V(), started: false, sol: makeSolved(), heading: undefined as number | undefined, s: undefined as number | undefined, lat: undefined as number | undefined, walkT: 0 as number | undefined, latV: 0 as number | undefined, pose: null as Pose | null, on: false, v: 0, wasMoving: false, cutCheck: false, stoodT: 0 as number | undefined, stoodPrev: 0 as number | undefined, feet: null as FootLock | null }))
   private stillBuf = new Float32Array(400)
   readonly MAX = 110
   readonly fabric: Fabric
@@ -223,8 +223,8 @@ export class Population {
   // walking over from where they were before the cut
   cut() {
     this.cutPending = true
-    for (const a of this.agents) a.started = false
-    for (const P of this.pass) { P.started = false; P.cutCheck = true }
+    for (const a of this.agents) { a.started = false; (a as Agent & { feet?: FootLock }).feet = undefined }
+    for (const P of this.pass) { P.started = false; P.cutCheck = true; P.feet = null }
   }
   private cutPending = false
   private blocked(x: number, z: number, r = 0.14) {
@@ -279,19 +279,6 @@ export class Population {
       }
       const w = whereIn(a.plan.plan, W.hour - ((a as Agent & { lag?: number }).lag ?? 0), a.lane)
       pres.push({ px: 0, pz: 0, a, w, x: w.pos.x, z: w.pos.z, heading: w.heading, action: actionAt(a, w, W.hour), holding: null, heldBy: null, seat: null, door: null, shown: !w.onBus })
-    }
-    // a cut lands everyone where they are in the new moment; two walkers who would land on each other are not on the
-    // same spot in life: the later one is a few steps behind on their own way (a small lag that stays with them today)
-    if (this.cutPending) for (let i = 0; i < pres.length; i++) {
-      const p = pres[i]
-      if (!p.w.moving) continue
-      const ag = p.a as Agent & { lag?: number }
-      for (let tries = 0; tries < 12; tries++) {
-        const hit = pres.some((q, j) => j !== i && Math.hypot(q.x - p.x, q.z - p.z) < 0.45 && q.w.indoors === p.w.indoors)
-        if (!hit) break
-        ag.lag = (ag.lag ?? 0) + 0.004
-        p.w = whereIn(p.a.plan!.plan, W.hour - ag.lag, p.a.lane); p.x = p.w.pos.x; p.z = p.w.pos.z; p.heading = p.w.heading
-      }
     }
     const pre = new Map(pres.map(p => [p.a.id, p]))
     // she herself (2 to 7) standing out at a place (the market, the square): her grown-up is at the free spot nearest
@@ -362,6 +349,19 @@ export class Population {
           if (best >= 0) { a.spot = { ...a.spot, i: best }; const s2 = spots[best]; p.w = { ...p.w, pos: { x: s2.x * K, z: s2.z * K }, stop: { ...p.w.stop, station: { ...p.w.stop.station, pos: s2 } } }; p.x = s2.x * K; p.z = s2.z * K }
         }
         held.push({ p, x: p.x, z: p.z })
+      }
+    }
+    // a cut lands everyone where they are in the new moment; two walkers who would land on each other are not on the
+    // same spot in life: the later one is a few steps behind on their own way (a small lag that stays with them today)
+    if (this.cutPending) for (let i = 0; i < pres.length; i++) {
+      const p = pres[i]
+      if (!p.w.moving) continue
+      const ag = p.a as Agent & { lag?: number }
+      for (let tries = 0; tries < 12; tries++) {
+        const hit = pres.some((q, j) => j !== i && Math.hypot(q.x - p.x, q.z - p.z) < 0.45 && q.w.indoors === p.w.indoors) || (!isHeld && Math.hypot(L.pos.x - p.x, L.pos.z - p.z) < 0.45)
+        if (!hit) break
+        ag.lag = (ag.lag ?? 0) + 0.004
+        p.w = whereIn(p.a.plan!.plan, W.hour - ag.lag, p.a.lane); p.x = p.w.pos.x; p.z = p.w.pos.z; p.heading = p.w.heading
       }
     }
     // the chosen baby's carrier, and the neighbor she talks to out front
@@ -465,13 +465,15 @@ export class Population {
       }
       if (free(p) && !(isHeld && p.holding === 'her')) {
         const dx = p.x - L.pos.x, dz = p.z - L.pos.z, d = Math.hypot(dx, dz), min = herBody.torsoW * 0.5 + p.a.body.torsoW * 0.5 + 0.12
-        if (d < min && d > 1e-4 && !L.walking === !p.w.moving) { p.px += dx * (min - d) / d; p.pz += dz * (min - d) / d }
+        // (someone standing makes room for her as she walks by, as people do; she never gives way, she is living her day)
+        const want2 = L.walking && !p.w.moving ? min + 0.25 : min
+        if (d < want2 && d > 1e-4) { p.px += dx * (want2 - d) / d; p.pz += dz * (want2 - d) / d }
       }
     }
     // the give-way offset eases in and out over a moment (people drift aside, they do not twitch)
     for (const p of pres) {
       const a = p.a as Agent & { sep?: { x: number; z: number } }
-      const sp = (a.sep ??= { x: 0, z: 0 }), k = 1 - Math.exp(-dt * 5)
+      const sp = (a.sep ??= { x: 0, z: 0 }), k = this.cutPending ? 1 : 1 - Math.exp(-dt * 5) // (at a cut: already there)
       sp.x += (p.px - sp.x) * k; sp.z += (p.pz - sp.z) * k
       if (Math.abs(sp.x) + Math.abs(sp.z) > 1e-4 && free(p)) this.nudge(p, sp.x, sp.z)
     }
@@ -496,6 +498,7 @@ export class Population {
       else p.action = p.a.workplace === 'shop' || p.w.stop.station.label.includes('stall') ? 'stand' : 'phone'
     }
     // second pass: bodies
+    const placed = new Set<string>() // (who is already placed this frame: a set, so the checks stay fast with a crowd)
     const still = this.stillBuf
     let nStill = 0
     if (!L.walking) { still[nStill++] = L.pos.x; still[nStill++] = L.pos.z }
@@ -512,7 +515,7 @@ export class Population {
       const far = Math.hypot(tx0 - a.last.x, tz0 - a.last.z)
       // (her escort and anyone holding a baby are placed off her directly: she moves smoothly, so they do too)
       // (an escort or companion who is not beside her yet walks over first, then keeps step)
-      const snap = !a.started || this.cutPending || !!p.heldBy || !!p.holding || (p.escort && far < 0.12) || a.presence < 0.05 || far > 6
+      const snap = !a.started || this.cutPending || !!p.heldBy || !!p.holding || (p.escort && far < 0.12) || a.presence < 0.05 || far > 14
       let moving = false, turning = false
       if (snap) vel.set(0, 0, 0)
       else {
@@ -532,12 +535,12 @@ export class Population {
           // look as far ahead as it takes to stop (v^2 / 2a at 3.5 u/s^2), plus a step
           const cur = Math.hypot(vel.x, vel.z), look = 0.12 + (cur * cur) / 7
           const others: { id: string; x: number; z: number; h: number; body: Body; indoors: boolean; still: boolean }[] = [
-            ...out.map(o => ({ id: o.id, x: o.x, z: o.z, h: o.heading, body: o.body, indoors: o.indoors, still: !o.walking })),
+            ...out.filter(o => Math.abs(o.x - a.last.x) < 2 && Math.abs(o.z - a.last.z) < 2).map(o => ({ id: o.id, x: o.x, z: o.z, h: o.heading, body: o.body, indoors: o.indoors, still: !o.walking })),
             // passersby are placed after everyone else: where they were a frame ago
             ...this.lastPass.map(o => ({ id: `pass${o.j}`, x: o.x, z: o.z, h: o.h, body: o.body, indoors: false, still: false })),
             // and her (she never gives way: she is living her day)
             ...(isHeld || (p.escort && !p.companion) ? [] : [{ id: 'her', x: L.seat?.x ?? L.pos.x, z: L.seat?.z ?? L.pos.z, h: L.heading, body: herBody, indoors: W.indoors, still: !L.walking }]),
-            ...pres.filter(q => q !== p && !out.some(o => o.id === q.a.id) && q.a.presence > 0.2).map(q => ({ id: q.a.id, x: q.a.last.x, z: q.a.last.z, h: q.a.heading, body: q.a.body, indoors: q.w.indoors, still: !q.w.moving })),
+            ...pres.filter(q => q !== p && !placed.has(q.a.id) && Math.abs(q.a.last.x - a.last.x) < 2 && Math.abs(q.a.last.z - a.last.z) < 2 && q.a.presence > 0.2).map(q => ({ id: q.a.id, x: q.a.last.x, z: q.a.last.z, h: q.a.heading, body: q.a.body, indoors: q.w.indoors, still: !q.w.moving })),
           ]
           for (const o of others) {
             if (o.indoors !== p.w.indoors || o.id === p.a.guardian || o.id === p.holding || o.id === a.guardian) continue
@@ -551,6 +554,8 @@ export class Population {
             if (!this.blocked(a.last.x + uz * away * 0.25, a.last.z - ux * away * 0.25, 0.14)) { a.det = Math.max(-0.5, Math.min(0.5, (a.det ?? 0) + away * 0.9 * dt)); if (!a.detSide) a.detSide = away }
           }
           // a pole in the way: like someone standing there (slow down, then step around it)
+          // a stall table in the way: the same (slow down, step around it)
+          if (!held && !p.w.indoors) for (const sl of this.solids) if (sl.kind === 'stall') { const qx = a.last.x + ux * look, qz = a.last.z + uz * look, r = a.body.torsoW * 0.5 + 0.08; if (qx + r > sl.box.min.x && qx - r < sl.box.max.x && qz + r > sl.box.min.z && qz - r < sl.box.max.z) { held = true; heldBy = { x: (sl.box.min.x + sl.box.max.x) / 2, z: (sl.box.min.z + sl.box.max.z) / 2 }; break } }
           if (!held && !p.w.indoors) for (const pl of this.fabric.poles) if (Math.hypot(pl.x - (a.last.x + ux * look), pl.z - (a.last.z + uz * look)) < a.body.torsoW * 0.5 + 0.12) { held = true; heldBy = pl; break }
           if (!held && !p.w.indoors) for (const v of vehicles) {
             const fx = Math.sin(v.heading), fz = Math.cos(v.heading), r = a.body.torsoW * 0.5 + 0.1
@@ -600,13 +605,17 @@ export class Population {
         // holding back and stepping around (above) take it from there
         if (Math.hypot(vel.x, vel.z) > 1e-4) {
           const hh = Math.atan2(vel.x, vel.z)
-          const stillOnes = [...out.filter(o => !o.walking && o.indoors === p.w.indoors).map(o => ({ x: o.x, z: o.z, h: o.heading, body: o.body, id: o.id })),
-            ...pres.filter(q => q !== p && !q.w.moving && q.a.started && q.w.indoors === p.w.indoors && !out.some(o => o.id === q.a.id)).map(q => ({ x: q.a.last.x, z: q.a.last.z, h: q.a.heading, body: q.a.body, id: q.a.id })), ...(isHeld || p.escort || L.walking ? [] : [{ x: L.seat?.x ?? L.pos.x, z: L.seat?.z ?? L.pos.z, h: L.heading, body: herBody, id: 'her' }])]
+          const stillOnes = [...out.filter(o => !o.walking && o.indoors === p.w.indoors && Math.abs(o.x - p.x) < 1.5 && Math.abs(o.z - p.z) < 1.5).map(o => ({ x: o.x, z: o.z, h: o.heading, body: o.body, id: o.id })),
+            ...pres.filter(q => q !== p && !q.w.moving && q.a.started && q.w.indoors === p.w.indoors && !placed.has(q.a.id) && Math.abs(q.a.last.x - a.last.x) < 2 && Math.abs(q.a.last.z - a.last.z) < 2).map(q => ({ x: q.a.last.x, z: q.a.last.z, h: q.a.heading, body: q.a.body, id: q.a.id })), ...(isHeld || p.escort || L.walking ? [] : [{ x: L.seat?.x ?? L.pos.x, z: L.seat?.z ?? L.pos.z, h: L.heading, body: herBody, id: 'her' }])]
+          // her escort on the way over to her: her body (not her arms: they are about to hold hands) is in the way too
+          if (p.escort && !p.companion && !isHeld) stillOnes.push({ x: L.pos.x, z: L.pos.z, h: L.heading, body: herBody, id: '__herhand' })
           for (const o of stillOnes) {
             // (their own grown-up: hands may meet, bodies may not; so only the torsos count)
-            const own = o.id === a.guardian
+            const own = o.id === a.guardian || o.id === '__herhand'
             const torso = (x: number, z: number) => Math.max(0, (a.body.torsoW + o.body.torsoW) * 0.5 - Math.hypot(o.x - x, o.z - z))
-            const now = own ? torso(p.x, p.z) : footOverlap(p.x, p.z, hh, a.body, o.x, o.z, o.h, o.body), before = own ? torso(a.last.x, a.last.z) : footOverlap(a.last.x, a.last.z, hh, a.body, o.x, o.z, o.h, o.body)
+            // (the body is drawn turned to its own heading, which lags the direction of travel in a turn: check both)
+            const fo = (x: number, z: number) => Math.max(footOverlap(x, z, hh, a.body, o.x, o.z, o.h, o.body), footOverlap(x, z, a.heading, a.body, o.x, o.z, o.h, o.body))
+            const now = own ? torso(p.x, p.z) : fo(p.x, p.z), before = own ? torso(a.last.x, a.last.z) : fo(a.last.x, a.last.z)
             if (now > 0.005 && now >= before) { p.x = a.last.x; p.z = a.last.z; vel.set(0, 0, 0); break }
           }
         }
@@ -624,7 +633,7 @@ export class Population {
       a.started = true; a.last.set(p.x, 0, p.z)
       // a first step after a real stop starts from standing feet
       const ast = a as Agent & { stoodT?: number }
-      if (p.action === 'walk' && !a.wasWalking && (ast.stoodT ?? 0) > 0.3) a.phase = Math.floor(a.phase) + 0.3
+      if (p.action === 'walk' && !a.wasWalking) a.phase = Math.floor(a.phase) + 0.3 // (from a standing pose: always)
       ast.stoodT = p.action === 'walk' ? 0 : (ast.stoodT ?? 0) + dt
       a.wasWalking = p.action === 'walk'
       if (step < 2 && p.action === 'walk') a.phase += step / a.body.stride
@@ -633,7 +642,8 @@ export class Population {
       if (a.kinId) W.kinPos.set(a.kinId, a.pos.clone().setY(a.body.H * 0.9))
       const inView = (!p.w.indoors || p.w.stop.lot.id === W.lotId) && p.shown
       a.presence += ((inView ? 1 : 0) - a.presence) * (1 - Math.exp(-dt * 6))
-      if (a.presence < 0.02 || drawn >= cap) continue
+      // the draw budget (adaptive quality) only ever drops people far out in the haze, never anyone near the shot
+      if (a.presence < 0.02 || (drawn >= cap && Math.hypot(p.x - L.pos.x, p.z - L.pos.z) > 14)) continue
       // walkers face the way they move (their velocity turns smoothly, so no skate); everyone else turns smoothly
       if (p.action === 'walk' && Math.hypot(vel.x, vel.z) > 0.02 && !snap) {
         // a walker turns at most ~4 rad/s, and moves the way they face (the body carries the feet, no sideways skate)
@@ -655,6 +665,8 @@ export class Population {
       aw.walkT = p.action === 'walk' ? (aw.walkT ?? 0) + dt : 0
       if (!a.pose) a.pose = clonePose(target)
       else blendInto(a.pose, target, p.action === 'walk' ? 1 - Math.exp(-dt * 14) : 1 - Math.exp(-dt * 5))
+      // planted feet stay put in the world (foot locking, ./rig): the root is where the body is this frame
+      if (!p.heldBy) { const fl = (a as Agent & { feet?: FootLock }); fl.feet ??= newFootLock(); lockFeet(a.pose, a.phase, yawRoot(_m, p.x, p.z, a.heading, (a as Agent & { gy?: number }).gy ?? 0), fl.feet, p.action === 'walk' && !this.cutPending && a.started, target, dt) }
       solve(a.body, a.pose, a.sol)
       const root = new THREE.Matrix4()
       let cradle: Placed['cradle'] = null
@@ -665,9 +677,10 @@ export class Population {
       } else {
         // the ground under them: the lane, or the top of a stoop when they stand on one (a step up, eased)
         const ag = a as Agent & { gy?: number }
-        const onStep = !p.seat && this.solids.some(s => s.kind === 'stoop' && p.x > s.box.min.x - 0.02 && p.x < s.box.max.x + 0.02 && p.z > s.box.min.z - 0.02 && p.z < s.box.max.z + 0.02)
+        const fr = Math.max(a.body.torsoW, a.body.shoulderW * 2) * 0.33 + 0.02 // (any part of their footprint over the step: they are on it)
+        const onStep = !p.seat && this.solids.some(s => s.kind === 'stoop' && p.x > s.box.min.x - fr && p.x < s.box.max.x + fr && p.z > s.box.min.z - fr && p.z < s.box.max.z + fr)
         const gy = onStep ? 0.2 : 0
-        ag.gy = snap ? gy : (ag.gy ?? gy) + (gy - (ag.gy ?? gy)) * (1 - Math.exp(-dt * 12))
+        ag.gy = snap ? gy : (ag.gy ?? gy) + (gy - (ag.gy ?? gy)) * (1 - Math.exp(-dt * 30))
         yawRoot(root, p.x, p.z, a.heading, ag.gy)
       }
       if (p.holding) {
@@ -682,6 +695,7 @@ export class Population {
       }
       const kidCradle = (a as Agent & { cradle?: THREE.Vector3; cradleH?: number })
       if (p.heldBy && kidCradle.cradle) root.copy(babyRoot(kidCradle.cradle, kidCradle.cradleH ?? p.heading, a.body, kidCradle.cradle))
+      placed.add(a.id)
       out.push({
         id: a.id, who: a.role === 'kin' ? `${a.kinId} ${a.name}` : `${a.role} ${a.id} (${Math.round(a.age)})`, role: a.role, age: a.age, kinId: a.kinId,
         root, x: p.x, z: p.z, heading: a.heading, action: p.action, walking: p.action === 'walk', presence: a.presence,
@@ -747,7 +761,7 @@ export class Population {
       // the swerve has a sideways speed that eases in and out, and never more than a third of the walking pace (a turn of
       // ~18 degrees at most: people curve around someone, they do not side-step at full speed)
       const latWant = Math.sign(lat0) * Math.min(LANE_HALF - 0.17, Math.max(0.25, Math.abs(lat0 + push * 0.6 + (Math.sign(lat0) * 1.02 - lat0) * 0.3)))
-      const maxLat = Math.max(0.02, Math.abs(P.v) * 0.33)
+      const maxLat = Math.max(0.2, Math.abs(P.v) * 0.33) // (standing, they can still step aside)
       P.latV = (P.latV ?? 0) + Math.max(-0.6 * dt, Math.min(0.6 * dt, Math.max(-maxLat, Math.min(maxLat, (latWant - lat0) * 2)) - (P.latV ?? 0)))
       let lat = lat0 + P.latV * dt
       const inVeh = (qx: number, qz: number) => vehicles.some(v => { const fx = Math.sin(v.heading), fz = Math.cos(v.heading), r = look.body.torsoW * 0.5 + 0.1; const al = (qx - v.x) * fx + (qz - v.z) * fz, sd = (qx - v.x) * fz - (qz - v.z) * fx; return Math.abs(al) < v.l / 2 + r && Math.abs(sd) < v.w / 2 + r })
@@ -766,10 +780,17 @@ export class Population {
       for (const b of out) if (!b.indoors) gap = Math.min(gap, ahead(b.x, b.z))
       if (!W.indoors && L.pos.y < 0.2) gap = Math.min(gap, ahead(L.pos.x, L.pos.z, true)) // and her: they give her the way
       if (gap < 1.2) target = Math.min(target, Math.max(0, (gap - 0.5) * 1.6))
-      if (inVeh(onX ? x : x + dir * 0.3, onX ? z + dir * 0.3 : z)) target = 0
+      // (looking as far ahead as it takes them to stop, plus a step)
+      const lookV = 0.3 + (P.v * P.v) / 4
+      if (inVeh(onX ? x : x + dir * lookV, onX ? z + dir * lookV : z) || inVeh(x, z)) target = 0
       // anyone at all just ahead (someone crossing from a side street, someone standing): stop short of them
       const nx2 = onX ? x : x + dir * 0.18, nz2 = onX ? z + dir * 0.18 : z, hd2 = onX ? (dir > 0 ? 0 : Math.PI) : (dir > 0 ? Math.PI / 2 : -Math.PI / 2)
-      if (out.some(b => !b.indoors && b.id !== `pass${j}` && footOverlap(nx2, nz2, hd2, look.body, b.x, b.z, b.heading, b.body, 0.04) > 0 && ((b.x - x) * (onX ? 0 : dir) + (b.z - z) * (onX ? dir : 0)) > 0.02)) target = 0
+      const ahead2 = (bx: number, bz: number) => ((bx - x) * (onX ? 0 : dir) + (bz - z) * (onX ? dir : 0)) > 0.02
+      if (out.some(b => !b.indoors && b.id !== `pass${j}` && footOverlap(nx2, nz2, hd2, look.body, b.x, b.z, b.heading, b.body, 0.04) > 0 && ahead2(b.x, b.z))) target = 0
+      // (and her)
+      if (!W.indoors && L.pos.y < 0.2 && footOverlap(nx2, nz2, hd2, look.body, L.pos.x, L.pos.z, L.heading, herBody, 0.04) > 0 && ahead2(L.pos.x, L.pos.z)) target = 0
+      // (and the passersby not placed yet this frame, where they were a frame ago)
+      if (this.lastPass.some(o => o.j > j && footOverlap(nx2, nz2, hd2, look.body, o.x, o.z, o.h, o.body, 0.04) > 0 && ahead2(o.x, o.z))) target = 0
       P.v += (target - P.v) * (1 - Math.exp(-dt * (target < P.v ? 8 : 3)))
       P.s! += P.v * dir * dt
       if (onX) z += P.v * dir * dt; else x += P.v * dir * dt
@@ -785,13 +806,13 @@ export class Population {
       P.started = true; P.last.set(x, 0, z)
       if (stepD < 2) P.phase += stepD / look.body.stride
       if (stepD > 1e-4 && stepD < 2) P.heading = Math.atan2(pdx, pdz) // facing exactly the way they move: no sideways skate
-      if (P.presence < 0.02 || drawn >= cap) continue
+      if (P.presence < 0.02 || (drawn >= cap && Math.hypot(x - L.pos.x, z - L.pos.z) > 14)) continue
       const heading = P.heading ?? (onX ? (dir > 0 ? 0 : Math.PI) : (dir > 0 ? Math.PI / 2 : -Math.PI / 2))
       // walking or standing, with some give (a slow shuffle behind someone is still walking); a first step after a real
       // stop starts from the phase that matches standing feet, so it never skates
       const moving = P.wasMoving ? P.v > 0.03 : P.v > 0.1
       P.stoodT = moving ? 0 : (P.stoodT ?? 0) + dt
-      if (moving && !P.wasMoving && (P.stoodPrev ?? 0) > 0.3) P.phase = Math.floor(P.phase) + 0.3
+      if (moving && !P.wasMoving) P.phase = Math.floor(P.phase) + 0.3
       P.stoodPrev = P.stoodT
       P.wasMoving = moving
       const mood = { tired: 0, sad: 0, hurry: h > 6.5 && h < 8.6 ? 0.4 : 0 }
@@ -801,6 +822,8 @@ export class Population {
       if (!P.pose) P.pose = clonePose(g)
       P.walkT = moving ? (P.walkT ?? 0) + dt : 0
       if (P.pose) blendInto(P.pose, g, moving ? 1 - Math.exp(-dt * 14) : 1 - Math.exp(-dt * 6))
+      P.feet ??= newFootLock()
+      lockFeet(P.pose, P.phase, yawRoot(_m, x, z, heading), P.feet, moving, g, dt)
       solve(look.body, P.pose, P.sol)
       out.push({
         id: `pass${j}`, who: `passerby ${j}`, role: 'passer', age: look.age, root: yawRoot(new THREE.Matrix4(), x, z, heading), x, z, heading, action: moving ? 'walk' : 'stand', walking: moving, presence: P.presence,
@@ -836,6 +859,7 @@ export function babyRoot(holderPos: THREE.Vector3, holderHeading: number, baby: 
 export type HerFrame = { body: Body; sol: Solved; action: Action; root: THREE.Matrix4; seat: Seat | null }
 export class Her {
   private walkT = 0
+  private feet: FootLock = newFootLock()
   private phase = 0; private lastX = 0; private lastZ = 0; private started = false; private pose: Pose | null = null
   readonly sol = makeSolved()
   readonly root = new THREE.Matrix4()
@@ -855,6 +879,7 @@ export class Her {
     if (!this.pose) this.pose = clonePose(target)
     this.walkT = action === 'walk' ? this.walkT + dt : 0
     if (this.pose) blendInto(this.pose, target, action === 'walk' ? 1 - Math.exp(-dt * 14) : 1 - Math.exp(-dt * 5))
+    lockFeet(this.pose, this.phase, yawRoot(_m, L.pos.x, L.pos.z, L.heading, L.pos.y), this.feet, action === 'walk', target, dt)
     solve(body, this.pose, this.sol)
     if (held) {
       const fresh = t - L.cradleAt < 0.5

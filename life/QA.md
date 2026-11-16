@@ -57,13 +57,32 @@ wrong, the cause, the fix (the cause, not the symptom).
 29. cuts (documentary dips, seeks) made people walk over from where they were: fixed: a cut snaps the population and
     takes any vehicle or passerby that would stand on someone out of that shot
 
+30. a foot dragged at every landing and lift-off: the swing came to rest relative to the hip, not the ground. fixed: the
+    swing leaves and lands at ground speed; the lift-off keeps the toe roll (it jumped back 2.7 cm); the toe angle is
+    the walk's own, never blended
+31. planted feet slid when people turned, slowed or were held up: fixed: foot locking (a planted foot stays where it
+    landed and the leg reaches it), eased out after the foot has peeled off the ground
+32. walkers zig-zagged and skated: positions were set directly every frame. fixed: everyone is steered like a person
+    (speed and turning within human limits, facing where they go); a jump in where they should be becomes a walk
+33. walkers pushed through people standing, stood in other people's places, squeezed between seated eaters: fixed: a
+    hard limit (no step further into anyone), holding back behind someone, stepping around someone standing, walking
+    rows in the market aisle, a passage behind the vendors, their late plans waiting for them when held up
+34. 99 people at the market at 11:00 on a weekend: everyone shopped at the same hour. fixed: half the households go on a
+    given weekend, at any time of day, and a market holds a quarter of its standing places at once
+35. a 6 year old at the charcoal stove: the school-age day said cook. fixed: under 12 they play out front instead
+36. vehicles: a vehicle backing up after a cut onto a person, vehicles fading in mid-street, one on top of another at
+    the ends of the window, people walking into stopped ones: fixed (queues, entries only at the ends, people waiting)
+37. the draw budget made people vanish mid-shot in a busy street: fixed: it only ever drops people far out in the haze
+38. people standing on a step had their feet inside it: fixed: the step has a height; they stand on top of it
+
 ## enforcement
 - dev: /live runs the ragdoll checks every frame (Scene.tsx RagdollQa) and logs each new violation as [ragdoll]
 - npx tsx scripts/life-qa.ts: 3 sim days (newborn in dar es salaam, 6 year old in luanda, 34 year old in
   antananarivo), sampled every 10 sim minutes with a 3 s watch at 30 fps, every body, seat, held baby and vehicle,
   every frame. exits non-zero on any violation
-- progress: about 1000 distinct violations and 230k violation-frames at the first run; now 237 distinct and about
-  7.8k violation-frames. not zero yet, so no commit of the scene yet
+- progress: about 1000 distinct violations and 230k violation-frames at the first run; now 6 distinct and 28
+  violation-frames in 25,920 judged frames. not zero yet, so no commit of the scene to main yet (backed up on the
+  d/life-wip branch)
 
 ## open (being rebuilt)
 - the street does not look like a real street (blank walls, no color, empty): rebuilding to life/REFERENCE.md

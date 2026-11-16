@@ -148,7 +148,8 @@ export function gait(b: Body, phase: number, mood: Mood, t: number, seed: number
     const s2 = s * s, s3 = s2 * s, m = -0.4 * C
     const z = (2 * s3 - 3 * s2 + 1) * (-0.3 * C) + (s3 - 2 * s2 + s) * m + (-2 * s3 + 3 * s2) * (0.3 * C) + (s3 - s2) * m
     const toe = -0.5 * Math.max(0, 1 - s / 0.25) + 0.25 * Math.max(0, (s - 0.6) / 0.4) // continues the toe-off, then heel first
-    return [[0, b.footH + roll(toe).y + lift * Math.sin(Math.PI * s), z], toe] // the toes clear the ground as the foot swings
+    // (the same toe roll as at the end of the stance, so lift-off is continuous: no jump back as the foot leaves)
+    return [[0, b.footH + roll(toe).y + lift * Math.sin(Math.PI * s), z + roll(toe).z], toe] // the toes clear the ground as the foot swings
   }
   const [fl, tl] = leg(phase), [fr, tr] = leg(phase + 0.5)
   fl[0] = b.hipW * 1.05; fr[0] = -b.hipW * 1.05
@@ -307,4 +308,38 @@ export function footOverlap(ax: number, az: number, ah: number, a: Body, bx: num
     min = Math.min(min, pen)
   }
   return min
+}
+
+// ---------- foot locking ----------
+// while a foot is in stance (the walk's planted phase) it stays exactly where it landed in the world, and the leg's ik
+// reaches it however the body moves (a change of pace, a turn, a hold-up): planted feet never slide. it lets go when
+// the step lifts, or if the leg would have to stretch more than 25 cm away from the walk's own foot track
+// the lock per foot, and the offset still easing out after a foot lets go (so a released foot never snaps)
+export type FootLock = { at: [THREE.Vector3 | null, THREE.Vector3 | null]; off: [number, number, number, number] }
+export const newFootLock = (): FootLock => ({ at: [null, null], off: [0, 0, 0, 0] })
+const _inv = new THREE.Matrix4(), _lv = new THREE.Vector3()
+export function lockFeet(pose: Pose, phase: number, root: THREE.Matrix4, lk: FootLock, walking: boolean, gaitPose: Pose = pose, dt = 1 / 30) {
+  const decay = Math.exp(-dt * 18)
+  if (!walking) { lk.at[0] = null; lk.at[1] = null; lk.off.fill(0); return }
+  // (the toe angle is the walk's own, never a blend: the ankle height assumes it, so a lagging toe would dig in)
+  pose.toeL = gaitPose.toeL; pose.toeR = gaitPose.toeR
+  _inv.copy(root).invert()
+  const legs: [0 | 1, number][] = [[0, ((phase % 1) + 1) % 1], [1, (((phase + 0.5) % 1) + 1) % 1]]
+  for (const [i, p] of legs) {
+    const foot = i === 0 ? pose.footL : pose.footR, g = i === 0 ? gaitPose.footL : gaitPose.footR
+    if (p >= 0.6) {
+      // swinging: if it was locked, carry its offset from the walk's track into the swing and ease it out
+      if (lk.at[i]) { _lv.copy(lk.at[i]!).applyMatrix4(_inv); lk.off[i * 2] = _lv.x - g[0]; lk.off[i * 2 + 1] = _lv.z - g[2]; lk.at[i] = null }
+      // (the toe stays where it was until the foot has peeled off the ground, then the offset eases out in the air)
+      if ((p - 0.6) / 0.4 > 0.15) { lk.off[i * 2] *= decay; lk.off[i * 2 + 1] *= decay }
+      foot[0] = g[0] + lk.off[i * 2]; foot[1] = g[1]; foot[2] = g[2] + lk.off[i * 2 + 1]
+      continue
+    }
+    // (where the walk itself puts the planted foot: that is where it landed)
+    if (!lk.at[i]) lk.at[i] = new THREE.Vector3(g[0] + lk.off[i * 2], g[1], g[2] + lk.off[i * 2 + 1]).applyMatrix4(root)
+    lk.off[i * 2] = 0; lk.off[i * 2 + 1] = 0
+    _lv.copy(lk.at[i]!).applyMatrix4(_inv)
+    if (Math.hypot(_lv.x - g[0], _lv.z - g[2]) > 0.25) { lk.at[i] = new THREE.Vector3(g[0], g[1], g[2]).applyMatrix4(root); _lv.set(g[0], g[1], g[2]) }
+    foot[0] = _lv.x; foot[1] = g[1]; foot[2] = _lv.z
+  }
 }
