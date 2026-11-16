@@ -3,7 +3,13 @@
 // New Year, Diwali, Vesak and Holi from mean lunar phases with Meeus' main periodic terms (Astronomical Algorithms
 // ch. 49, error well under a day), Passover by Gauss' formula, plus national days of the most populous countries.
 // pure functions: nothing here changes sim state.
-import { DAILY } from './daily'
+// browser-safe: imports only a small json (no sim state), so the ui can call it
+import calendarJson from '../../../data/geo/calendar.json'
+
+type CalCountry = { weekend: number[]; faiths: Record<'christian' | 'muslim' | 'hindu' | 'buddhist' | 'jewish', number> }
+const CAL = (calendarJson as unknown as { countries: Record<string, CalCountry> }).countries
+// the country's weekend days (0 = sunday)
+export const weekendOf = (countryId: string | undefined) => CAL[countryId ?? '']?.weekend ?? [6, 0]
 
 export type Holiday = { month: number; day: number; name: string; kind: 'civil' | 'christian' | 'muslim' | 'hindu' | 'buddhist' | 'jewish' | 'lunar' | 'national' }
 const ymd = (d: Date) => ({ month: d.getUTCMonth() + 1, day: d.getUTCDate() })
@@ -114,7 +120,7 @@ export function holidaysOf(countryId: string, y: number): Holiday[] {
   const key = `${countryId}:${y}`
   const hit = cache.get(key)
   if (hit) return hit
-  const f = DAILY.get(countryId)?.faiths ?? { christian: 0.3, muslim: 0.25, hindu: 0.1, buddhist: 0.05, jewish: 0, other: 0.1, unaffiliated: 0.2 }
+  const f = CAL[countryId]?.faiths ?? { christian: 0.3, muslim: 0.25, hindu: 0.1, buddhist: 0.05, jewish: 0 }
   const out: Holiday[] = [{ month: 1, day: 1, name: "New Year's Day", kind: 'civil' }]
   if (!['USA', 'CAN', 'JPN', 'AUS', 'NZL', 'ISR', 'SAU', 'ARE', 'QAT', 'KWT', 'BHR', 'OMN', 'GBR'].includes(countryId)) out.push({ month: 5, day: 1, name: 'Labour Day', kind: 'civil' })
   if (f.christian >= 0.1) {

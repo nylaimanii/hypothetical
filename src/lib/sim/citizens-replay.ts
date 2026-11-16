@@ -2,8 +2,7 @@
 // the last frame); every other frame carries `citizenDelta` with just what changed. citizensAt() rebuilds the
 // full roster for any tick so the ui and the api never do this math themselves.
 import type { Activity, Citizen, LifeEvent, RunRecord } from '../types'
-import { frameDate, holidayOn } from './calendar'
-import { weekendOf } from './daily'
+import { frameDate, holidayOn, weekendOf } from './calendar'
 
 export const KEYFRAME_EVERY = 60
 export const FRAME_LIFE_EVENTS = 4

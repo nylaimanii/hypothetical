@@ -94,6 +94,9 @@ async function main() {
     return row
   })
   fs.writeFileSync(path.join('data', 'geo', 'daily.json'), JSON.stringify({ generatedAt: new Date().toISOString().slice(0, 10), note: 'daily-life starting point per country, see data/geo/sources.md', countries: out }))
+  // browser-safe subset for the calendar (src/lib/sim/calendar.ts is imported by the ui)
+  const cal = Object.fromEntries(out.map(c => { const f = c.faiths as Record<string, number>; return [c.id as string, { weekend: c.weekend, faiths: { christian: f.christian, muslim: f.muslim, hindu: f.hindu, buddhist: f.buddhist, jewish: f.jewish } }] }))
+  fs.writeFileSync(path.join('data', 'geo', 'calendar.json'), JSON.stringify({ note: 'weekends and faith shares per country for the calendar (browser-safe subset of daily.json, written by scripts/geo-daily.ts)', countries: cal }))
   fs.writeFileSync(path.join('data', 'geo', 'launch-sites.json'), JSON.stringify({ source: 'https://en.wikipedia.org/wiki/List_of_rocket_launch_sites', sites: LAUNCH_SITES }))
   console.log(`daily: ${out.length} countries, imputed ${JSON.stringify(gaps)}, ${(fs.statSync('data/geo/daily.json').size / 1e3).toFixed(0)} KB; ${LAUNCH_SITES.length} launch sites`)
 }

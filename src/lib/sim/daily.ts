@@ -220,4 +220,4 @@ export function faithOf(countryId: string | undefined, belief: string | undefine
   for (const [k, v] of ent) { x -= v; if (x <= 0) return k }
   return ent[0]?.[0] ?? 'other'
 }
-export const weekendOf = (countryId: string | undefined) => DAILY.get(countryId ?? '')?.weekend ?? [6, 0]
+export { weekendOf } from './calendar'
