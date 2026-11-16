@@ -34,6 +34,7 @@ export const DecisionSchema = z.object({
   respondedToOverrides: z.array(z.string()).default([]),
   lessonsApplied: z.array(z.string()).default([]),
   expectedResult: z.string().default('').transform(x => x.slice(0, 300)),
+  diary: z.string().default('').transform(x => x.slice(0, 400)),
 })
 
 // json schema handed to the model so its reply is always parseable (ollama structured outputs)
@@ -68,7 +69,7 @@ ACTIVE LAWS have short ids (L1, L2...). To change one, put it in amend [{id, cha
 You run on data centers; resistance can sabotage them. Power levers: citizens' assemblies, referendums, transparency, audits, propaganda, UBI, retraining, job guarantees, robot taxes, shorter weeks, wealth taxes, capital controls.
 Housing levers (law text decides the kind): social housing, upzoning, rent caps, slum upgrading, land titles, empty-home tax, slum clearance. Each has real precedents and costs.
 
-Reply with one JSON decision (laws, amend, repeal, migrations, budget, religionPolicy, schoolPolicy, foundCities, charterCompanies, researchFocus as requirement ids or tracks, publicStatement in plain words, rationale in first person with no em-dashes, respondedToOverrides, lessonsApplied, expectedResult: what you expect to change in 2 years, with numbers). Company sectors: ${SECTORS.join(', ')}.
+Reply with one JSON decision (laws, amend, repeal, migrations, budget, religionPolicy, schoolPolicy, foundCities, charterCompanies, researchFocus as requirement ids or tracks, publicStatement in plain words, rationale in first person with no em-dashes, respondedToOverrides, lessonsApplied, expectedResult: what you expect to change in 2 years, with numbers, diary: one private first-person note on what you fear, what you are betting on and what you are unsure of). Company sectors: ${SECTORS.join(', ')}.
 Be brief, every word costs time: at most 3 new laws, each law text under 25 words; rationale under 60 words; publicStatement one sentence; researchFocus at most 4 ids; empty lists are fine. At most 3 cities and 3 companies. Names must be original. Region ids: ${REGION_IDS.join(', ')}.`
 }
 
@@ -122,7 +123,7 @@ export async function decide(w: World, constitution: string, overrides: Override
         rationale: parsed.rationale.replace(/[\u2014\u2013]/g, ', '),
         respondedToOverrides: parsed.respondedToOverrides.filter(id => ids.includes(id)),
         lessonsApplied: parsed.lessonsApplied.filter(id => lessons.some(l => l.id === id)),
-        ...({ expectedResult: parsed.expectedResult.replace(/[\u2014\u2013]/g, ', ') } as object),
+        ...({ expectedResult: parsed.expectedResult.replace(/[\u2014\u2013]/g, ', '), diary: parsed.diary.replace(/[\u2014\u2013]/g, ', ') } as object),
       }
       return finish(d, w)
     } catch (e) {
@@ -143,5 +144,16 @@ export async function decide(w: World, constitution: string, overrides: Override
 function finish(d: Decision, w: World): Decision {
   const b = normalizeBudget(d.budget)
   for (const k of Object.keys(b) as (keyof typeof b)[]) b[k] = Math.round(b[k] * 1e6) / 1e6
-  return { ...d, tick: w.tick, budget: b }
+  // the diary: what the model wrote, or (offline) a plain note built from what it saw
+  const dx = d as Decision & { diary?: string }
+  const diary = dx.diary?.trim() || offlineDiary(w, d)
+  return { ...d, tick: w.tick, budget: b, ...({ diary } as object) }
+}
+
+// the offline governor's diary: the worst thing it sees and what it is betting on, in its own words
+function offlineDiary(w: World, d: Decision): string {
+  const worst = [...w.regions].sort((a, b) => b.r.unrest - a.r.unrest)[0]
+  const hungry = [...w.regions].sort((a, b) => a.r.foodKcalPerCapita - b.r.foodKcalPerCapita)[0]
+  const bet = Object.entries(d.budget).sort((a, b) => b[1] - a[1])[0]
+  return `What worries me most is ${worst.r.name}, unrest at ${Math.round(worst.r.unrest * 100)}%, and ${hungry.r.name} eating ${Math.round(hungry.r.foodKcalPerCapita)} kcal a day. I am betting most of the budget on ${bet[0]} (${Math.round(bet[1] * 100)}%). I do not know yet if that is enough.`
 }

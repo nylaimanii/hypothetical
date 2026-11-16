@@ -77,7 +77,11 @@ function applyOverride(w: World, o: Override, mem: GovernorMemory) {
 
 // RunOptions as A defines it, plus fields B accepts ahead of the contract (requested in the report):
 // agentId stamps the record; startFrom branches from a saved run at a tick; untilTick stops early (status stays alive).
-export type RunOpts = RunOptions & { agentId?: string; startFrom?: { runId: string; tick: number }; untilTick?: number }
+// flipDecision (what-if): branch from startFrom.runId at tick, change that one decision, then either replay the
+// source's later decisions ('replay', the clean what-if) or let this run's governor take over ('govern')
+export type FlipChange = { dropLaws?: string[]; addLaws?: { title: string; text: string }[]; repeal?: string[]; budget?: Partial<Decision['budget']>; religionPolicy?: Decision['religionPolicy'] }
+export type FlipDecision = { tick: number; change: FlipChange; after?: 'replay' | 'govern' }
+export type RunOpts = RunOptions & { agentId?: string; startFrom?: { runId: string; tick: number }; untilTick?: number; flipDecision?: FlipDecision }
 
 // repeated-law rate of the last finished world in this process (logged; not yet in the RunSummary contract)
 export let lawStats = { proposed: 0, repeated: 0, amended: 0, converted: 0 }
@@ -126,6 +130,20 @@ function choseOf(prev: Decision | undefined, d: Decision, enacted: Decision['law
   return out.length ? out : ['kept the previous policy']
 }
 
+// the core looks back at a decision two years on: what it expected, what happened, whether it held up
+// (ESTIMATE score: life expectancy, food, unrest and approval moves)
+function lookbackOf(w: World, d: Decision & { reasoning?: Reasoning }, before: Vitals): string {
+  const now = vitals(w)
+  const score = (before.le > 0 ? now.le - before.le : 0) + (now.food - before.food) / 500 - 3 * (now.unrest - before.unrest) + (now.approval - before.approval)
+  const expected = d.reasoning?.expected ? `I expected: ${d.reasoning.expected.slice(0, 160)}.` : ''
+  const what = `${before.le > 0 ? `Life expectancy ${before.le.toFixed(1)} to ${now.le.toFixed(1)}, ` : ''}unrest ${Math.round(before.unrest * 100)}% to ${Math.round(now.unrest * 100)}%, approval ${Math.round(before.approval * 100)}% to ${Math.round(now.approval * 100)}%.`
+  return `Looking back at ${dateOf(d.tick)}. ${expected} ${what} ${score >= 0.05 ? 'That held up.' : score <= -0.05 ? 'That did not go as I hoped.' : 'Hard to say it changed much.'}`.replace(/\s+/g, ' ').trim()
+}
+function pushDiary(w: World, e: { tick: number; date: string; kind: 'entry' | 'lookback'; text: string }) {
+  w.diary.push(e)
+  if (e.kind === 'lookback') w.lastLookback = e.text
+}
+
 function outcomeOf(w: World, d: Decision, before: Vitals): string {
   const now = vitals(w)
   const parts = [
@@ -165,12 +183,17 @@ async function tickBody(w: World, ctx: Ctx, decideFn: (w: World) => Promise<Deci
       const reasoning: Reasoning = { saw, chose: choseOf(prev, d, decision.laws), expected }
       Object.assign(decision, { reasoning })
       ctx.pendingOutcomes.push({ d: decision as Decision & { reasoning?: Reasoning }, tick: w.tick, before })
+      const diary = (d as Decision & { diary?: string }).diary
+      if (diary) pushDiary(w, { tick: w.tick, date: dateOf(w.tick), kind: 'entry', text: diary })
       for (const m of migrations) if (m.actual < m.requested) event(w, { kind: 'migration', regionId: m.from, text: `only ${fmt(m.actual)} of ${fmt(m.requested)} ordered to move actually left`, severity: 0.1 })
       ctx.mem.last = decision
       ctx.pendingOverrides = []
     }
   }
-  for (const p of ctx.pendingOutcomes) if (w.tick >= p.tick + 24 && p.d.reasoning && !p.d.reasoning.outcome) p.d.reasoning.outcome = outcomeOf(w, p.d, p.before)
+  for (const p of ctx.pendingOutcomes) if (w.tick >= p.tick + 24 && p.d.reasoning && !p.d.reasoning.outcome) {
+    p.d.reasoning.outcome = outcomeOf(w, p.d, p.before)
+    pushDiary(w, { tick: w.tick, date: dateOf(w.tick), kind: 'lookback', text: lookbackOf(w, p.d, p.before) })
+  }
   ctx.pendingOutcomes = ctx.pendingOutcomes.filter(p => !p.d.reasoning?.outcome)
   if (w.tick % 12 === 0) {
     // yearly: birthdays, pip counts, partners, one batched thought call (thoughts never touch sim numbers)
@@ -191,6 +214,11 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   let lessonsLearned: Lesson[] = []
   let branchedFrom: RunRecord['branchedFrom']
   let w: World
+  let srcRun: RunRecord | undefined
+  let srcDec = new Map<number, Decision>()
+  const flip = opts.flipDecision
+  if (flip && !opts.startFrom) throw new Error('flipDecision needs startFrom (the run to change)')
+  if (flip && opts.startFrom) opts = { ...opts, startFrom: { ...opts.startFrom, tick: flip.tick } }
 
   if (opts.startFrom) {
     // branch: restore the nearest snapshot at or before the tick, replay the source's own decisions to the
@@ -202,6 +230,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
     if (!snap) throw new Error(`startFrom: run ${opts.startFrom.runId} has no snapshot at or before tick ${target}`)
     w = restoreWorld(snap)
     const srcDecisions = new Map(src.frames.filter(f => f.decision).map(f => [f.decision!.tick, f.decision!]))
+    srcRun = src; srcDec = srcDecisions
     ctx.mem.last = [...srcDecisions.values()].filter(d => d.tick < snap.tick).sort((a, b) => b.tick - a.tick)[0]
     // where the source emitted frames, reset the per-frame accumulators (whys, new-event cursor) the same way
     const srcFrameTicks = new Set(src.frames.map(f => f.tick))
@@ -237,7 +266,20 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   }
   while (twin.tick < w.tick && twin.status === 'alive') stepTwin()
 
-  const rec = (done: boolean) => record(opts, w, twin, frames, baseline, !done, usage, lessonsLearned, knownLessons, ctx.snapshots, branchedFrom)
+  // what-if: the flipped decision at its tick, then the source's own later decisions or this run's governor
+  const fromSource = (t: number) => { const sd = srcDec.get(t) as (Decision & { input?: object }) | undefined; return sd?.input ? { ...sd, ...sd.input } as Decision : sd }
+  const decideFn = async (x: World): Promise<Decision | undefined> => {
+    if (flip && x.tick === flip.tick) return flipped(fromSource(x.tick) ?? { ...(ctx.mem.last ?? BASELINE_DECISION(x.tick)), tick: x.tick, laws: [], repeal: [], migrations: [], foundCities: [], charterCompanies: [] }, flip.change, x)
+    if (flip && (flip.after ?? 'replay') === 'replay') return fromSource(x.tick)
+    return decide(x, opts.constitution, ctx.pendingOverrides, ctx.mem)
+  }
+  if (flip) ctx.due = t => t === flip.tick || ((flip.after ?? 'replay') === 'replay' ? srcDec.has(t) : decisionDue(t, live))
+  const rec = (done: boolean) => {
+    const r = record(opts, w, twin, frames, baseline, !done, usage, lessonsLearned, knownLessons, ctx.snapshots, branchedFrom)
+    Object.assign(r, { diary: w.diary })
+    if (flip && srcRun) Object.assign(r, { whatIf: whatIfOf(flip, srcRun, frames) })
+    return r
+  }
   let roster: Map<string, import('../types').Citizen> | undefined
   const places: PlacesAcc = { years: [], hist: new Map() }
   let rosterTick = 0
@@ -280,7 +322,7 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
   }
 
   while (w.status === 'alive' && (opts.untilTick === undefined || w.tick < opts.untilTick)) {
-    const decision = await tickBody(w, ctx, x => decide(x, opts.constitution, ctx.pendingOverrides, ctx.mem), { overrideDir: opts.overrideDir, llmThoughts: live })
+    const decision = await tickBody(w, ctx, decideFn, { overrideDir: opts.overrideDir, llmThoughts: live })
     if (w.tick % frameEvery === 0 || decision) emit(decision)
     stepWorld(w)
     if (w.tick % 12 === 0) recordPlacesYear(w, places)
@@ -333,3 +375,25 @@ function writeJsonAtomic(file: string, data: unknown) {
   fs.renameSync(tmp, file)
 }
 
+
+// the flipped decision: drop or add laws, repeal, change the budget or religion policy
+function flipped(d: Decision, ch: FlipChange, w: World): Decision {
+  const dx = { ...d } as Decision & { amend?: unknown[] }
+  const drop = (ch.dropLaws ?? []).map(x => x.toLowerCase())
+  dx.laws = (d.laws ?? []).filter(l => !drop.some(x => l.id.toLowerCase() === x || l.title.toLowerCase().includes(x)))
+  for (const a of ch.addLaws ?? []) dx.laws.push({ id: '', title: a.title.slice(0, 120), text: a.text.slice(0, 1200), layer: 'government', enactedTick: w.tick, support: 0, compliance: 0, policyKind: '', precedentIds: [], lovedBy: [], hatedBy: [] } as unknown as Decision['laws'][number])
+  dx.repeal = [...(d.repeal ?? []), ...(ch.repeal ?? []).map(x => w.laws.find(l => l.id === x || l.title.toLowerCase().includes(x.toLowerCase()))?.id).filter((x): x is string => !!x)]
+  if (ch.budget) dx.budget = { ...d.budget, ...ch.budget }
+  if (ch.religionPolicy) dx.religionPolicy = ch.religionPolicy
+  return { ...dx, tick: w.tick, rationale: `what-if: ${d.rationale ?? ''}`.slice(0, 2500) }
+}
+// how the what-if world differs from its source at the same ticks (5, 10 and 25 years on, and the end)
+function whatIfOf(flip: FlipDecision, src: RunRecord, frames: Frame[]) {
+  const at = (fs: Frame[], t: number) => fs.filter(f => f.tick <= t).at(-1)
+  const end = frames.at(-1)?.tick ?? flip.tick
+  const marks = [flip.tick + 60, flip.tick + 120, flip.tick + 300, end].filter((t, i, a) => t <= end && a.indexOf(t) === i)
+  return {
+    sourceRunId: src.runId, tick: flip.tick, change: flip.change, after: flip.after ?? 'replay',
+    delta: marks.map(t => { const a = at(frames, t), b = at(src.frames, t); if (!a || !b) return { tick: t }; return { tick: t, population: Math.round(a.globalPopulation - b.globalPopulation), lifeExpectancy: Math.round((a.globalPeriodLifeExpectancy - b.globalPeriodLifeExpectancy) * 10) / 10, excessDeaths: Math.round((a.humanCost?.deaths ?? 0) - (b.humanCost?.deaths ?? 0)), approval: Math.round(((a.humanCost?.approval ?? 0) - (b.humanCost?.approval ?? 0)) * 100) / 100 } }),
+  }
+}
