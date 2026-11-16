@@ -3,6 +3,7 @@
 // the governor's researchFocus, education and companies in the matching sector, with diminishing returns,
 // and is capped by real money spent (a node can never finish for less than its costUsd).
 // speculative nodes roll a seeded chance to stall for decades or fail outright when they open.
+import { tierOf } from './truth'
 import type { Company, Requirement } from '../types'
 import { clamp, event, type World } from './state'
 import { onRequirementUnlocked } from './visuals'
@@ -140,7 +141,8 @@ export function publicRequirements(w: World): Requirement[] {
   return w.requirements.map(r => ({
     id: r.id, name: r.name, track: r.track, progress: Math.round(r.progress * 1e4) / 1e4, prereqs: r.prereqs,
     realWorld2026: r.realWorld2026 + (r.stall === 'stalled' && w.tick < r.stallUntil ? ' (stalled: the approach hit a wall)' : r.stall === 'failed' ? ' (failed: this approach did not work)' : ''),
-    url: r.url, tier: r.tier, costUsd: r.costUsd, ...(r.unlockedTick !== undefined ? { unlockedTick: r.unlockedTick } : {}),
+    // tier follows progress (proven only when deployed at scale, 90%+); tier2026 keeps how mature the idea was in 2026
+    url: r.url, tier: tierOf(r.progress, r.tier), costUsd: r.costUsd, ...({ tier2026: r.tier } as object), ...(r.unlockedTick !== undefined ? { unlockedTick: r.unlockedTick } : {}),
   }))
 }
 
@@ -171,3 +173,4 @@ export function missionDoseSv(w: World): number {
 export function lifeSupportClosure(w: World): number {
   return 0.85 + 0.145 * reqProgress(w, 'deep_space_life_support')
 }
+

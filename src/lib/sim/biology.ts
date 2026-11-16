@@ -204,7 +204,8 @@ export function stepDemography(w: World, fx: Record<string, LawEffects>): { birt
     // deaths that health and social spending above or below 2026 caused (welfareMult is relative to 2026)
     const wd = rTotalDead * (1 - 1 / welfareMult)
     w.vital.welfare += wd; w.welfareDeathsAcc += wd
-    if (w.tick % 12 === 11 && rs === w.regions[w.regions.length - 1]) { w.welfareDeathsYear = w.welfareDeathsAcc; w.welfareDeathsAcc = 0 }
+    w.famineDeathsAcc += rFamine
+    if (w.tick % 12 === 11 && rs === w.regions[w.regions.length - 1]) { w.welfareDeathsYear = w.welfareDeathsAcc; w.welfareDeathsAcc = 0; w.famineDeathsYear = w.famineDeathsAcc; w.famineDeathsAcc = 0 }
     // cumulative vital counts (for audits and reports): all deaths, of which famine, pandemic, riots
     w.vital.births += rBorn; w.vital.deaths += rTotalDead + riotDeaths; w.vital.famine += rFamine; w.vital.pandemic += rPandemicDead; w.vital.riots += riotDeaths
 

@@ -89,6 +89,7 @@ export function requirementsAt(record: Pick<RunRecord, 'frames'>, tick: number):
     const c = cur.get(r.id)
     if (!c) continue
     c.progress = r.progress
+    if (r.tier) c.tier = r.tier
     if (r.unlockedTick !== undefined) c.unlockedTick = r.unlockedTick
     c.realWorld2026 = r.realWorld2026 ? r.realWorld2026 : text.get(r.id) ?? c.realWorld2026
   }

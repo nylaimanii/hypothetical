@@ -3,4 +3,6 @@
 // (real weekends, holidays, worship days), holidaysOf lists a country's holidays for a year.
 export { citizensAt, requirementsAt, dayPlanOf, dayContextOf, type DayContext } from './citizens-replay'
 export { generationOf } from './generations'
+export { yearOfTick, monthOfTick, dateOfTick, eventDate, frameAt, populationAt, frontierAt, lifeExpectancyAt, deathsAt, pyramidAt, childShareAt, tierOf, requirementStatus, ageAt, personAt, neighborsOf, agentOf } from './truth'
+export { nameFor, groupOf, newNameRegistry, GROUPS, COUNTRY_GROUPS, type NameRegistry, type PersonName, type Parent } from './names'
 export { holidaysOf, holidayOn, frameDate, weekendOf, type Holiday } from './calendar'

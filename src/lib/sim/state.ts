@@ -7,6 +7,7 @@ import { initDaily } from './daily'
 import { initPower, type CoreBody } from './power'
 import { initPhysical, type Physical } from './physical'
 import { initPeople, type People, type RegionPeople } from './people'
+import { newNameRegistry, type NameRegistry } from './names'
 import { initCities, initClimate, initCountryMix, type CityState, type ClimateState } from './world-layer'
 import type { InfraDiff } from '../types-v5'
 import type { Mix } from './visuals'
@@ -165,7 +166,7 @@ export type World = {
   citizens: Citizen[]
   crewDeaths: number
   citizenSeq: number
-  citizenMeta: Record<string, { origin: string; baseHair: Citizen['hairColor']; affectedTick: number; prevMood: number }>
+  citizenMeta: Record<string, { origin: string; baseHair: Citizen['hairColor']; affectedTick: number; prevMood: number; sinceTick?: number }>
   // v2
   requirements: ReqState[]
   cities: City[]
@@ -187,6 +188,7 @@ export type World = {
   lawsRepeated: number
   lawsAmended: number
   lawsConverted: number
+  lawsBudget: number; lastBudgetLaws: string[] // laws that were budget changes
   lastConverted: string[]
   lastRepeated: string[] // titles the governor re-passed at its last decision (they did nothing)
   frameCursor: number
@@ -212,14 +214,15 @@ export type World = {
   nuclear0: number
   hiddenLoss: number // tax base hidden offshore beyond 2026
   vital: { births: number; deaths: number; famine: number; pandemic: number; riots: number; disasters: number; migration: number; welfare: number }
-  welfareDeathsYear: number; welfareDeathsAcc: number // deaths from health and social spending above or below 2026 (negative = lives saved)
+  welfareDeathsYear: number; welfareDeathsAcc: number; famineDeathsYear: number; famineDeathsAcc: number // deaths from health and social spending above or below 2026 (negative = lives saved)
   housingDeaths: number // excess deaths from slum and camp growth since 2026 (negative when housing improves)
   railBuilt: string[] // cross-border rail lines built since 2026 ('a|b')
   citiesHitIdx: Record<string, number>
   infraAcc: InfraDiff[]
   causes: CauseLink[]
   // every pip's full life story, written to data/runs/<runId>.lives.json (not part of snapshots)
-  lifeArchive: Record<string, { name: string; regionId: string; events: { tick: number; text: string }[] }>
+  lifeArchive: Record<string, { name: string; regionId: string; events: { tick: number; text: string }[]; death?: { tick: number; ageAtDeath: number; cause: string }; birthTick?: number; countryId?: string; cityId?: string }>
+  names: NameRegistry // every full name used in this world (names.ts)
   lastFrameTick: number
   provenanceSent?: boolean
   causeSeq: number
@@ -296,7 +299,7 @@ export function initWorld(seed: number, twin: boolean): World {
     status: 'alive', wellbeingSum: 0, wellbeingN: 0, revenueShare: REVENUE_SHARE, citizens: [], crewDeaths: 0, citizenSeq: 0, citizenMeta: {},
     requirements: initRequirements(), cities: [], cityScores: {}, companies: [], factions: initFactions(), frontier: 'none', frontierState: initFrontier(),
     humanCost: { deaths: 0, famineDeaths: 0, unrestDeaths: 0, displaced: 0, approval: 0.5 }, lessonsKnown: 0, researchFocus: [], lawMeta: {}, lawsuits: {},
-    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), lawsProposed: 0, lawsRepeated: 0, lawsAmended: 0, lawsConverted: 0, lastConverted: [], lastRepeated: [], frameCursor: 0, eventSeq: 0, eventKinds: {}, topEvents: [], spaceAssets: [], flowAcc: [], causes: [], causeSeq: 0, countries: initCountries(regions), climate: undefined as unknown as ClimateState, countryMix: {}, countryMix0: {}, retiredPlants: [], builtPlants: {}, realCities: [], railBuilt: [], housingDeaths: 0, core: undefined as unknown as CoreBody, phys: undefined as unknown as Physical, people: undefined as unknown as People, diary: [], nuclear0: 0, hiddenLoss: 0, vital: { births: 0, deaths: 0, famine: 0, pandemic: 0, riots: 0, disasters: 0, migration: 0, welfare: 0 }, welfareDeathsYear: 0, welfareDeathsAcc: 0, causeDeaths: { air: 0, water: 0 }, skilledMigrants: 0, recentRepeals: [], citiesHitIdx: {}, infraAcc: [], lifeArchive: {}, lastFrameTick: 0,
+    popHistory: [pop], peakPLE: 0, diseasesEradicated: [], lessonsApplied: new Set(), lawsProposed: 0, lawsRepeated: 0, lawsAmended: 0, lawsConverted: 0, lawsBudget: 0, lastBudgetLaws: [], lastConverted: [], lastRepeated: [], frameCursor: 0, eventSeq: 0, eventKinds: {}, topEvents: [], spaceAssets: [], flowAcc: [], causes: [], causeSeq: 0, countries: initCountries(regions), climate: undefined as unknown as ClimateState, countryMix: {}, countryMix0: {}, retiredPlants: [], builtPlants: {}, realCities: [], railBuilt: [], housingDeaths: 0, core: undefined as unknown as CoreBody, phys: undefined as unknown as Physical, people: undefined as unknown as People, diary: [], nuclear0: 0, hiddenLoss: 0, vital: { births: 0, deaths: 0, famine: 0, pandemic: 0, riots: 0, disasters: 0, migration: 0, welfare: 0 }, welfareDeathsYear: 0, welfareDeathsAcc: 0, famineDeathsYear: 0, famineDeathsAcc: 0, causeDeaths: { air: 0, water: 0 }, skilledMigrants: 0, recentRepeals: [], citiesHitIdx: {}, infraAcc: [], lifeArchive: {}, names: newNameRegistry(), lastFrameTick: 0,
   }
   initRail(world)
   world.climate = initClimate(world)

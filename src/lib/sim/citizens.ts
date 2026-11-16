@@ -2,6 +2,8 @@
 // seeded citizens stream: skin tone, hair, hair color, height, build, age. one shared base mesh in the ui.
 // new citizens draw their ancestry from the region's current origin mix, so migration mixes regions over time.
 // thoughts are flavor text: they never feed back into any sim number.
+import { nameFor } from './names'
+import { countriesOf, countryPop } from './places'
 import type { Citizen, Law } from '../types'
 import { chat, llmEnabled } from '../agent/llm'
 import { hashString, mulberry32, normal, pick, pickWeighted, type Rng } from './rng'
@@ -25,21 +27,6 @@ export function pipCount(population: number): number {
 const HAIR = ['bald', 'buzz', 'short_straight', 'short_wavy', 'short_coily', 'afro', 'locs', 'braids', 'long_straight', 'long_wavy', 'bun', 'ponytail'] as const
 type Hair = Citizen['hair']
 
-// common given names per region. a name never decides appearance.
-const NAMES: Record<string, { f: string[]; m: string[] }> = {
-  na: { f: ['Emma', 'Olivia', 'Ava', 'Maya', 'Grace', 'Chloe', 'Jasmine', 'Hannah', 'Leah', 'Nora'], m: ['Liam', 'Noah', 'James', 'Ethan', 'Mason', 'Lucas', 'Caleb', 'Owen', 'Isaiah', 'Daniel'] },
-  latam: { f: ['Sofia', 'Valentina', 'Camila', 'Lucia', 'Isabela', 'Mariana', 'Gabriela', 'Ana', 'Julia', 'Paula'], m: ['Mateo', 'Santiago', 'Diego', 'Joao', 'Miguel', 'Gabriel', 'Lucas', 'Andres', 'Pedro', 'Tomas'] },
-  europe: { f: ['Anna', 'Marie', 'Elena', 'Sara', 'Laura', 'Ines', 'Freya', 'Zofia', 'Giulia', 'Lea'], m: ['Luca', 'Jonas', 'Hugo', 'Leon', 'Marco', 'Jakub', 'Elias', 'Oskar', 'Pablo', 'Finn'] },
-  rus_ca: { f: ['Anastasia', 'Aigerim', 'Madina', 'Daria', 'Nino', 'Sofia', 'Zarina', 'Polina', 'Ani', 'Kamila'], m: ['Ivan', 'Timur', 'Arman', 'Dmitri', 'Giorgi', 'Rustam', 'Nikita', 'Aibek', 'Artem', 'Davit'] },
-  mideast: { f: ['Fatima', 'Zahra', 'Maryam', 'Noor', 'Leila', 'Yasmin', 'Elif', 'Dana', 'Huda', 'Shirin'], m: ['Mohammed', 'Ali', 'Omar', 'Yusuf', 'Hassan', 'Emre', 'Karim', 'Reza', 'Ahmad', 'Sami'] },
-  nafrica: { f: ['Amina', 'Salma', 'Khadija', 'Nour', 'Rania', 'Imane', 'Yasmine', 'Hana', 'Sara', 'Malak'], m: ['Youssef', 'Ahmed', 'Mehdi', 'Karim', 'Amine', 'Omar', 'Bilal', 'Tarek', 'Hamza', 'Adam'] },
-  ssa: { f: ['Amara', 'Ngozi', 'Wanjiru', 'Fatou', 'Thandiwe', 'Aisha', 'Abena', 'Zawadi', 'Chiamaka', 'Lindiwe'], m: ['Kwame', 'Chidi', 'Juma', 'Moussa', 'Thabo', 'Ibrahim', 'Kofi', 'Baraka', 'Emeka', 'Sipho'] },
-  sasia: { f: ['Priya', 'Ananya', 'Fatima', 'Ayesha', 'Lakshmi', 'Nusrat', 'Kavya', 'Sita', 'Meera', 'Zainab'], m: ['Arjun', 'Rahul', 'Ali', 'Imran', 'Vikram', 'Rohan', 'Arif', 'Sanjay', 'Kiran', 'Hamza'] },
-  easia: { f: ['Wei', 'Mei', 'Yuki', 'Ji-woo', 'Xiu', 'Hana', 'Lan', 'Sakura', 'Min-ji', 'Ying'], m: ['Hao', 'Jun', 'Haruto', 'Min-jun', 'Lei', 'Kenji', 'Tao', 'Sora', 'Ji-ho', 'Bo'] },
-  seasia: { f: ['Siti', 'Linh', 'Maria', 'Ploy', 'Nur', 'Mai', 'Dewi', 'Thida', 'Rosa', 'Ayu'], m: ['Budi', 'Minh', 'Jose', 'Somchai', 'Arif', 'Huy', 'Rizal', 'Aung', 'Paolo', 'Bayu'] },
-  oceania: { f: ['Charlotte', 'Isla', 'Mia', 'Ruby', 'Aroha', 'Zoe', 'Matilda', 'Ella', 'Sienna', 'Kiri'], m: ['Oliver', 'Jack', 'William', 'Tane', 'Leo', 'Harrison', 'Archie', 'Nikau', 'Thomas', 'Riley'] },
-  carib_pac: { f: ['Shanice', 'Keisha', 'Rosa', 'Mele', 'Natalia', 'Tiana', 'Yolanda', 'Sina', 'Danielle', 'Losana'], m: ['Andre', 'Marlon', 'Jose', 'Sione', 'Kemar', 'Tevita', 'Ricardo', 'Malakai', 'Jerome', 'Ravi'] },
-}
 
 const JOBS_LOW = ['farmer', 'market trader', 'builder', 'driver', 'tailor', 'fisher', 'mechanic', 'nurse', 'teacher', 'student', 'shopkeeper', 'cook']
 const JOBS_HIGH = ['software engineer', 'nurse', 'teacher', 'accountant', 'electrician', 'student', 'retail worker', 'doctor', 'designer', 'lab technician', 'logistics manager', 'civil servant']
@@ -116,9 +103,9 @@ export function makeCitizen(w: World, rs: RegionState, rng: Rng, age?: number): 
   const skinTone = pickWeighted<number>(rng, d.skinTone.weights) + 1
   const hair = pickWeighted<string>(rng, hairWeights(origin, sex, a)) as Hair
   const baseColor = pickWeighted<string>(rng, d.hairColor.weights) as Citizen['hairColor']
-  // names follow where someone grew up: mostly the origin pool, sometimes the region they live in
-  const pool = NAMES[rng() < 0.7 ? origin : rs.r.id] ?? NAMES[rs.r.id]
-  const name = pick(rng, sex === 'female' ? pool.f : pool.m)
+  // (names come after placement: they follow the country and naming group someone comes from, names.ts)
+  rng()
+  const name = ''
   const kcal = rs.r.foodKcalPerCapita
   const build = pickWeighted<string>(rng, { slim: 0.3 + 0.3 * clamp((2600 - kcal) / 800), average: 0.5, broad: 0.2 + 0.15 * clamp((kcal - 2800) / 800) }) as Citizen['build']
   const inc = incomeIdx(rs.r.gdpUsd / Math.max(rs.r.population, 1))
@@ -134,8 +121,15 @@ export function makeCitizen(w: World, rs: RegionState, rng: Rng, age?: number): 
     lifeEvents: [], opinionOfCore: 0, family: { kids: a >= 25 ? Math.floor(rng() * Math.min(4, (rs.tfr || 2) + 0.5)) : 0 },
   }
   placeCitizen(w, c)
+  // born once: birth month spread over the year, age derived from it from now on (truth.ts personAt)
+  const cb = c as Citizen & { birthTick: number; countryId?: string; nameGroup?: string; givenName?: string; familyName?: string }
+  cb.birthTick = w.tick - 12 * a - (personalitySeed % 12)
+  // a pip from another region was named where it grew up: a country there, drawn by its seed
+  const originCountry = origin === rs.r.id ? cb.countryId : bornIn(w, origin, personalitySeed)
+  const nm = nameFor(w.names, personalitySeed, { countryId: originCountry, regionId: origin, sex })
+  c.name = nm.full; cb.nameGroup = nm.group; cb.givenName = nm.given; cb.familyName = nm.family
   // hidden per-citizen attributes kept outside the public Citizen shape
-  w.citizenMeta[c.id] = { origin, baseHair: baseColor, affectedTick: w.tick, prevMood: 0.5 }
+  w.citizenMeta[c.id] = { origin, baseHair: baseColor, affectedTick: w.tick, prevMood: 0.5, sinceTick: w.tick }
   c.hairColor = hairColorFor(origin, a, personalitySeed, baseColor)
   c.heightCm = heightFor(origin, sex, a, personalitySeed)
   return c
@@ -176,11 +170,21 @@ export function syncCitizenCounts(w: World) {
 export function ageCitizens(w: World) {
   const rng = w.rng.citizens
   w.citizens = w.citizens.map(c => {
+    // a death is stored once, with its date and age (truth.ts reads it everywhere)
+    const die = (cause: string) => {
+      const cb = c as Citizen & { birthTick?: number; countryId?: string; cityId?: string }
+      const arc = (w.lifeArchive[c.id] ??= { name: c.name, regionId: c.regionId, events: [] })
+      const ageAtDeath = cb.birthTick !== undefined ? Math.floor((w.tick - cb.birthTick) / 12) : c.age
+      Object.assign(arc, { death: { tick: w.tick, ageAtDeath, cause }, birthTick: cb.birthTick, countryId: cb.countryId, cityId: cb.cityId })
+      arc.events.push({ tick: w.tick, text: `died at ${ageAtDeath}` })
+      return makeCitizen(w, rs, rng)
+    }
     const rs = w.regions.find(r => r.r.id === c.regionId)!
-    const age = c.age + 1
+    const bt = (c as Citizen & { birthTick?: number }).birthTick
+    const age = bt !== undefined ? Math.floor((w.tick - bt) / 12) : c.age + 1
     const band = Math.min(16, Math.floor(age / 5))
     const pDeath = 1 - Math.exp(-(rs.gompertzA * Math.exp(0.09 * (BAND_MID[band] - 60))))
-    if (rng() < pDeath || age > 105) return makeCitizen(w, rs, rng)
+    if (rng() < pDeath || age > 105) return die(age > 105 ? 'old age' : 'illness or age')
     const meta = w.citizenMeta[c.id]
     const origin = meta?.origin ?? c.regionId
     const job = age === 6 && c.job === 'child' ? 'student' : age === 18 && c.job === 'student' ? pick(rng, rng() < 0.5 ? JOBS_HIGH : JOBS_LOW) : age === 67 ? 'retired' : c.job
@@ -214,8 +218,11 @@ export function updateMoods(w: World) {
 export function pairPartners(w: World) {
   const rng = w.rng.citizens
   for (const rs of w.regions) {
-    const single = w.citizens.filter(c => c.regionId === rs.r.id && c.age >= 20 && c.age <= 60 && !c.family.partnerId)
+    // partners live in the same city (or the same country where the city has one pip), never across borders
+    const place = (c: Citizen) => { const x = c as Citizen & { cityId?: string; countryId?: string }; return x.cityId ?? x.countryId ?? rs.r.id }
+    const single = w.citizens.filter(c => c.regionId === rs.r.id && c.age >= 20 && c.age <= 60 && !c.family.partnerId).sort((a, b) => place(a) < place(b) ? -1 : place(a) > place(b) ? 1 : 0)
     for (let i = 0; i + 1 < single.length; i += 2) {
+      if (place(single[i]) !== place(single[i + 1])) { i--; continue }
       // ESTIMATE: 15% of eligible pairs partner up in a given year
       if (rng() < 0.15 && single[i].sex !== single[i + 1].sex || rng() < 0.03) {
         single[i].family.partnerId = single[i + 1].id
@@ -307,6 +314,9 @@ export function personalYear(w: World) {
   const since = w.tick - 12
   for (const c of w.citizens) {
     if (c.age < 10) continue
+    // a year's events only after a full year lived in this world (no 'quiet year' in someone's first month)
+    const since0 = w.citizenMeta[c.id]?.sinceTick
+    if (since0 !== undefined && w.tick - since0 < 12) continue
     const rs = w.regions.find(r => r.r.id === c.regionId)!
     const city = cityOf(c)
     const links = w.causes.filter(l => l.tick >= since && l.placeId === c.regionId)
@@ -343,4 +353,13 @@ export function personalYear(w: World) {
     // about 6 events per decade: always for strong causes, often for mild ones
     if (best && (best.score >= 3 || r() < 0.55)) addLifeEvent(w, c, best.text)
   }
+}
+
+// a country in a region, drawn by seed and population (where a migrant pip grew up)
+function bornIn(w: World, regionId: string, seed: number): string | undefined {
+  const cs = countriesOf(w, regionId)
+  const tot = cs.reduce((a, c) => a + countryPop(c), 0)
+  let x = ((seed * 2654435761) >>> 0) % 100000 / 100000 * tot
+  for (const c of cs) { x -= countryPop(c); if (x <= 0) return c.id }
+  return cs[0]?.id
 }

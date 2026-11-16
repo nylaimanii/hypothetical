@@ -2,6 +2,7 @@
 // monthly step, governor every 24 ticks (live: every 12 for 30 years, then 24), frame every opts.frameEvery ticks
 // (default 12, live 1), at every decision and on death. a no-ai baseline twin runs on the same seed with
 // 2026 policies frozen and no llm calls. full state snapshots every 60 ticks allow exact branching.
+import { SIM_VERSION } from './version'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { BaselineFrame, Decision, Frame, Lesson, Override, RunOptions, RunRecord, RunSummary, Snapshot, WorldEvent } from '../types'
@@ -310,8 +311,8 @@ async function runInner(opts: RunOpts, usage: Usage): Promise<RunSummary> {
       // requirementsAt() restores them. in-between frames carry id, progress and unlock tick
       // (the 2026 text is kept when it differs from the keyframe's, e.g. a node stalled since then)
       // and only the nodes whose progress or text changed since the previous frame are listed
-      f.requirements = f.requirements.filter(q => { const p = prevReq.get(q.id); return !p || p.progress !== q.progress || p.realWorld2026 !== q.realWorld2026 || p.unlockedTick !== q.unlockedTick })
-        .map(q => ({ id: q.id, progress: q.progress, ...(q.unlockedTick !== undefined ? { unlockedTick: q.unlockedTick } : {}), ...(keyReqText.get(q.id) !== q.realWorld2026 ? { realWorld2026: q.realWorld2026 } : {}) }) as typeof q)
+      f.requirements = f.requirements.filter(q => { const p = prevReq.get(q.id); return !p || p.progress !== q.progress || p.tier !== q.tier || p.realWorld2026 !== q.realWorld2026 || p.unlockedTick !== q.unlockedTick })
+        .map(q => ({ id: q.id, progress: q.progress, ...(prevReq.get(q.id)?.tier !== q.tier ? { tier: q.tier } : {}), ...(q.unlockedTick !== undefined ? { unlockedTick: q.unlockedTick } : {}), ...(keyReqText.get(q.id) !== q.realWorld2026 ? { realWorld2026: q.realWorld2026 } : {}) }) as typeof q)
     }
     roster = new Map(full.map(c => [c.id, c]))
     prevReq = reqNow
@@ -362,6 +363,8 @@ function record(opts: RunOpts, w: World, twin: World, frames: Frame[], baseline:
   }
   return {
     runId: opts.runId, generation: opts.generation, seed: opts.seed, constitution: opts.constitution, frames, baseline, summary,
+    // which sim wrote this record (consistency checks skip fixes a record predates)
+    ...({ simVersion: SIM_VERSION } as object),
     agentId, snapshots, precedents: lawPrecedents(w), lessons: knownLessons,
     ...(branchedFrom ? { branchedFrom } : {}),
     ...(liveFlag ? { live: true } : {}),

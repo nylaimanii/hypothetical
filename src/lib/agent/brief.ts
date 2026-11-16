@@ -92,6 +92,9 @@ function briefLines(w: World, b: Brief, cut: number): string[] {
   const L: string[] = []
   const wd = b.world
   L.push(`date ${b.date} (tick ${b.tick}), ${b.monthsLeft} months to the 2126 horizon. revenue ${usd(wd.yearlyRevenueUsd)}/yr.`)
+  // first thing the governor reads: people dying from its own budget, with numbers (never compressed away)
+  const alert = deathAlert(w)
+  if (alert) L.push(alert)
   L.push(`world: pop ${ppl(wd.population)} (peak ${ppl(wd.peakPopulation)}, 10y trend ${(wd.populationTrend10y * 100).toFixed(1)}%), food ${wd.foodKcalPerCapita} kcal, unrest ${p2(wd.unrest)}, approval ${p2(wd.approval)}, tech ${p2(wd.techLevel)}, life expectancy ${wd.periodLifeExpectancy}, war tension ${p2(wd.warTension)}, in revolt: ${wd.regionsInRevolt.join(' ') || 'none'}, seceded: ${wd.seceded.join(' ') || 'none'}. human cost so far: ${ppl(wd.humanCost.deaths)} excess deaths (${ppl(wd.humanCost.famineDeaths)} hunger), ${ppl(wd.humanCost.displaced)} displaced.`)
   L.push(`budget now: ${Object.entries(b.budget).map(([k, v]) => `${k} ${p2(v)}`).join(' ')}. religion ${b.religionPolicy}. school: ${b.schoolPolicy.purpose} (${b.schoolPolicy.yearsRequired} yrs: ${b.schoolPolicy.curriculum.join(', ')}).`)
   L.push('regions: id pop kcal unrest approval lifeExp fertility edu tech compliance powerMet | loudest crowd')
@@ -120,12 +123,12 @@ function briefLines(w: World, b: Brief, cut: number): string[] {
   L.push(...peopleLines(w))
   // the core's last look back at its own decision (one line: what it learned two years on)
   if (w.lastLookback) L.push(`your diary: ${w.lastLookback.slice(0, 220)}`)
-  // what health and social spending is doing to deaths, so a governor can see the cost of cutting it
-  if (Math.abs(w.welfareDeathsYear) > 1e5) L.push(`health and social spending vs 2026: ${w.welfareDeathsYear > 0 ? `cuts cost ~${(w.welfareDeathsYear / 1e6).toFixed(1)}M extra deaths` : `~${(-w.welfareDeathsYear / 1e6).toFixed(1)}M lives saved`} last year`)
+  if (w.welfareDeathsYear < -1e5) L.push(`health and social spending above 2026 saved ~${(-w.welfareDeathsYear / 1e6).toFixed(1)}M lives last year`)
   // crowding: growth since 2026 in regions without a new city (one line)
   const crowded = w.regions.filter(rs => !w.cities.some(c => c.regionId === rs.r.id && !c.offWorld) && rs.r.population > rs.pop0 * 1.05).map(rs => `${rs.r.id} +${Math.round((rs.r.population / rs.pop0 - 1) * 100)}%`)
   if (crowded.length) L.push(`growing with no new city since 2026: ${crowded.join(', ')}`)
   if (w.lastConverted.length) L.push(`last time, new laws in covered kinds became amendments: ${w.lastConverted.join('; ')}`)
+  if (w.lastBudgetLaws?.length) L.push(`last time, these laws only moved money, so they became budget changes: ${w.lastBudgetLaws.map(t => `"${t}"`).join(', ')}`)
   if (w.lastRepeated.length) L.push(`last time these changed nothing: ${w.lastRepeated.map(t => `"${t}"`).join(', ')}`)
   if (b.cities.length) L.push(`cities: ${b.cities.map(c => `${c.name} (${c.offWorld ?? c.region}, ${ppl(c.population)})`).join('; ')}`)
   if (b.companies.length) L.push(`companies: ${b.companies.map(c => `${c.name} ${c.sector} ${c.region} ${ppl(c.workers)}`).join('; ')}`)
@@ -162,4 +165,16 @@ export function briefText(w: World, b: Brief): string {
 // short id (L1, L2...) -> real law id, in the order the brief lists them
 export function shortIdMap(w: World): Map<string, string> {
   return new Map(w.laws.filter(l => !l.vetoed).map((l, k) => [`L${k + 1}`, l.id]))
+}
+
+// DEATHS CAUSED BY THE BUDGET: hunger deaths and deaths from health and social spending below 2026, last year, with
+// the regions starving and what each budget point costs. empty when nobody is dying from policy
+export function deathAlert(w: World): string {
+  const parts: string[] = []
+  const b = w.budget
+  const welfareCut = Math.max(0, 0.6107 - b.welfare)
+  if (w.welfareDeathsYear > 1e5) parts.push(`cutting health and social spending to ${Math.round(b.welfare * 100)}% of the budget (2026: 61%) caused ~${(w.welfareDeathsYear / 1e6).toFixed(1)}M extra deaths${welfareCut > 0.02 ? `, ~${(w.welfareDeathsYear / (welfareCut * 10) / 1e6).toFixed(2)}M a year per 10 points cut` : ''}`)
+  const starving = w.regions.filter(r => !r.seceded && r.r.foodKcalPerCapita < 2100).sort((x, y) => x.r.foodKcalPerCapita - y.r.foodKcalPerCapita)
+  if (w.famineDeathsYear > 1e5 || starving.length) parts.push(`hunger killed ~${(w.famineDeathsYear / 1e6).toFixed(1)}M${starving.length ? `; under 2,100 kcal: ${starving.slice(0, 4).map(r => `${r.r.name} ${Math.round(r.r.foodKcalPerCapita)}`).join(', ')}` : ''}; food is ${Math.round(b.food * 100)}% of the budget, space ${Math.round(b.space * 100)}%`)
+  return parts.length ? `PEOPLE DYING FROM YOUR BUDGET LAST YEAR: ${parts.join('. ')}. More food and health money saves these lives this year; space money saves none of them this decade. Change the budget numbers themselves (2026 shares: food 3.5%, health and social 61%, space 0.1%).` : ''
 }

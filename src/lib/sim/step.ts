@@ -175,7 +175,22 @@ export function applyDecision(w: World, d: Decision): { migrations: ScheduledMig
     const law = w.laws.find(l => l.id === am.id && !l.vetoed)
     if (law) amend(law, am.change, !!am.converted, am.title)
   }
-  d.laws.slice(0, MAX_LAWS_PER_DECISION).forEach((l, i) => {
+  // a "law" that only moves money ("increase food budget", "space funding to 32%") is a budget change: a small model
+  // writes its intent as a law and copies the old budget numbers. it becomes the budget shift it asks for (an explicit
+  // share wins, otherwise +5 points, +10 for "double", -5 for cuts; the other lines give or take pro rata), logged
+  const budget = { ...d.budget }
+  const budgetLaws: string[] = []
+  const laws = d.laws.slice(0, MAX_LAWS_PER_DECISION).filter(l => {
+    const shift = budgetLawShift(`${l.title}. ${l.text}`)
+    if (!shift.length) return true
+    for (const s of shift) moveBudget(budget, s.key, s.to, s.delta)
+    budgetLaws.push(l.title)
+    w.lawsBudget++
+    event(w, { kind: 'law', text: `"${l.title}" became a budget change: ${shift.map(s => s.key).join(', ')} now ${shift.map(s => `${Math.round(budget[s.key] / Math.max(Object.values(budget).reduce((a, x) => a + x, 0), 1e-9) * 1000) / 10}%`).join(', ')}`, severity: 0.1 })
+    return false
+  })
+  w.lastBudgetLaws = budgetLaws
+  laws.forEach((l, i) => {
     const meta = lawMeta(l)
     w.lawsProposed++
     // one active law per policy kind: a new law in a kind that is already covered amends that law instead
@@ -200,7 +215,7 @@ export function applyDecision(w: World, d: Decision): { migrations: ScheduledMig
   })
   w.laws.push(...fresh)
   while (w.laws.length > MAX_ACTIVE_LAWS) w.laws.shift()
-  w.budget = normalizeBudget(d.budget)
+  w.budget = normalizeBudget(budget)
   w.forcedBudget = undefined
   if (d.religionPolicy !== w.religionPolicy) event(w, { kind: 'law', text: `religion policy changed from ${w.religionPolicy} to ${d.religionPolicy}`, severity: 0.3 })
   w.religionPolicy = d.religionPolicy
@@ -250,6 +265,9 @@ function takeWhys(rs: World['regions'][number]): Why[] {
 export function publicRegions(w: World): Region[] {
   return w.regions.map(rs => ({
     ...rs.r,
+    // the region's full age pyramid (17 five-year bands, people): pyramids and child shares come from here, never from pips
+    // population is the sum of those bands, so pyramid, region and world totals can never disagree
+    ...({ ageBands: rs.bands.map(b => Math.round(b)) } as object), population: rs.bands.reduce((a, b) => a + Math.round(b), 0),
     gdpUsd: Math.round(rs.r.gdpUsd), energyTWh: Math.round(rs.r.energyTWh * 10) / 10, foodKcalPerCapita: Math.round(rs.r.foodKcalPerCapita),
     share65plus: r4(rs.r.share65plus), education: r4(rs.r.education), faith: r4(rs.r.faith), unrest: r4(rs.r.unrest),
     techLevel: r4(rs.r.techLevel), compliance: r4(rs.r.compliance), approval: r4(rs.r.approval), fertility: Math.round(rs.r.fertility * 1000) / 1000,
@@ -260,7 +278,8 @@ export function publicRegions(w: World): Region[] {
 }
 
 export function snapshot(w: World, newEvents: Frame['newEvents'], decision?: Decision): Frame {
-  for (const c of w.citizens) dressCitizen(w, c)
+  // ages are derived from the stored birth tick, never kept separately (truth.ts ageAt)
+  for (const c of w.citizens) { const b = (c as typeof c & { birthTick?: number }).birthTick; if (b !== undefined) c.age = Math.floor((w.tick - b) / 12); dressCitizen(w, c) }
   const regions = publicRegions(w)
   w.provenanceSent = true
   const infra = w.infraAcc
@@ -287,7 +306,9 @@ export function snapshot(w: World, newEvents: Frame['newEvents'], decision?: Dec
     companies: w.companies.filter(c => !c.failed).map(k => { const { health, failed, ...c } = k; void health; void failed; return { ...c } }),
     frontier: w.frontier, factions: w.factions.map(f => ({ ...f, power: r4(f.power), hostility: r4(f.hostility), regionIds: [...f.regionIds] })),
     humanCost: { deaths: Math.round(w.humanCost.deaths), famineDeaths: Math.round(w.humanCost.famineDeaths), unrestDeaths: Math.round(w.humanCost.unrestDeaths), displaced: Math.round(w.humanCost.displaced), approval: r4(w.humanCost.approval) },
-    globalPopulation: Math.round(worldPop(w)), globalPeriodLifeExpectancy: Math.round(globalPLE(w) * 10) / 10, lessonsKnown: w.lessonsKnown,
+    // cumulative deaths by cause (truth.ts deathsAt reads these)
+    ...({ vital: Object.fromEntries(Object.entries(w.vital).map(([k, v]) => [k, Math.round(v)])), causeDeaths: { air: Math.round(w.causeDeaths.air), water: Math.round(w.causeDeaths.water), despair: Math.round(w.causeDeaths.despair ?? 0), housing: Math.round(w.housingDeaths) } } as object),
+    globalPopulation: regions.reduce((a, r) => a + r.population, 0), globalPeriodLifeExpectancy: Math.round(globalPLE(w) * 10) / 10, lessonsKnown: w.lessonsKnown,
     ...(decision ? { decision } : {}),
     ...({ causes, infra, traffic: trafficFrame(w), climate: { anomalyC: Math.round(w.climate.anomalyC * 100) / 100, gtCo2PerYear: Math.round(w.climate.gtPerYear * 10) / 10 } } as object),
   }
@@ -303,4 +324,34 @@ export function baselineFrame(w: World): BaselineFrame {
     regions: w.regions.map(rs => ({ id: rs.r.id, population: Math.round(rs.r.population), foodKcalPerCapita: Math.round(rs.r.foodKcalPerCapita), unrest: r4(rs.r.unrest), techLevel: r4(rs.r.techLevel), education: r4(rs.r.education) })),
     moonProgress: r4(moonProgress(w.space)), status: w.status,
   }
+}
+
+type BudgetKey = keyof Decision['budget']
+const BUDGET_WORDS: [BudgetKey, RegExp][] = [['food', /\bfood|agricultur|famine relief|hunger/], ['welfare', /health|welfare|social|pension|care\b/], ['education', /educat|school/], ['energy', /energy|power|electric/], ['research', /research|science/], ['space', /space|lunar|moon|mars|rocket/], ['security', /security|police|defen[cs]e|military/]]
+// ("increase food budget", "space research funding to 32%", "cut security spending") -> shifts. only texts that are about
+// a budget line (budget, funding, spending, share, money, allocation) count
+export function budgetLawShift(text: string): { key: BudgetKey; to?: number; delta?: number }[] {
+  const t = text.toLowerCase()
+  if (!/\b(budget|funding|spending|share|money|allocation|appropriation)s?\b/.test(t)) return []
+  // laws that also set up a program (a mission, a city, a reform...) stay laws
+  if (/\b(program|programme|mission|act to|establish|create|build|ban|require|mandate)\b/.test(t) && !/^(increase|boost|raise|cut|reduce|double|expand|lower)/.test(t)) return []
+  const up = /\b(increase|boost|raise|expand|double|more|grow|prioriti[sz]e)\b/.test(t), down = /\b(cut|reduce|lower|decrease|trim|slash)\b/.test(t)
+  if (!up && !down) return []
+  // which budget lines it names ("space research" is space), and an explicit "to N%" goes to the line named just before it
+  const hits = BUDGET_WORDS.map(([key, re]) => ({ key, at: t.search(re) })).filter(h => h.at >= 0).filter(h => !(h.key === 'research' && /space research/.test(t)))
+  const pctM = /\bto (\d{1,2}(?:\.\d)?)\s?%/.exec(t)
+  const target = pctM ? hits.filter(h => h.at < pctM.index).sort((a, b) => b.at - a.at)[0]?.key : undefined
+  const delta = down && !up ? -0.05 : /double/.test(t) ? 0.1 : 0.05
+  const out: { key: BudgetKey; to?: number; delta?: number }[] = hits.sort((a, b) => a.at - b.at).map(h => h.key === target ? { key: h.key, to: Number(pctM![1]) / 100 } : { key: h.key, delta })
+  return out.slice(0, 2)
+}
+function moveBudget(b: Decision['budget'], key: BudgetKey, to?: number, delta?: number) {
+  const tot = Object.values(b).reduce((a, x) => a + x, 0) || 1
+  for (const k of Object.keys(b) as BudgetKey[]) b[k] /= tot
+  const target = Math.max(0, Math.min(0.8, to ?? b[key] + (delta ?? 0)))
+  const diff = target - b[key]
+  const others = (Object.keys(b) as BudgetKey[]).filter(k => k !== key)
+  const pool = others.reduce((a, k) => a + b[k], 0) || 1
+  for (const k of others) b[k] = Math.max(0, b[k] - diff * b[k] / pool)
+  b[key] = target
 }
